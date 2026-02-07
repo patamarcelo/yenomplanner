@@ -19,6 +19,8 @@ import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import ViewWeekRoundedIcon from "@mui/icons-material/ViewWeekRounded";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+
 
 import MonthPicker from "../components/MonthPicker";
 import NewTransactionModal from "../components/NewTransactionModal";
@@ -32,6 +34,7 @@ const drawerW = 270;
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon /> },
+  { to: "/contas", label: "Contas", icon: <AccountBalanceRoundedIcon /> },
   { to: "/lancamentos", label: "Lançamentos", icon: <CreditCardRoundedIcon /> },
   { to: "/faturas", label: "Faturas", icon: <ReceiptLongRoundedIcon /> },
   { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon /> },

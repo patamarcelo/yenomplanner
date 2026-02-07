@@ -5,6 +5,7 @@ import Dashboard from "../pages/Dashboard";
 import Transactions from "../pages/Transactions";
 import Invoices from "../pages/Invoices";
 import Installments from "../pages/Installments";
+import AccountsPage from "../pages/AccountsPage";
 
 export const router = createBrowserRouter([
   {
@@ -15,6 +16,7 @@ export const router = createBrowserRouter([
       { path: "lancamentos", element: <Transactions /> },
       { path: "faturas", element: <Invoices /> },
       { path: "parcelamentos", element: <Installments /> },
+      { path: "contas", element: <AccountsPage /> },
     ],
   },
 ]);
