@@ -23,6 +23,8 @@ import { addTransactions } from "../store/financeSlice";
 import { formatBRL } from "../utils/money";
 import { computeInvoiceMonthFromPurchase, ymFromDate } from "../utils/billingDates";
 
+import { formatMonthBR } from "../utils/dateBR";
+
 export default function NewTransactionModal({ open, onClose }) {
   const dispatch = useDispatch();
   const accounts = useSelector((s) => s.accounts.accounts);
@@ -306,14 +308,6 @@ export default function NewTransactionModal({ open, onClose }) {
                 </MenuItem>
               ))}
             </TextField>
-
-            <TextField
-              label="Valor (R$)"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              fullWidth
-            />
           </Stack>
           <Stack direction="row" spacing={1.2}>
             <TextField
@@ -341,11 +335,6 @@ export default function NewTransactionModal({ open, onClose }) {
 
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip
-              label={`Tipo: ${kindLabel}`}
-              variant="outlined"
-              sx={{ fontWeight: 800 }}
-            />
-            <Chip
               label="Avulso"
               color={kind === "one_off" ? "primary" : "default"}
               variant={kind === "one_off" ? "filled" : "outlined"}
@@ -366,7 +355,7 @@ export default function NewTransactionModal({ open, onClose }) {
           </Stack>
 
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            Mês de fatura: <b>{invoiceMonth || "—"}</b>{" "}
+            Mês de fatura: <b>{formatMonthBR(invoiceMonth) || "—"}</b>{" "}
             {selectedAccount?.type === "credit_card" ? (
               <span style={{ opacity: 0.8 }}>
                 (cutoff dia {selectedAccount?.statement?.cutoffDay || "—"})

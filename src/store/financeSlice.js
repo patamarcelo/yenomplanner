@@ -19,6 +19,7 @@ const financeSlice = createSlice({
   initialState,
   reducers: {
     setMonth(state, action) {
+      // aceita "" para representar "Todos" (sem filtro)
       state.month = action.payload;
     },
 

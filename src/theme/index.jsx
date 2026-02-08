@@ -8,7 +8,25 @@ const ThemeModeContext = createContext(null);
 function buildTheme(spec) {
   return createTheme({
     ...spec,
+
+    // ✅ 1) DENSIDADE GLOBAL (resolve o "app grande" sem zoom)
+    typography: {
+      ...(spec.typography || {}),
+      fontSize: 13, // padrão MUI: 14 → deixa tudo mais compacto
+    },
+    spacing: 6, // padrão MUI: 8 → reduz paddings/margens do app inteiro
+
+    // (opcional) ajustes finos de forma global
+    shape: {
+      ...(spec.shape || {}),
+      borderRadius: 12,
+    },
+
     components: {
+      // mantém qualquer components vindo do spec (se existir)
+      ...(spec.components || {}),
+
+      // ✅ Paper/Card: mantém seu visual, mas com densidade melhor via spacing/typography
       MuiPaper: {
         styleOverrides: {
           root: {
@@ -21,6 +39,7 @@ function buildTheme(spec) {
           },
         },
       },
+
       MuiCard: {
         styleOverrides: {
           root: {
@@ -28,30 +47,62 @@ function buildTheme(spec) {
           },
         },
       },
+
+      // ✅ Reduz padding padrão dos CardContent (um dos grandes culpados)
+      MuiCardContent: {
+        styleOverrides: {
+          root: {
+            padding: 12,
+            "&:last-child": {
+              paddingBottom: 12,
+            },
+          },
+        },
+      },
+
+      // ✅ Botões mais compactos (sem perder clique confortável)
       MuiButton: {
         styleOverrides: {
           root: {
             borderRadius: 999,
-            paddingLeft: 14,
-            paddingRight: 14,
+            paddingLeft: 12,
+            paddingRight: 12,
+            paddingTop: 6,
+            paddingBottom: 6,
+            minHeight: 34,
             boxShadow: "none",
+            textTransform: "none",
+          },
+          sizeSmall: {
+            minHeight: 30,
+            paddingTop: 4,
+            paddingBottom: 4,
+            paddingLeft: 10,
+            paddingRight: 10,
           },
         },
       },
+
+      // ✅ Inputs mais compactos
       MuiOutlinedInput: {
         styleOverrides: {
           root: {
-            borderRadius: 14,
+            borderRadius: 12,
             background:
               spec.palette.mode === "dark"
                 ? "rgba(255,255,255,0.02)"
                 : "rgba(0,0,0,0.02)",
+          },
+          input: {
+            paddingTop: 10,
+            paddingBottom: 10,
           },
           notchedOutline: {
             borderColor: spec.palette.divider,
           },
         },
       },
+
       MuiInputLabel: {
         styleOverrides: {
           root: {
@@ -62,6 +113,37 @@ function buildTheme(spec) {
           },
         },
       },
+
+      // ✅ Chips/badges menores (afetam muito em telas cheias de filtros)
+      MuiChip: {
+        styleOverrides: {
+          root: {
+            height: 24,
+            fontSize: "0.78rem",
+          },
+          label: {
+            paddingLeft: 8,
+            paddingRight: 8,
+          },
+        },
+      },
+
+      // ✅ Tabelas mais densas
+      MuiTableCell: {
+        styleOverrides: {
+          root: {
+            paddingTop: 8,
+            paddingBottom: 8,
+            paddingLeft: 12,
+            paddingRight: 12,
+          },
+          head: {
+            fontWeight: 700,
+          },
+        },
+      },
+
+      // ✅ AppBar/Drawer mantidos
       MuiAppBar: {
         styleOverrides: {
           root: {
@@ -72,11 +154,67 @@ function buildTheme(spec) {
           },
         },
       },
+
       MuiDrawer: {
         styleOverrides: {
           paper: {
             borderRight: `1px solid ${spec.palette.divider}`,
             background: spec.palette.background.paper,
+          },
+        },
+      },
+
+      // ✅ DataGrid (se você usa): aqui costuma vir 50% do "tá tudo grande"
+      MuiDataGrid: {
+        defaultProps: {
+          // density: "compact",
+          rowHeight: 36,
+          columnHeaderHeight: 40,
+        },
+        styleOverrides: {
+          root: {
+            border: `1px solid ${spec.palette.divider}`,
+            borderRadius: 14,
+          },
+          cell: {
+            outline: "none",
+          },
+          columnHeaders: {
+            borderBottom: `1px solid ${spec.palette.divider}`,
+          },
+        },
+      },
+
+      // ✅ Dialog mais compacto (forms)
+      MuiDialogTitle: {
+        styleOverrides: {
+          root: {
+            padding: 12,
+            fontSize: "1rem",
+          },
+        },
+      },
+      MuiDialogContent: {
+        styleOverrides: {
+          root: {
+            padding: 12,
+          },
+        },
+      },
+      MuiDialogActions: {
+        styleOverrides: {
+          root: {
+            padding: 12,
+          },
+        },
+      },
+
+      // ✅ Tooltips um pouco menores
+      MuiTooltip: {
+        styleOverrides: {
+          tooltip: {
+            fontSize: "0.78rem",
+            padding: "6px 8px",
           },
         },
       },

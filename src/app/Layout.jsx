@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import React, { useMemo, useState, useEffect } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   AppBar,
   Box,
@@ -12,7 +12,13 @@ import {
   Divider,
   useTheme,
   Tooltip,
+  useMediaQuery,
 } from "@mui/material";
+
+import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
@@ -20,7 +26,7 @@ import ViewWeekRoundedIcon from "@mui/icons-material/ViewWeekRounded";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
-
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
 import MonthPicker from "../components/MonthPicker";
 import NewTransactionModal from "../components/NewTransactionModal";
@@ -29,8 +35,9 @@ import { useThemeMode } from "../theme";
 import { useSelector, useDispatch } from "react-redux";
 import { setMonth } from "../store/financeSlice.js";
 
-
-const drawerW = 270;
+const DRAWER_EXPANDED = 270;
+const DRAWER_COLLAPSED = 76;
+const TOP_H = 64;
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon /> },
@@ -40,18 +47,20 @@ const navItems = [
   { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon /> },
 ];
 
-function NavItem({ to, label, icon }) {
+function NavItem({ to, label, icon, collapsed }) {
   const theme = useTheme();
-  return (
+
+  const base = (
     <NavLink
       to={to}
       style={({ isActive }) => ({
         display: "flex",
         alignItems: "center",
-        gap: 10,
-        padding: "10px 12px",
+        gap: collapsed ? 0 : 10,
+        padding: collapsed ? "10px 10px" : "10px 12px",
         borderRadius: 14,
         color: theme.palette.text.primary,
+        textDecoration: "none",
         background: isActive
           ? theme.palette.mode === "dark"
             ? "rgba(10,132,255,0.18)"
@@ -59,22 +68,40 @@ function NavItem({ to, label, icon }) {
           : "transparent",
       })}
     >
-      <Box sx={{ opacity: 0.9 }}>{icon}</Box>
-      <Typography sx={{ fontWeight: 650 }}>{label}</Typography>
+      <Box sx={{ opacity: 0.9, display: "grid", placeItems: "center", width: 36 }}>
+        {icon}
+      </Box>
+      {!collapsed ? <Typography sx={{ fontWeight: 650 }}>{label}</Typography> : null}
     </NavLink>
+  );
+
+  if (!collapsed) return base;
+
+  return (
+    <Tooltip title={label} placement="right">
+      <Box>{base}</Box>
+    </Tooltip>
   );
 }
 
-export default function Layout({ ctx, children }) {
+export default function Layout({ children }) {
   const theme = useTheme();
   const themeMode = useThemeMode();
   const location = useLocation();
-  const navigate = useNavigate();
-  const [newOpen, setNewOpen] = useState(false);
-
   const dispatch = useDispatch();
+
   const month = useSelector((s) => s.finance.month);
 
+  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
+  const isLgUp = useMediaQuery(theme.breakpoints.up("lg"));
+
+  // ✅ auto-colapse: abaixo de lg => recolhido (no desktop)
+  const [collapsed, setCollapsed] = useState(true);
+
+  // ✅ mobile drawer
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const [newOpen, setNewOpen] = useState(false);
 
   const title = useMemo(() => {
     const hit = navItems.find((n) => n.to === location.pathname);
@@ -82,104 +109,245 @@ export default function Layout({ ctx, children }) {
     return hit?.label || "Finance";
   }, [location.pathname]);
 
-  return (
-    <Box sx={{ display: "flex", height: "100vh" }}>
-      <Drawer
-        variant="permanent"
+  const drawerW = collapsed ? DRAWER_COLLAPSED : DRAWER_EXPANDED;
+
+  const drawerPaperSx = {
+    width: drawerW,
+    boxSizing: "border-box",
+    borderRight: `1px solid ${theme.palette.divider}`,
+    overflowX: "hidden",
+    transition: theme.transitions.create(["width"], {
+      duration: theme.transitions.duration.shortest,
+    }),
+  };
+
+  const DrawerContent = (
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {/* 🔹 Topo do drawer alinhado com AppBar */}
+      <Box
         sx={{
-          width: drawerW,
-          flexShrink: 0,
-          "& .MuiDrawer-paper": {
-            width: drawerW,
-            boxSizing: "border-box",
-            borderRight: `1px solid ${theme.palette.divider}`,
-          },
+          height: TOP_H,
+          px: collapsed ? 1 : 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: collapsed ? "center" : "space-between",
+          gap: 1,
         }}
       >
-        <Box sx={{ p: 2.2 }}>
-          <Stack spacing={1.1}>
-            <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: -0.3 }}>
+        {!collapsed ? (
+          <Stack spacing={-0.2}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: -0.3 }}>
               Finance
             </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Controle por fatura e projeções
+            <Typography variant="caption" sx={{ color: "text.secondary" }}>
+              Controle por fatura
             </Typography>
           </Stack>
-        </Box>
+        ) : (
+          <Typography sx={{ fontWeight: 900, letterSpacing: -0.3 }}>F</Typography>
+        )}
 
-        <Divider />
+        {isMdUp ? (
+          <Tooltip title={collapsed ? "Expandir menu" : "Recolher menu"}>
+            <IconButton
+              size="small"
+              onClick={() => setCollapsed((v) => !v)}
+              sx={{ ml: collapsed ? 0 : 1 }}
+            >
+              {theme.direction === "rtl" ? (
+                collapsed ? <ChevronLeftRoundedIcon /> : <ChevronRightRoundedIcon />
+              ) : collapsed ? (
+                <ChevronRightRoundedIcon />
+              ) : (
+                <ChevronLeftRoundedIcon />
+              )}
+            </IconButton>
+          </Tooltip>
+        ) : null}
+      </Box>
 
-        <Box sx={{ p: 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
-          {navItems.map((it) => (
-            <NavItem key={it.to} to={it.to} label={it.label} icon={it.icon} />
-          ))}
-        </Box>
+      <Divider />
 
-        <Box sx={{ flex: 1 }} />
+      <Box sx={{ p: collapsed ? 1 : 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
+        {navItems.map((it) => (
+          <NavItem
+            key={it.to}
+            to={it.to}
+            label={it.label}
+            icon={it.icon}
+            collapsed={collapsed}
+          />
+        ))}
+      </Box>
 
-        <Box sx={{ p: 1.6 }}>
-          <Button
-            fullWidth
-            variant="contained"
-            onClick={() => setNewOpen(true)}
-            sx={{
-              borderRadius: 999,
-              height: 44,
-              fontWeight: 750,
-            }}
-          >
-            + Novo lançamento
-          </Button>
-          <Typography
-            variant="caption"
-            sx={{ display: "block", mt: 1, color: "text.secondary" }}
-          >
-            MVP com dados fictícios
-          </Typography>
-        </Box>
-      </Drawer>
+      <Box sx={{ flex: 1 }} />
+
+      <Box sx={{ p: collapsed ? 1 : 1.6 }}>
+        {!collapsed ? (
+          <>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => setNewOpen(true)}
+              sx={{ borderRadius: 999, height: 40, fontWeight: 800 }}
+            >
+              + Novo lançamento
+            </Button>
+            <Typography variant="caption" sx={{ display: "block", mt: 1, color: "text.secondary" }}>
+              MVP com dados fictícios
+            </Typography>
+          </>
+        ) : (
+          <Tooltip title="Novo lançamento" placement="right">
+            <IconButton
+              onClick={() => setNewOpen(true)}
+              sx={{
+                width: "100%",
+                borderRadius: 14,
+                border: `1px solid ${theme.palette.divider}`,
+              }}
+            >
+              <AddRoundedIcon />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
+    </Box>
+  );
+
+  return (
+    <Box sx={{ display: "flex", height: "100vh" }}>
+      {/* ✅ Drawer: desktop permanente, mobile temporário */}
+      {isMdUp ? (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: drawerW,
+            flexShrink: 0,
+            "& .MuiDrawer-paper": drawerPaperSx,
+          }}
+        >
+          {DrawerContent}
+        </Drawer>
+      ) : (
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            "& .MuiDrawer-paper": {
+              width: DRAWER_EXPANDED,
+              boxSizing: "border-box",
+              borderRight: `1px solid ${theme.palette.divider}`,
+            },
+          }}
+        >
+          {DrawerContent}
+        </Drawer>
+      )}
 
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <AppBar position="sticky" color="default">
+        <AppBar
+          position="sticky"
+          color="default"
+          elevation={0}
+          sx={{
+            borderBottom: `1px solid ${theme.palette.divider}`,
+            background: theme.palette.background.paper,
+          }}
+        >
           <Toolbar
             sx={{
-              minHeight: 68,
+              minHeight: TOP_H,
               display: "flex",
               justifyContent: "space-between",
-              gap: 2,
+              gap: 1.2,
             }}
           >
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 260 }}>
-              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+              {/* ✅ hambúrguer no mobile */}
+              {!isMdUp ? (
+                <IconButton onClick={() => setMobileOpen(true)} size="small">
+                  <MenuRoundedIcon />
+                </IconButton>
+              ) : null}
+
+              <Typography
+                variant="subtitle1"
+                sx={{ fontWeight: 900, letterSpacing: -0.2, whiteSpace: "nowrap" }}
+              >
                 {title}
               </Typography>
             </Stack>
 
-            <Stack direction="row" spacing={1.2} alignItems="center">
-              <MonthPicker value={month} onChange={(v) => dispatch(setMonth(v))} />
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+              {/* Grupo de controles (acabamento) */}
+              <Stack
+                direction="row"
+                spacing={0.8}
+                alignItems="center"
+                sx={{
+                  border: (t) => `1px solid ${t.palette.divider}`,
+                  borderRadius: 999,
+                  px: 0.6,
+                  py: 0.35,
+                  bgcolor: (t) =>
+                    t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                }}
+              >
+                {/* MonthPicker */}
+                <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 150 }}>
+                  <MonthPicker value={month} onChange={(v) => dispatch(setMonth(v))} />
+                </Box>
 
+                {/* Separador sutil */}
+                <Box
+                  sx={{
+                    width: 1,
+                    alignSelf: "stretch",
+                    bgcolor: (t) => t.palette.divider,
+                    mx: 0.2,
+                  }}
+                />
+
+                {/* Tema */}
+                <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
+                  <IconButton
+                    onClick={themeMode.toggle}
+                    size="small"
+                    sx={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 999,
+                    }}
+                  >
+                    {themeMode.mode === "dark" ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+
+              {/* CTA */}
               <Button
                 variant="contained"
                 onClick={() => setNewOpen(true)}
-                sx={{ height: 40, borderRadius: 999, fontWeight: 750 }}
+                sx={{
+                  height: 36,
+                  borderRadius: 999,
+                  fontWeight: 850,
+                  px: 1.4,
+                  whiteSpace: "nowrap",
+                  boxShadow: "none",
+                }}
               >
                 + Lançamento
               </Button>
-
-              <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
-                <IconButton onClick={themeMode.toggle}>
-                  {themeMode.mode === "dark" ? (
-                    <LightModeRoundedIcon />
-                  ) : (
-                    <DarkModeRoundedIcon />
-                  )}
-                </IconButton>
-              </Tooltip>
             </Stack>
+
           </Toolbar>
         </AppBar>
 
-        <Box sx={{ p: { xs: 2, md: 3 }, flex: 1, overflow: "auto" }}>{children}</Box>
+        <Box sx={{ p: { xs: 1.5, md: 2.5 }, flex: 1, overflow: "auto" }}>{children}</Box>
 
         <NewTransactionModal open={newOpen} onClose={() => setNewOpen(false)} />
       </Box>

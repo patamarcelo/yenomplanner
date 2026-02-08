@@ -23,6 +23,8 @@ import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
+import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 
 import { useDispatch, useSelector } from "react-redux";
 import { categories } from "../data/mockCategories";
@@ -31,6 +33,60 @@ import { formatDateBR, formatMonthBR } from "../utils/dateBR";
 
 // ✅ agora existem no slice (você já adicionou)
 import { updateTransaction, removeTransaction } from "../store/financeSlice";
+
+// =========================
+// Helpers: BRL input/output
+// =========================
+
+function sanitizeBrlInput(raw) {
+  // mantém apenas dígitos, vírgula, ponto e sinal
+  return String(raw ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[^0-9,\.\-]/g, "");
+}
+
+function parseBrlToNumber(raw) {
+  // Aceita: "1.234,56" | "1234,56" | "1234.56" | "1,23" | "10" etc.
+  const s0 = sanitizeBrlInput(raw);
+  if (!s0) return NaN;
+
+  // Se tem vírgula, assume vírgula como decimal e remove pontos (milhar)
+  if (s0.includes(",")) {
+    const s = s0.replace(/\./g, "").replace(/,/g, ".");
+    return Number(s);
+  }
+
+  // Sem vírgula: permite decimal com ponto
+  return Number(s0);
+}
+
+function formatNumberToBrlInput(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  // converte 1234.5 -> "1234,50" (sem separador de milhar para facilitar edição)
+  return v.toFixed(2).replace(".", ",");
+}
+
+// =========================
+// Helpers: direção (entrada/saída)
+// =========================
+
+function getTxnDirection(row) {
+  const r = getRowShape(row) || {};
+  const d = String(r.direction || r.flow || r.type || r.movement || "")
+    .trim()
+    .toLowerCase();
+
+  if (["in", "entrada", "income", "receita", "credit"].includes(d)) return "in";
+  if (["out", "saida", "saída", "expense", "despesa", "debit"].includes(d)) return "out";
+
+  // fallback: se amount for negativo, é saída
+  const amt = Number(r.amount);
+  if (Number.isFinite(amt) && amt < 0) return "out";
+
+  // padrão do app (normalmente a maioria é despesa)
+  return "out";
+}
 
 function isoFromInput(v) {
   return v || "";
@@ -145,7 +201,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
   const [categoryId, setCategoryId] = useState(t.categoryId || "");
   const [kind, setKind] = useState(t.kind || "one_off");
   const [status, setStatus] = useState(t.status || "previsto");
-  const [amount, setAmount] = useState(String(t.amount ?? ""));
+  const [amount, setAmount] = useState(formatNumberToBrlInput(t.amount ?? ""));
   const [err, setErr] = useState("");
 
 
@@ -160,15 +216,16 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
     setCategoryId(x.categoryId || "");
     setKind(x.kind || "one_off");
     setStatus(x.status || "previsto");
-    setAmount(String(x.amount ?? ""));
+    setAmount(formatNumberToBrlInput(x.amount ?? ""));
     setErr("");
-    setAccountId(defaultAccountId || "");
+    // se tiver accountId explícito no lançamento, respeita; senão usa o default resolvido
+    setAccountId(x.accountId || defaultAccountId || "");
   }, [txn, defaultAccountId]);
 
   function validate() {
     if (!merchant.trim()) return "Preencha a Loja.";
     if (!description.trim()) return "Preencha a Descrição.";
-    const v = Number(amount || 0);
+    const v = parseBrlToNumber(amount);
     if (!Number.isFinite(v) || v <= 0) return "Informe um valor válido.";
     return "";
   }
@@ -176,6 +233,8 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
   function handleSave() {
     const e = validate();
     if (e) return setErr(e);
+
+    const v = parseBrlToNumber(amount);
 
     onSave({
       ...t,
@@ -188,7 +247,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
       categoryId,
       kind,
       status,
-      amount: Number(amount),
+      amount: Number(v),
     });
   }
 
@@ -285,7 +344,11 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
             <TextField
               label="Valor (R$)"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(sanitizeBrlInput(e.target.value))}
+              onBlur={() => {
+                const v = parseBrlToNumber(amount);
+                if (Number.isFinite(v)) setAmount(formatNumberToBrlInput(v));
+              }}
               inputMode="decimal"
               fullWidth
             />
@@ -315,26 +378,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const dispatch = useDispatch();
   const safeRows = Array.isArray(rows) ? rows : [];
 
-  const firstCardRow = safeRows.find(r => r?.cardId);
   const accounts = useSelector((s) => s.accounts?.accounts || []);
 
-  console.log("FIRST CARD ROW:", firstCardRow);
-  console.log("RESOLVED accId:", resolveAccountId(firstCardRow, accounts));
-
-  console.log("ACCOUNTS IDS:", accounts.map(a => ({
-    id: a.id,
-    name: a.name,
-    type: a.type,
-    legacyCardId: a.legacyCardId,
-  })));
-
-  console.log("RESOLVE xp =>", resolveAccountId({ cardId: "xp" }, accounts));
-
+  const status_list = ['previsto', 'confirmado', 'pago', 'atraso']
   const STATUS_META = {
     previsto: {
       label: "Previsto",
       color: "default",
-      sx: { bgcolor: "rgba(0,0,0,0.06)", color: "yellow" },
+      sx: { bgcolor: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.70)" }
     },
     confirmado: {
       label: "Confirmado",
@@ -388,11 +439,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const [kindFilter, setKindFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [remainingMax, setRemainingMax] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [tipoFilter, setTipoFilter] = useState("");
 
   // editar
   const [editOpen, setEditOpen] = useState(false);
   const [selectedTxn, setSelectedTxn] = useState(null);
 
+  const MONTH_ALL = "__ALL__";
   const monthOptions = useMemo(() => {
     return Array.from(new Set(safeRows.map((r) => r?.invoiceMonth).filter(Boolean))).sort();
   }, [safeRows]);
@@ -418,8 +472,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
 
   const handleSaveEdit = useCallback(
     (patch) => {
-      // seu slice agora aceita payload direto (patch com id)
-      dispatch(updateTransaction(patch));
+      // ✅ financeSlice.updateTransaction espera { id, patch }
+      dispatch(updateTransaction({ id: patch?.id, patch }));
       setEditOpen(false);
       setSelectedTxn(null);
     },
@@ -454,6 +508,12 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
 
       if (categoryFilter && r.categoryId !== categoryFilter) return false;
 
+      if (statusFilter && r.status !== statusFilter) return false;
+
+      if (tipoFilter && getTxnDirection(r) !== tipoFilter) return false;
+      const getTipo = getTxnDirection(r)
+      console.log('get', getTipo)
+      console.log('tipoFilter', tipoFilter)
       if (remainingMax !== "") {
         const inst = getInstallment(r);
         if (!inst || typeof inst.current !== "number" || typeof inst.total !== "number") return false;
@@ -477,6 +537,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
     kindFilter,
     categoryFilter,
     remainingMax,
+    statusFilter,
+    tipoFilter
   ]);
 
   const filteredTotal = useMemo(() => {
@@ -486,27 +548,64 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const columns = useMemo(
     () => [
       {
+        field: "flow",
+        headerName: "Tipo",
+        width: 46,
+        sortable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        align: "center",
+        headerAlign: "center",
+        renderCell: (params) => {
+          const row = getRowShape(params?.row);
+          const dir = getTxnDirection(row);
+          const isIn = dir === "in";
+          return (
+            <Tooltip title={isIn ? "Entrada" : "Saída"}>
+              <Box
+                sx={{
+                  width: 26,
+                  height: 26,
+                  marginTop: '4px',
+                  borderRadius: 999,
+                  display: "grid",
+                  placeItems: "center",
+                  bgcolor: isIn ? "rgba(46,125,50,0.12)" : "rgba(211,47,47,0.12)",
+                  color: isIn ? "#1b5e20" : "#b71c1c",
+                }}
+              >
+                {isIn ? (
+                  <ArrowUpwardRoundedIcon fontSize="small" />
+                ) : (
+                  <ArrowDownwardRoundedIcon fontSize="small" />
+                )}
+              </Box>
+            </Tooltip>
+          );
+        },
+      },
+      {
         field: "purchaseDate",
         headerName: "Data Compra",
-        width: 130,
+        width: 120,
         renderCell: (params) => formatDateBR(params?.row?.purchaseDate),
       },
       {
         field: "chargeDate",
         headerName: "Data Cobrança",
-        width: 140,
+        width: 120,
         renderCell: (params) => formatDateBR(params?.row?.chargeDate),
       },
       {
         field: "invoiceMonth",
         headerName: "Mês Fatura",
-        width: 120,
+        width: 100,
         renderCell: (params) => formatMonthBR(params?.row?.invoiceMonth),
       },
       {
         field: "accountBadge",
         headerName: "Conta",
-        width: 210,
+        width: 180,
         sortable: false,
         filterable: false,
         renderCell: (params) => {
@@ -514,7 +613,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
           return <AccountChip accountId={accId} accountsById={accountsById} />;
         },
       },
-      { field: "merchant", headerName: "Loja", flex: 1, minWidth: 170 },
+      { field: "merchant", headerName: "Loja", flex: 1, minWidth: 140 },
       { field: "description", headerName: "Descrição", flex: 1, minWidth: 240 },
       {
         field: "kind",
@@ -533,7 +632,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
       {
         field: "categoryId",
         headerName: "Categoria",
-        width: 150,
+        width: 120,
         renderCell: (params) => {
           const row = getRowShape(params?.row);
           const v = row?.categoryId;
@@ -543,7 +642,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
       {
         field: "installment",
         headerName: "Parcela",
-        width: 110,
+        width: 100,
         renderCell: (params) => {
           const row = getRowShape(params?.row);
           const inst = row?.installment;
@@ -554,10 +653,29 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
       {
         field: "amount",
         headerName: "Valor",
-        width: 130,
+        width: 110,
         align: "right",
         headerAlign: "right",
-        renderCell: (params) => formatBRL(params?.row?.amount),
+        renderCell: (params) => {
+          const row = getRowShape(params?.row);
+          const dir = getTxnDirection(row);
+          const isIn = dir === "in";
+          const v = Number(row?.amount ?? 0);
+          const abs = Math.abs(v);
+
+          return (
+            <Box
+              sx={{
+                width: "100%",
+                textAlign: "right",
+                fontWeight: 900,
+                color: isIn ? "#1b5e20" : "#b71c1c",
+              }}
+            >
+              {formatBRL(abs)}
+            </Box>
+          );
+        },
       },
       {
         field: "status",
@@ -586,8 +704,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
               sx={{
                 minWidth: 110,
                 "& .MuiOutlinedInput-root": {
-                  height: 30,
-                  marginTop: '10px',
+                  height: 25,
+                  marginTop: '5px',
                   fontSize: 13,
                   bgcolor: meta.sx.bgcolor,
                   color: meta.sx.color,
@@ -608,7 +726,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
       },
       {
         field: "actions",
-        headerName: "",
+        headerName: "Opções",
         width: 90,
         sortable: false,
         filterable: false,
@@ -616,7 +734,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
         align: "right",
         headerAlign: "right",
         renderCell: (params) => (
-          <Stack direction="row" spacing={0.2} justifyContent="flex-end" sx={{ width: "100%", marginTop: '10px' }}>
+          <Stack direction="row" spacing={0.2} justifyContent="flex-end" sx={{ width: "100%", marginTop: '2px' }}>
             <Tooltip title="Editar">
               <IconButton size="small" onClick={() => handleEdit(params?.row)}>
                 <EditRoundedIcon fontSize="small" />
@@ -631,133 +749,188 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
         ),
       },
     ],
-    [accountsById, handleEdit, handleDelete]
+    [accounts, accountsById, dispatch, handleEdit, handleDelete]
   );
+
+  const monthSelectValue = month === "" || month == null ? MONTH_ALL : month;
 
   return (
     <Box>
       <Stack spacing={1.2} sx={{ mb: 1.2 }}>
-        <Stack direction="row" spacing={1.2} sx={{ flexWrap: "wrap" }} alignItems="center">
-          <TextField
-            size="small"
-            select
-            label="Mês Fatura"
-            value={month || ""}
-            onChange={(e) => onMonthFilterChange(e.target.value)}
-            sx={{ width: 170 }}
+        <Stack spacing={0.9}>
+          {/* 🔹 LINHA 1 — PERÍODO / CONTA */}
+          <Stack
+            direction="row"
+            spacing={0.9}
+            useFlexGap
+            sx={{ flexWrap: "wrap" }}
+            alignItems="baseline"
           >
-            {monthOptions.map((ym) => (
-              <MenuItem key={ym} value={ym}>
-                {formatMonthBR(ym)}
-              </MenuItem>
-            ))}
-          </TextField>
+            <TextField
+              size="small"
+              select
+              label="Mês"
+              value={monthSelectValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                onMonthFilterChange(v === MONTH_ALL ? "" : v);
+              }}
+              sx={{ minWidth: 132, width: { xs: "100%", sm: 140 } }}
+            >
+              <MenuItem value={MONTH_ALL}>Todos</MenuItem>
+              <Divider sx={{ my: 0.5 }} />
 
-          <TextField
-            size="small"
-            label="Compra de"
-            type="date"
-            value={purchaseFrom}
-            onChange={(e) => setPurchaseFrom(isoFromInput(e.target.value))}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 160 }}
-          />
-
-          <TextField
-            size="small"
-            label="Compra até"
-            type="date"
-            value={purchaseTo}
-            onChange={(e) => setPurchaseTo(isoFromInput(e.target.value))}
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 160 }}
-          />
-
-          {/* ✅ Contas + cartões (não filtra fora por active undefined) */}
-          <TextField
-            size="small"
-            select
-            label="Conta"
-            value={accountFilter}
-            onChange={(e) => setAccountFilter(e.target.value)}
-            sx={{ width: 240 }}
-          >
-            <MenuItem value="">Todas</MenuItem>
-            {accounts
-              .filter(safeAccountActive)
-              .map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.type === "credit_card" ? "💳 " : "🏦 "}
-                  {a.name}
+              {monthOptions.map((ym) => (
+                <MenuItem key={ym} value={ym}>
+                  {formatMonthBR(ym)}
                 </MenuItem>
               ))}
-          </TextField>
+            </TextField>
 
-          <TextField
-            size="small"
-            label="Loja"
-            value={merchantQuery}
-            onChange={(e) => setMerchantQuery(e.target.value)}
-            sx={{ width: 220 }}
-            placeholder="Buscar..."
-          />
 
-          <TextField
-            size="small"
-            label="Descrição"
-            value={descriptionQuery}
-            onChange={(e) => setDescriptionQuery(e.target.value)}
-            sx={{ width: 240 }}
-            placeholder="Ex: Mercado, assinatura..."
-          />
+            <TextField
+              size="small"
+              label="De"
+              type="date"
+              value={purchaseFrom}
+              onChange={(e) => setPurchaseFrom(isoFromInput(e.target.value))}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 132, width: { xs: "49%", sm: 145 } }}
+            />
 
-          <TextField
-            size="small"
-            select
-            label="Tipo"
-            value={kindFilter}
-            onChange={(e) => setKindFilter(e.target.value)}
-            sx={{ width: 150 }}
+            <TextField
+              size="small"
+              label="Até"
+              type="date"
+              value={purchaseTo}
+              onChange={(e) => setPurchaseTo(isoFromInput(e.target.value))}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 132, width: { xs: "49%", sm: 145 } }}
+            />
+
+            <TextField
+              size="small"
+              select
+              label="Conta"
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value)}
+              sx={{ minWidth: 170, width: { xs: "100%", sm: 200 } }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              {accounts
+                .filter(safeAccountActive)
+                .map((a) => (
+                  <MenuItem key={a.id} value={a.id}>
+                    {a.type === "credit_card" ? "💳 " : "🏦 "}
+                    {a.name}
+                  </MenuItem>
+                ))}
+            </TextField>
+            <TextField
+              size="small"
+              select
+              label="Tipo"
+              value={tipoFilter}
+              onChange={(e) => setTipoFilter(e.target.value)}
+              sx={{ minWidth: 170, width: { xs: "100%", sm: 200 } }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              <MenuItem value="out">Saídas</MenuItem>
+              <MenuItem value="in">Entradas</MenuItem>
+            </TextField>
+          </Stack>
+
+          {/* 🔹 LINHA 2 — FILTROS AVANÇADOS */}
+          <Stack
+            direction="row"
+            spacing={0.9}
+            useFlexGap
+            sx={{ flexWrap: "wrap" }}
+            alignItems="baseline"
           >
-            <MenuItem value="">Todos</MenuItem>
-            <MenuItem value="one_off">Avulso</MenuItem>
-            <MenuItem value="recurring">Mensal</MenuItem>
-            <MenuItem value="installment">Parcela</MenuItem>
-          </TextField>
+            <TextField
+              size="small"
+              label="Loja"
+              value={merchantQuery}
+              onChange={(e) => setMerchantQuery(e.target.value)}
+              sx={{ minWidth: 160, width: { xs: "100%", sm: 190 } }}
+              placeholder="Buscar..."
+            />
 
-          <TextField
-            size="small"
-            select
-            label="Categoria"
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            sx={{ width: 170 }}
-          >
-            <MenuItem value="">Todas</MenuItem>
-            {categories.map((c) => (
-              <MenuItem key={c.id} value={c.id}>
-                {c.name}
-              </MenuItem>
-            ))}
-          </TextField>
+            <TextField
+              size="small"
+              label="Descrição"
+              value={descriptionQuery}
+              onChange={(e) => setDescriptionQuery(e.target.value)}
+              sx={{ minWidth: 180, width: { xs: "100%", sm: 220 } }}
+              placeholder="Ex: Mercado, assinatura..."
+            />
 
-          <TextField
-            size="small"
-            select
-            label="Parcelas restantes"
-            value={remainingMax}
-            onChange={(e) => setRemainingMax(e.target.value)}
-            sx={{ width: 220 }}
-          >
-            <MenuItem value="">Todas</MenuItem>
-            <MenuItem value="0">Somente última (faltam 0)</MenuItem>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-              <MenuItem key={n} value={String(n)}>
-                Faltam {n} ou menos
-              </MenuItem>
-            ))}
-          </TextField>
+            <TextField
+              size="small"
+              select
+              label="Tipo"
+              value={kindFilter}
+              onChange={(e) => setKindFilter(e.target.value)}
+              sx={{ minWidth: 120, width: { xs: "48%", sm: 140 } }}
+            >
+              <MenuItem value="">Todos</MenuItem>
+              <MenuItem value="one_off">Avulso</MenuItem>
+              <MenuItem value="recurring">Mensal</MenuItem>
+              <MenuItem value="installment">Parcela</MenuItem>
+            </TextField>
+
+            <TextField
+              size="small"
+              select
+              label="Categoria"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              sx={{ minWidth: 140, width: { xs: "48%", sm: 170 } }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              {categories.map((c) => (
+                <MenuItem key={c.id} value={c.id}>
+                  {c.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              size="small"
+              select
+              label="Status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              sx={{ minWidth: 140, width: { xs: "48%", sm: 170 } }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              {status_list.map((c) => (
+                <MenuItem key={c} value={c}>
+                  {c}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              size="small"
+              select
+              label="Parcelas"
+              value={remainingMax}
+              onChange={(e) => setRemainingMax(e.target.value)}
+              sx={{ minWidth: 170, width: { xs: "100%", sm: 210 } }}
+            >
+              <MenuItem value="">Todas</MenuItem>
+              <MenuItem value="0">Somente última</MenuItem>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                <MenuItem key={n} value={String(n)}>
+                  Faltam {n} ou menos
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
         </Stack>
+
 
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -776,6 +949,9 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
           rows={filteredRows}
           columns={columns}
           getRowId={(r) => r?.id}
+          // rowHeight={60}   // padrão é ~52
+          // columnHeaderHeight={70}
+          // density="standard"
           disableRowSelectionOnClick
           getRowClassName={(params) =>
             params.indexRelativeToCurrentPage % 2 === 0 ? "row-even" : "row-odd"
