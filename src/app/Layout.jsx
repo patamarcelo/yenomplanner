@@ -35,6 +35,7 @@ import { useThemeMode } from "../theme";
 import { useSelector, useDispatch } from "react-redux";
 import { setMonth } from "../store/financeSlice.js";
 
+import DashboardFilters from "../components/DashboardFilters.jsx";
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
 const TOP_H = 64;
@@ -283,6 +284,7 @@ export default function Layout({ children }) {
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
               {/* Grupo de controles (acabamento) */}
+              <DashboardFilters />
               <Stack
                 direction="row"
                 spacing={0.8}
@@ -296,6 +298,7 @@ export default function Layout({ children }) {
                     t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
                 }}
               >
+
                 {/* MonthPicker */}
                 <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 150 }}>
                   <MonthPicker value={month} onChange={(v) => dispatch(setMonth(v))} />

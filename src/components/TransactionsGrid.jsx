@@ -377,6 +377,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
 export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const dispatch = useDispatch();
   const safeRows = Array.isArray(rows) ? rows : [];
+  console.log('safeRo', safeRows)
 
   const accounts = useSelector((s) => s.accounts?.accounts || []);
 
@@ -590,12 +591,12 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
         width: 120,
         renderCell: (params) => formatDateBR(params?.row?.purchaseDate),
       },
-      {
-        field: "chargeDate",
-        headerName: "Data Cobrança",
-        width: 120,
-        renderCell: (params) => formatDateBR(params?.row?.chargeDate),
-      },
+      // {
+      //   field: "chargeDate",
+      //   headerName: "Data Cobrança",
+      //   width: 120,
+      //   renderCell: (params) => formatDateBR(params?.row?.chargeDate),
+      // },
       {
         field: "invoiceMonth",
         headerName: "Mês Fatura",

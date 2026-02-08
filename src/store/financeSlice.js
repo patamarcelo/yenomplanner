@@ -12,6 +12,12 @@ function currentYM() {
 const initialState = {
   month: currentYM(),
   txns: mockTransactions,
+  filters: {
+    accountIds: [],
+    categoryIds: [],
+    kinds: [],
+    directions: ["expense"], // dashboard começa focado em despesas
+  },
 };
 
 const financeSlice = createSlice({
@@ -22,7 +28,17 @@ const financeSlice = createSlice({
       // aceita "" para representar "Todos" (sem filtro)
       state.month = action.payload;
     },
-
+    setFilters(state, action) {
+      state.filters = { ...state.filters, ...action.payload };
+    },
+    resetFilters(state) {
+      state.filters = {
+        accountIds: [],
+        categoryIds: [],
+        kinds: [],
+        directions: ["expense"],
+      };
+    },
     addTransactions(state, action) {
       const payload = action.payload;
       if (Array.isArray(payload)) {
@@ -59,6 +75,8 @@ export const {
   setTransactions,
   updateTransaction,
   removeTransaction,
+  setFilters,
+  resetFilters
 } = financeSlice.actions;
 
 export default financeSlice.reducer;
