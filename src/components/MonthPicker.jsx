@@ -1,9 +1,7 @@
-// src/components/MonthPicker.jsx  (ou onde estiver)
-// (mantive o mesmo nome/export pra não quebrar import)
-
-import React, { useEffect, useMemo } from "react";
-import { MenuItem, TextField } from "@mui/material";
+// src/components/MonthPicker.jsx (ou onde estiver)
+import React, { useMemo, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { TextField, MenuItem, Divider } from "@mui/material";
 import { setMonth } from "../store/financeSlice";
 import { formatMonthBR } from "../utils/dateBR";
 
@@ -14,80 +12,47 @@ function currentYM() {
   return `${y}-${m}`;
 }
 
-function ymFromISO(iso) {
-  const s = String(iso || "");
-  const parts = s.split("-");
-  if (parts.length < 2) return "";
-  const y = parts[0];
-  const m = parts[1];
-  if (!y || !m) return "";
-  return `${y}-${m}`;
-}
-
-function isValidYM(ym) {
-  return /^\d{4}-\d{2}$/.test(String(ym || ""));
-}
-
-function sortYMDesc(a, b) {
-  // "2026-02" -> 202602
-  const na = Number(String(a).replace("-", ""));
-  const nb = Number(String(b).replace("-", ""));
-  return nb - na;
-}
-
-export default function MonthPicker() {
+export default function MonthPicker({ fullWidth = false, size = "small" }) {
   const dispatch = useDispatch();
   const month = useSelector((s) => s.finance.month);
-  const txns = useSelector((s) => s.finance.txns);
+  const txns = useSelector((s) => s.finance.txns) || [];
 
-  const opts = useMemo(() => {
+  const months = useMemo(() => {
     const set = new Set();
 
-    for (const t of txns || []) {
-      const ymA = t?.invoiceMonth;
-      const ymB = ymFromISO(t?.purchaseDate);
-      const ymC = ymFromISO(t?.chargeDate);
-
-      if (isValidYM(ymA)) set.add(ymA);
-      if (isValidYM(ymB)) set.add(ymB);
-      if (isValidYM(ymC)) set.add(ymC);
+    for (const t of txns) {
+      const ym = String(t?.invoiceMonth || "");
+      if (ym) set.add(ym);
     }
 
-    // garante o mês atual sempre disponível (mesmo sem lançamentos)
+    // ✅ garante mês atual na lista
     set.add(currentYM());
 
-    return Array.from(set).sort(sortYMDesc);
+    // ordena desc (mais recente primeiro)
+    return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
   }, [txns]);
 
-  // garante mês atual como padrão:
-  // - se month vazio
-  // - se month não existe mais (ex.: limpeza/estado antigo)
+  // ✅ se o mês selecionado não existe (ou ainda não tem dados), cai pro mês atual
   useEffect(() => {
     const cur = currentYM();
-    if (!month || !isValidYM(month)) {
-      dispatch(setMonth(cur));
-      return;
-    }
-    if (opts.length && !opts.includes(month)) {
+    if (!month) return; // month=="" é "Todos": respeita
+    if (month && !months.includes(month)) {
       dispatch(setMonth(cur));
     }
-  }, [dispatch, month, opts]);
+  }, [month, months, dispatch]);
 
   return (
     <TextField
-      size="small"
-      value={month || currentYM()}
-      onChange={(e) => dispatch(setMonth(e.target.value))}
+      label="Mês"
       select
-      sx={{
-        width: 140,
-        "& .MuiOutlinedInput-root": {
-          height: 40,
-          borderRadius: 14, // <<< reduzi MUITO (tava 999)
-        },
-      }}
+      value={month ?? ""}
+      onChange={(e) => dispatch(setMonth(e.target.value))}
+      size={size}
+      fullWidth={fullWidth}
     >
-      {opts.map((ym) => (
+      <MenuItem value="">Todos</MenuItem>
+      <Divider />
+      {months.map((ym) => (
         <MenuItem key={ym} value={ym}>
           {formatMonthBR(ym)}
         </MenuItem>

@@ -35,6 +35,14 @@ import { useThemeMode } from "../theme";
 import { useSelector, useDispatch } from "react-redux";
 import { setMonth } from "../store/financeSlice.js";
 
+
+import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
+import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
+import { toggleHideValues, selectHideValues } from "../store/uiSlice";
+import { alpha } from "@mui/material/styles";
+
+
+
 import DashboardFilters from "../components/DashboardFilters.jsx";
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -92,6 +100,8 @@ export default function Layout({ children }) {
   const dispatch = useDispatch();
 
   const month = useSelector((s) => s.finance.month);
+  const hideValues = useSelector(selectHideValues);
+
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const isLgUp = useMediaQuery(theme.breakpoints.up("lg"));
@@ -326,6 +336,27 @@ export default function Layout({ children }) {
                     }}
                   >
                     {themeMode.mode === "dark" ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
+                  </IconButton>
+                </Tooltip>
+
+                {/* hide values */}
+                <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
+                  <IconButton
+                    size="small"
+                    onClick={() => dispatch(toggleHideValues())}
+                    sx={(theme) => ({
+                      width: 40,
+                      height: 40,
+                      borderRadius: 2,
+                      border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
+                      background: alpha(theme.palette.background.paper, 0.7),
+                    })}
+                  >
+                    {hideValues ? (
+                      <VisibilityOffRoundedIcon fontSize="small" />
+                    ) : (
+                      <VisibilityRoundedIcon fontSize="small" />
+                    )}
                   </IconButton>
                 </Tooltip>
               </Stack>

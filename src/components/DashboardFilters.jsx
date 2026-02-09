@@ -36,12 +36,12 @@ import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import { categories } from "../data/mockCategories";
 import { setFilters, resetFilters } from "../store/financeSlice";
 
+
 // helpers
 function toggleInArray(arr, value) {
     const a = Array.isArray(arr) ? arr : [];
     return a.includes(value) ? a.filter((x) => x !== value) : [...a, value];
 }
-
 function labelKind(k) {
     const v = String(k || "");
     if (v === "one_off") return "Avulso";

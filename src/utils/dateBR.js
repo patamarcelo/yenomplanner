@@ -5,9 +5,11 @@ export function formatDateBR(yyyyMmDd) {
   return `${d}/${m}/${y}`; // dd-mm-yyyy
 }
 
-export function formatMonthBR(yyyyMm) {
-  if (!yyyyMm) return "—";
-  const [y, m] = String(yyyyMm).split("-");
+export function formatMonthBR(ym) {
+  if (!ym) return "Todos"; // ✅ aqui resolve a home inteira quando month==""
+  const [y, m] = String(ym).split("-");
   if (!y || !m) return "—";
-  return `${m}/${y}`; // mm-yyyy
+  const mm = Number(m);
+  const names = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  return `${names[mm - 1] || m}/${y}`;
 }

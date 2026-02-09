@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
+
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
@@ -32,6 +33,8 @@ import {
 import { formatBRL } from "../utils/money";
 import { formatMonthBR, formatDateBR } from "../utils/dateBR";
 import { categories } from "../data/mockCategories";
+import { selectHideValues } from "../store/uiSlice";
+
 
 // -----------------------------
 // Helpers
@@ -261,6 +264,12 @@ export default function Dashboard() {
   const accounts = useSelector((s) => s.accounts.accounts);
   const extraFilters = useSelector((s) => s.finance.filters);
 
+  const hideValues = useSelector(selectHideValues);
+
+  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
+  const maskNumber = (n) => (hideValues ? "••" : String(n));
+  console.log('hide values', hideValues)
+
   const accountsById = useMemo(() => {
     const map = new Map();
     for (const a of accounts || []) map.set(a.id, a);
@@ -356,55 +365,55 @@ export default function Dashboard() {
   // KPIs (purchaseDate)
   // -----------------------------
   // Entradas no mês (invoiceMonth)
-const totalEntradaMes = useMemo(() => {
-  return sum((monthTx || []).map((t) => Math.max(0, signedAmountNormalized(t))));
-}, [monthTx]);
+  const totalEntradaMes = useMemo(() => {
+    return sum((monthTx || []).map((t) => Math.max(0, signedAmountNormalized(t))));
+  }, [monthTx]);
 
-// Saídas no mês (invoiceMonth)
-const totalSaidaMes = useMemo(() => {
-  return Math.abs(sum((monthTx || []).map((t) => Math.min(0, signedAmountNormalized(t)))));
-}, [monthTx]);
+  // Saídas no mês (invoiceMonth)
+  const totalSaidaMes = useMemo(() => {
+    return Math.abs(sum((monthTx || []).map((t) => Math.min(0, signedAmountNormalized(t)))));
+  }, [monthTx]);
 
-// Somente cartões (saídas + entradas se algum dia tiver estorno/receita em cartão)
-const totalCartoesMes = useMemo(() => {
-  return sum(
-    (monthTx || [])
-      .filter((t) => isCardTxn(t)) // sua função que resolve accountId/cardId
-      .map((t) => Math.abs(signedAmountNormalized(t)))
-  );
-}, [monthTx, isCardTxn]);
+  // Somente cartões (saídas + entradas se algum dia tiver estorno/receita em cartão)
+  const totalCartoesMes = useMemo(() => {
+    return sum(
+      (monthTx || [])
+        .filter((t) => isCardTxn(t)) // sua função que resolve accountId/cardId
+        .map((t) => Math.abs(signedAmountNormalized(t)))
+    );
+  }, [monthTx, isCardTxn]);
 
-// Despesas mensais = saídas (mantém semântica simples)
-// Despesas mensais = somente recorrentes (kind === "recurring")
-const totalDespesasMensais = useMemo(() => {
-  return sum(
-    (monthTx || [])
-      .filter((t) => normalizeDirectionFromTxn(t) === "expense")
-      .filter((t) => String(t?.kind || "").toLowerCase() === "recurring")
-      .map((t) => Math.abs(signedAmountNormalized(t)))
-  );
-}, [monthTx]);
+  // Despesas mensais = saídas (mantém semântica simples)
+  // Despesas mensais = somente recorrentes (kind === "recurring")
+  const totalDespesasMensais = useMemo(() => {
+    return sum(
+      (monthTx || [])
+        .filter((t) => normalizeDirectionFromTxn(t) === "expense")
+        .filter((t) => String(t?.kind || "").toLowerCase() === "recurring")
+        .map((t) => Math.abs(signedAmountNormalized(t)))
+    );
+  }, [monthTx]);
 
 
-// Total parcelamento (somente despesas parceladas)
-const totalParcelamento = useMemo(() => {
-  return sum(
-    (monthTx || [])
-      .filter((t) => isInstallment(t))
-      .filter((t) => normalizeDirectionFromTxn(t) === "expense")
-      .map((t) => Math.abs(signedAmountNormalized(t)))
-  );
-}, [monthTx]);
+  // Total parcelamento (somente despesas parceladas)
+  const totalParcelamento = useMemo(() => {
+    return sum(
+      (monthTx || [])
+        .filter((t) => isInstallment(t))
+        .filter((t) => normalizeDirectionFromTxn(t) === "expense")
+        .map((t) => Math.abs(signedAmountNormalized(t)))
+    );
+  }, [monthTx]);
 
-// Total avulso (somente despesas não parceladas)
-const totalAvulso = useMemo(() => {
-  return sum(
-    (monthTx || [])
-      .filter((t) => normalizeDirectionFromTxn(t) === "expense")
-      .filter((t) => String(t?.kind || "").toLowerCase() === "one_off")
-      .map((t) => Math.abs(signedAmountNormalized(t)))
-  );
-}, [monthTx]);
+  // Total avulso (somente despesas não parceladas)
+  const totalAvulso = useMemo(() => {
+    return sum(
+      (monthTx || [])
+        .filter((t) => normalizeDirectionFromTxn(t) === "expense")
+        .filter((t) => String(t?.kind || "").toLowerCase() === "one_off")
+        .map((t) => Math.abs(signedAmountNormalized(t)))
+    );
+  }, [monthTx]);
 
 
 
@@ -541,42 +550,42 @@ const totalAvulso = useMemo(() => {
       >
         <KpiCard
           title="Total de entradas"
-          value={formatBRL(totalEntradaMes)}
+          value={maskMoney(formatBRL(totalEntradaMes))}
           subtitle="purchaseDate"
           icon={TrendingUpRoundedIcon}
           tone="good"
         />
         <KpiCard
           title="Total de saídas"
-          value={formatBRL(totalSaidaMes)}
+          value={maskMoney(formatBRL(totalSaidaMes))}
           subtitle="purchaseDate"
           icon={TrendingDownRoundedIcon}
           tone="bad"
         />
         <KpiCard
           title="Total em cartões"
-          value={formatBRL(totalCartoesMes)}
+          value={maskMoney(formatBRL(totalCartoesMes))}
           subtitle="purchaseDate"
           icon={CreditCardRoundedIcon}
           tone="info"
         />
         <KpiCard
           title="Despesas mensais"
-          value={formatBRL(totalDespesasMensais)}
+          value={maskMoney(formatBRL(totalDespesasMensais))}
           subtitle="purchaseDate"
           icon={CalendarMonthRoundedIcon}
           tone="bad"
         />
         <KpiCard
           title="Total avulso"
-          value={formatBRL(totalAvulso)}
+          value={maskMoney(formatBRL(totalAvulso))}
           subtitle="purchaseDate"
           icon={BoltRoundedIcon}
           tone="neutral"
         />
         <KpiCard
           title="Total parcelamento"
-          value={formatBRL(totalParcelamento)}
+          value={maskMoney(formatBRL(totalParcelamento))}
           subtitle="purchaseDate"
           icon={ViewWeekRoundedIcon}
           tone="info"

@@ -26,6 +26,8 @@ import {
   selectAccounts,
 } from "../store/accountsSlice";
 
+import { selectHideValues } from "../store/uiSlice";
+
 // visual simples, apple-like (clean)
 const pageSx = {
   maxWidth: 1100,
@@ -103,9 +105,12 @@ function safeActive(a) {
   return a?.active !== false;
 }
 
+
 function AccountFormDialog({ open, onClose, initial }) {
   const dispatch = useDispatch();
   const isEdit = !!initial?.id;
+  const hideValues = useSelector(selectHideValues);
+  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
 
   // estado base
   const [type, setType] = useState(initial?.type || "credit_card");
@@ -380,6 +385,9 @@ export default function AccountsPage() {
   const cardsOnly = useMemo(() => (accounts || []).filter((a) => a.type === "credit_card"), [accounts]);
   const checkingOnly = useMemo(() => (accounts || []).filter((a) => a.type === "checking"), [accounts]);
 
+  const hideValues = useSelector(selectHideValues);
+  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
+
   // Totais cartões
   const { totalCardLimit, totalCardOpen, totalCardAvailable } = useMemo(() => {
     const activeCards = (cardsOnly || []).filter((a) => safeActive(a));
@@ -442,13 +450,13 @@ export default function AccountsPage() {
 
           <Stack direction="row" spacing={2} alignItems="baseline" sx={{ flexWrap: "wrap" }}>
             <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Limite total: <b>{moneyBRL(totalCardLimit)}</b>
+              Limite total: <b>{maskMoney(moneyBRL(totalCardLimit))}</b>
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Em aberto: <b>{moneyBRL(totalCardOpen)}</b>
+              Em aberto: <b>{maskMoney(moneyBRL(totalCardOpen))}</b>
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 950 }}>
-              Disponível: {moneyBRL(totalCardAvailable)}
+              Disponível: {maskMoney(moneyBRL(totalCardAvailable))}
             </Typography>
           </Stack>
         </Stack>
@@ -482,7 +490,7 @@ export default function AccountsPage() {
                       </Stack>
 
                       <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                        Limite: <b>{moneyBRL(a.limit)}</b>
+                        Limite: <b>{maskMoney(moneyBRL(a.limit))}</b>
                       </Typography>
 
                       <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -535,7 +543,7 @@ export default function AccountsPage() {
 
           <Stack direction="row" spacing={2} alignItems="baseline" sx={{ flexWrap: "wrap" }}>
             <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Saldo total: <b>{moneyBRL(totalCheckingBalance)}</b>
+              Saldo total: <b>{maskMoney(moneyBRL(totalCheckingBalance))}</b>
             </Typography>
           </Stack>
         </Stack>
@@ -576,7 +584,7 @@ export default function AccountsPage() {
                         </Typography>
 
                         <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                          Saldo atual: <b>{moneyBRL(balance)}</b>
+                          Saldo atual: <b>{maskMoney(moneyBRL(balance))}</b>
                         </Typography>
                       </Stack>
                     </Stack>
