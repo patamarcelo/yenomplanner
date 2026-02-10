@@ -551,42 +551,42 @@ export default function Dashboard() {
         <KpiCard
           title="Total de entradas"
           value={maskMoney(formatBRL(totalEntradaMes))}
-          subtitle="purchaseDate"
+          // subtitle="purchaseDate"
           icon={TrendingUpRoundedIcon}
           tone="good"
         />
         <KpiCard
           title="Total de saídas"
           value={maskMoney(formatBRL(totalSaidaMes))}
-          subtitle="purchaseDate"
+          // subtitle="purchaseDate"
           icon={TrendingDownRoundedIcon}
           tone="bad"
         />
         <KpiCard
           title="Total em cartões"
           value={maskMoney(formatBRL(totalCartoesMes))}
-          subtitle="purchaseDate"
+          // subtitle="purchaseDate"
           icon={CreditCardRoundedIcon}
           tone="info"
         />
         <KpiCard
           title="Despesas mensais"
           value={maskMoney(formatBRL(totalDespesasMensais))}
-          subtitle="purchaseDate"
+          // subtitle="purchaseDate"
           icon={CalendarMonthRoundedIcon}
           tone="bad"
         />
         <KpiCard
           title="Total avulso"
           value={maskMoney(formatBRL(totalAvulso))}
-          subtitle="purchaseDate"
+          // subtitle="purchaseDate"
           icon={BoltRoundedIcon}
           tone="neutral"
         />
         <KpiCard
           title="Total parcelamento"
           value={maskMoney(formatBRL(totalParcelamento))}
-          subtitle="purchaseDate"
+          // subtitle="purchaseDate"
           icon={ViewWeekRoundedIcon}
           tone="info"
         />

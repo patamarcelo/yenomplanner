@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
   Box,
@@ -35,15 +35,20 @@ import { useThemeMode } from "../theme";
 import { useSelector, useDispatch } from "react-redux";
 import { setMonth } from "../store/financeSlice.js";
 
-
 import VisibilityRoundedIcon from "@mui/icons-material/VisibilityRounded";
 import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { toggleHideValues, selectHideValues } from "../store/uiSlice";
 import { alpha } from "@mui/material/styles";
 
-
-
 import DashboardFilters from "../components/DashboardFilters.jsx";
+import { meThunk } from "../store/authSlice";
+
+import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
+import { logout } from "../store/authSlice";
+
+
+
+
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
 const TOP_H = 64;
@@ -97,16 +102,25 @@ export default function Layout({ children }) {
   const theme = useTheme();
   const themeMode = useThemeMode();
   const location = useLocation();
+  const navigate = useNavigate();
   const dispatch = useDispatch();
 
   const month = useSelector((s) => s.finance.month);
   const hideValues = useSelector(selectHideValues);
 
+  // ✅ auth (reducer registrado como "user" no store)
+  const token = useSelector((s) => s.user.token) || localStorage.getItem("authToken") || "";
+  const currentUser = useSelector((s) => s.user.user);
+  const authStatus = useSelector((s) => s.user.status);
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
-  const isLgUp = useMediaQuery(theme.breakpoints.up("lg"));
 
-  // ✅ auto-colapse: abaixo de lg => recolhido (no desktop)
+  // ✅ rotas públicas: sem menu/topbar
+  const isPublicRoute = useMemo(() => {
+    return location.pathname === "/login" || location.pathname === "/register";
+  }, [location.pathname]);
+
+  // ✅ auto-colapse
   const [collapsed, setCollapsed] = useState(true);
 
   // ✅ mobile drawer
@@ -120,6 +134,25 @@ export default function Layout({ children }) {
     return hit?.label || "Finance";
   }, [location.pathname]);
 
+  // ✅ Guard de auth + bootstrap do /me
+  useEffect(() => {
+    if (isPublicRoute) return;
+
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (!currentUser && authStatus !== "loading") {
+      dispatch(meThunk());
+    }
+  }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
+
+  // ✅ em páginas públicas, não renderiza drawer/appbar
+  if (isPublicRoute) {
+    return <Box sx={{ minHeight: "100vh" }}>{children}</Box>;
+  }
+
   const drawerW = collapsed ? DRAWER_COLLAPSED : DRAWER_EXPANDED;
 
   const drawerPaperSx = {
@@ -132,9 +165,16 @@ export default function Layout({ children }) {
     }),
   };
 
+
+
+  function handleLogout() {
+    dispatch(logout());
+    navigate("/login", { replace: true });
+  }
+
+
   const DrawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      {/* 🔹 Topo do drawer alinhado com AppBar */}
       <Box
         sx={{
           height: TOP_H,
@@ -148,14 +188,11 @@ export default function Layout({ children }) {
         {!collapsed ? (
           <Stack spacing={-0.2}>
             <Typography variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: -0.3 }}>
-              Finance
-            </Typography>
-            <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              Controle por fatura
+              Yenom Planner
             </Typography>
           </Stack>
         ) : (
-          <Typography sx={{ fontWeight: 900, letterSpacing: -0.3 }}>F</Typography>
+          <Typography sx={{ fontWeight: 900, letterSpacing: -0.3 }}>YP</Typography>
         )}
 
         {isMdUp ? (
@@ -181,33 +218,29 @@ export default function Layout({ children }) {
 
       <Box sx={{ p: collapsed ? 1 : 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
         {navItems.map((it) => (
-          <NavItem
-            key={it.to}
-            to={it.to}
-            label={it.label}
-            icon={it.icon}
-            collapsed={collapsed}
-          />
+          <NavItem key={it.to} to={it.to} label={it.label} icon={it.icon} collapsed={collapsed} />
         ))}
       </Box>
 
       <Box sx={{ flex: 1 }} />
-
-      <Box sx={{ p: collapsed ? 1 : 1.6 }}>
+      
+      <Box
+        sx={{
+          p: collapsed ? 1 : 1.6,
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+        }}
+      >
         {!collapsed ? (
-          <>
-            <Button
-              fullWidth
-              variant="contained"
-              onClick={() => setNewOpen(true)}
-              sx={{ borderRadius: 999, height: 40, fontWeight: 800 }}
-            >
-              + Novo lançamento
-            </Button>
-            <Typography variant="caption" sx={{ display: "block", mt: 1, color: "text.secondary" }}>
-              MVP com dados fictícios
-            </Typography>
-          </>
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={() => setNewOpen(true)}
+            sx={{ borderRadius: 999, height: 40, fontWeight: 800 }}
+          >
+            + Novo lançamento
+          </Button>
         ) : (
           <Tooltip title="Novo lançamento" placement="right">
             <IconButton
@@ -223,12 +256,62 @@ export default function Layout({ children }) {
           </Tooltip>
         )}
       </Box>
+
+
+      <Divider sx={{ opacity: 0.8 }} />
+
+      <Box sx={{ p: collapsed ? 1 : 1.6 }}>
+        {!collapsed ? (
+          <Button
+            fullWidth
+            onClick={handleLogout}
+            startIcon={<ExitToAppRoundedIcon />}
+            sx={{
+              height: 40,
+              borderRadius: 999,
+              fontWeight: 900,
+              justifyContent: "center",
+              px: 1.6,
+              color: "#dc2626", // vermelho
+              border: "1px solid rgba(220,38,38,0.35)",
+              bgcolor: "rgba(220,38,38,0.08)",
+              "&:hover": {
+                bgcolor: "rgba(220,38,38,0.14)",
+              },
+            }}
+          >
+            Sair
+          </Button>
+        ) : (
+          <Tooltip title="Sair" placement="right">
+            <IconButton
+              onClick={handleLogout}
+              sx={{
+                width: "100%",
+                height: 40,
+                borderRadius: 14,
+                color: "#dc2626",
+                border: "1px solid rgba(220,38,38,0.35)",
+                bgcolor: "rgba(220,38,38,0.08)",
+                "&:hover": {
+                  bgcolor: "rgba(220,38,38,0.14)",
+                },
+              }}
+            >
+              <ExitToAppRoundedIcon />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
+
+
+
+
     </Box>
   );
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
-      {/* ✅ Drawer: desktop permanente, mobile temporário */}
       {isMdUp ? (
         <Drawer
           variant="permanent"
@@ -277,7 +360,6 @@ export default function Layout({ children }) {
             }}
           >
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {/* ✅ hambúrguer no mobile */}
               {!isMdUp ? (
                 <IconButton onClick={() => setMobileOpen(true)} size="small">
                   <MenuRoundedIcon />
@@ -293,8 +375,8 @@ export default function Layout({ children }) {
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {/* Grupo de controles (acabamento) */}
               <DashboardFilters />
+
               <Stack
                 direction="row"
                 spacing={0.8}
@@ -308,13 +390,10 @@ export default function Layout({ children }) {
                     t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
                 }}
               >
-
-                {/* MonthPicker */}
                 <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 150 }}>
                   <MonthPicker value={month} onChange={(v) => dispatch(setMonth(v))} />
                 </Box>
 
-                {/* Separador sutil */}
                 <Box
                   sx={{
                     width: 1,
@@ -324,7 +403,6 @@ export default function Layout({ children }) {
                   }}
                 />
 
-                {/* Tema */}
                 <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
                   <IconButton
                     onClick={themeMode.toggle}
@@ -339,7 +417,6 @@ export default function Layout({ children }) {
                   </IconButton>
                 </Tooltip>
 
-                {/* hide values */}
                 <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
                   <IconButton
                     size="small"
@@ -361,23 +438,24 @@ export default function Layout({ children }) {
                 </Tooltip>
               </Stack>
 
-              {/* CTA */}
-              <Button
-                variant="contained"
-                onClick={() => setNewOpen(true)}
-                sx={{
-                  height: 36,
-                  borderRadius: 999,
-                  fontWeight: 850,
-                  px: 1.4,
-                  whiteSpace: "nowrap",
-                  boxShadow: "none",
-                }}
-              >
-                + Lançamento
-              </Button>
-            </Stack>
+              <Stack direction="row" spacing={0.8} alignItems="center">
+                <Button
+                  variant="contained"
+                  onClick={() => setNewOpen(true)}
+                  sx={{
+                    height: 36,
+                    borderRadius: 999,
+                    fontWeight: 850,
+                    px: 1.4,
+                    whiteSpace: "nowrap",
+                    boxShadow: "none",
+                  }}
+                >
+                  + Lançamento
+                </Button>
+              </Stack>
 
+            </Stack>
           </Toolbar>
         </AppBar>
 
