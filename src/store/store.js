@@ -4,6 +4,7 @@ import { loadState, saveState } from "./storage.js";
 import accountsReducer from './accountsSlice.js'
 import uiReducer from './uiSlice.js'
 import authReducer from './authSlice.js'
+import transactionsReducer from './transactionsSlice.js'
 
 const preloadedState = loadState();
 
@@ -12,7 +13,8 @@ export const store = configureStore({
     finance: financeReducer,
     accounts: accountsReducer,
     ui: uiReducer,
-    user: authReducer
+    user: authReducer,
+    transactions: transactionsReducer
   },
   preloadedState, // <-- traz do localStorage se existir
 });

@@ -35,6 +35,7 @@ import { formatMonthBR, formatDateBR } from "../utils/dateBR";
 import { categories } from "../data/mockCategories";
 import { selectHideValues } from "../store/uiSlice";
 
+import { selectTransactionsUi } from "../store/transactionsSlice";
 
 // -----------------------------
 // Helpers
@@ -260,7 +261,7 @@ function BRLTooltip({ label, payload }) {
 export default function Dashboard() {
   const theme = useTheme();
   const month = useSelector((s) => s.finance.month);
-  const txns = useSelector((s) => s.finance.txns);
+  const txns = useSelector(selectTransactionsUi);
   const accounts = useSelector((s) => s.accounts.accounts);
   const extraFilters = useSelector((s) => s.finance.filters);
 
@@ -516,7 +517,7 @@ export default function Dashboard() {
 
     return creditCards
       .map((a) => {
-        const dueISO = dueDateISO(month, a?.statement?.dueDay);
+        const dueISO = dueDateISO(month, a?.due_day);
         return {
           id: a.id,
           name: a.name,

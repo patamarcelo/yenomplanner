@@ -46,7 +46,8 @@ import { meThunk } from "../store/authSlice";
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import { logout } from "../store/authSlice";
 
-
+import { fetchAccountsThunk } from "../store/accountsSlice.js";
+import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
 
 
 const DRAWER_EXPANDED = 270;
@@ -143,10 +144,29 @@ export default function Layout({ children }) {
       return;
     }
 
+    // carrega /me
     if (!currentUser && authStatus !== "loading") {
-      dispatch(meThunk());
+      dispatch(meThunk())
+        .unwrap()
+        .then(() => {
+          dispatch(fetchAccountsThunk());
+        })
+        .catch(() => { });
+      return;
+    }
+
+    // se já tem user e ainda não carregou contas
+    if (currentUser) {
+      dispatch(fetchAccountsThunk());
     }
   }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
+
+
+  useEffect(() => {
+  dispatch(fetchAllTransactionsThunk());
+}, [dispatch]);
+
+
 
   // ✅ em páginas públicas, não renderiza drawer/appbar
   if (isPublicRoute) {
@@ -223,7 +243,7 @@ export default function Layout({ children }) {
       </Box>
 
       <Box sx={{ flex: 1 }} />
-      
+
       <Box
         sx={{
           p: collapsed ? 1 : 1.6,

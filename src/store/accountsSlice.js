@@ -1,92 +1,71 @@
 // src/store/accountsSlice.js
-import { createSlice, nanoid } from "@reduxjs/toolkit";
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { listAccounts, createAccount, updateAccount, deleteAccount } from "../api/accountsApi";
 
-const seedAccounts = [
-  {
-    id: "acc_checking_main",
-    type: "checking",
-    name: "Conta Corrente",
-    color: "rgba(0,0,0,0.08)",
-    active: true,
-    openingBalance: 0
-  },
-  {
-    id: "acc_cc_nubank",
-    type: "credit_card",
-    name: "Nubank",
-    color: "rgba(126, 33, 214, 0.18)",
-    active: true,
-    limit: 8000,
-    statement: { cutoffDay: 1, dueDay: 10 },
-  },
-  {
-    id: "acc_cc_xp",
-    type: "credit_card",
-    name: "XP",
-    color: "rgba(120,120,120,0.18)",
-    active: true,
-    limit: 12000,
-    statement: { cutoffDay: 5, dueDay: 15 },
-  },
-  {
-    id: "acc_cc_porto",
-    type: "credit_card",
-    name: "Porto",
-    color: "rgba(40, 95, 255, 0.16)",
-    active: true,
-    limit: 9000,
-    statement: { cutoffDay: 4, dueDay: 11 },
-  },
-];
+export const fetchAccountsThunk = createAsyncThunk("accounts/fetchAll", async () => {
+  return await listAccounts();
+});
+
+export const createAccountThunk = createAsyncThunk("accounts/create", async (payload) => {
+  return await createAccount(payload);
+});
+
+export const updateAccountThunk = createAsyncThunk("accounts/update", async ({ id, patch }) => {
+  return await updateAccount(id, patch);
+});
+
+export const deleteAccountThunk = createAsyncThunk("accounts/delete", async (id) => {
+  return await deleteAccount(id);
+});
 
 const initialState = {
-  accounts: seedAccounts,
+  accounts: [],
+  status: "idle",
+  error: "",
 };
 
 const accountsSlice = createSlice({
   name: "accounts",
   initialState,
   reducers: {
-    addAccount: {
-      reducer(state, action) {
-        state.accounts.unshift(action.payload);
-      },
-      prepare(payload) {
-        return {
-          payload: {
-            id: payload?.id || nanoid(),
-            type: payload?.type || "checking",
-            name: payload?.name || "Nova conta",
-            color: payload?.color || "rgba(0,0,0,0.08)",
-            active: payload?.active ?? true,
-            openingBalance: Number(payload?.openingBalance ?? 0),
-            limit: payload?.limit ?? null,
-            statement: payload?.statement ?? null,
-          },
-        };
-      },
+    // opcional: limpar no logout
+    resetAccounts(state) {
+      state.accounts = [];
+      state.status = "idle";
+      state.error = "";
     },
-    updateAccount(state, action) {
-      const { id, patch } = action.payload || {};
-      const idx = state.accounts.findIndex((a) => a.id === id);
-      if (idx >= 0) state.accounts[idx] = { ...state.accounts[idx], ...(patch || {}) };
-    },
-    removeAccount(state, action) {
-      const id = action.payload;
-      state.accounts = state.accounts.filter((a) => a.id !== id);
-    },
-    setAccountActive(state, action) {
-      const { id, active } = action.payload || {};
-      const acc = state.accounts.find((a) => a.id === id);
-      if (acc) acc.active = !!active;
-    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchAccountsThunk.pending, (s) => {
+        s.status = "loading";
+        s.error = "";
+      })
+      .addCase(fetchAccountsThunk.fulfilled, (s, a) => {
+        s.status = "succeeded";
+        s.accounts = a.payload || [];
+      })
+      .addCase(fetchAccountsThunk.rejected, (s, a) => {
+        s.status = "failed";
+        s.error = a.error.message || "Erro ao carregar contas";
+      })
+
+      .addCase(createAccountThunk.fulfilled, (s, a) => {
+        s.accounts.unshift(a.payload);
+      })
+      .addCase(updateAccountThunk.fulfilled, (s, a) => {
+        const idx = s.accounts.findIndex((x) => x.id === a.payload.id);
+        if (idx >= 0) s.accounts[idx] = a.payload;
+      })
+      .addCase(deleteAccountThunk.fulfilled, (s, a) => {
+        s.accounts = s.accounts.filter((x) => x.id !== a.payload);
+      });
   },
 });
 
-export const { addAccount, updateAccount, removeAccount, setAccountActive } = accountsSlice.actions;
+export const { resetAccounts } = accountsSlice.actions;
 export default accountsSlice.reducer;
 
-// selectors simples
 export const selectAccounts = (s) => s.accounts.accounts;
 export const selectActiveAccounts = (s) => s.accounts.accounts.filter((a) => a.active);
 export const selectAccountById = (id) => (s) => s.accounts.accounts.find((a) => a.id === id) || null;

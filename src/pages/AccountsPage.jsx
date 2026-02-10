@@ -18,17 +18,72 @@ import {
   Slider,
 } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
-import {
-  addAccount,
-  updateAccount,
-  removeAccount,
-  setAccountActive,
-  selectAccounts,
-} from "../store/accountsSlice";
 
 import { selectHideValues } from "../store/uiSlice";
 
+import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+
+import {
+  fetchAllTransactionsThunk,
+  selectTransactionsUi,
+} from "../store/transactionsSlice";
+
+import {
+  fetchAccountsThunk,
+  selectAccounts
+} from "../store/accountsSlice.js";
+
+
 // visual simples, apple-like (clean)
+function EmptyStateCard({ icon, title, subtitle, ctaLabel, onCta }) {
+  return (
+    <Card
+      variant="outlined"
+      sx={{
+        borderRadius: 2,
+        borderStyle: "dashed",
+        borderWidth: 1,
+      }}
+    >
+      <CardContent sx={{ py: 3 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: 2,
+              display: "grid",
+              placeItems: "center",
+              bgcolor: (t) => (t.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
+              border: (t) => `1px solid ${t.palette.divider}`,
+            }}
+          >
+            {icon}
+          </Box>
+
+          <Box sx={{ flex: 1, textAlign: { xs: "center", sm: "left" } }}>
+            <Typography sx={{ fontWeight: 950 }}>{title}</Typography>
+            <Typography variant="body2" sx={{ color: "text.secondary", mt: 0.25 }}>
+              {subtitle}
+            </Typography>
+          </Box>
+
+          <Button
+            onClick={onCta}
+            variant="contained"
+            startIcon={<AddRoundedIcon />}
+            sx={{ fontWeight: 900, borderRadius: 999, px: 2 }}
+          >
+            {ctaLabel}
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
 const pageSx = {
   maxWidth: 1100,
   mx: "auto",
@@ -105,6 +160,36 @@ function safeActive(a) {
   return a?.active !== false;
 }
 
+function slugify(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .slice(0, 50);
+}
+
+/** resolve txns antigas com cardId ("xp") para accounts novas (legado) */
+function resolveTxnAccountId(tx, accounts) {
+  if (tx?.accountId) return tx.accountId;
+
+  const legacy = tx?.cardId; // "xp" | "nubank" | "porto"
+  if (!legacy) return "";
+
+  const found = (accounts || []).find(
+    (a) => a?.type === "credit_card" && String(a?.externalId || a?.external_id || "").endsWith(`_${legacy}`)
+  );
+  return found?.id || "";
+}
+
+function usedCreditAmount(tx) {
+  const v = Number(tx?.amount || 0);
+  if (!Number.isFinite(v)) return 0;
+
+  // estorno / crédito (income) reduz o “usado”
+  if (tx?.direction === "income") return -v;
+  return v;
+}
 
 function AccountFormDialog({ open, onClose, initial }) {
   const dispatch = useDispatch();
@@ -115,6 +200,7 @@ function AccountFormDialog({ open, onClose, initial }) {
   // estado base
   const [type, setType] = useState(initial?.type || "credit_card");
   const [name, setName] = useState(initial?.name || "");
+  const [externalId, setExternalId] = useState(initial?.externalId || initial?.external_id || "");
   const [openingBalance, setOpeningBalance] = useState(String(initial?.openingBalance ?? 0));
 
   // cor via picker + alpha
@@ -131,11 +217,11 @@ function AccountFormDialog({ open, onClose, initial }) {
     initial?.type === "credit_card" ? String(initial?.statement?.dueDay ?? 10) : "10"
   );
 
-  // quando abrir para editar outro item, sincroniza campos
   useEffect(() => {
     const init = initial || null;
     setType(init?.type || "credit_card");
     setName(init?.name || "");
+    setExternalId(init?.externalId || init?.external_id || "");
     setOpeningBalance(String(init?.openingBalance ?? 0));
     setHexColor(rgbaToHex(init?.color || "rgba(0,0,0,0.08)"));
     setAlpha(rgbaToAlpha(init?.color || "rgba(0,0,0,0.08)"));
@@ -148,6 +234,7 @@ function AccountFormDialog({ open, onClose, initial }) {
     const init = initial || null;
     setType(init?.type || "credit_card");
     setName(init?.name || "");
+    setExternalId(init?.externalId || init?.external_id || "");
     setOpeningBalance(String(init?.openingBalance ?? 0));
     setHexColor(rgbaToHex(init?.color || "rgba(0,0,0,0.08)"));
     setAlpha(rgbaToAlpha(init?.color || "rgba(0,0,0,0.08)"));
@@ -186,10 +273,17 @@ function AccountFormDialog({ open, onClose, initial }) {
     const err = validate();
     if (err) return alert(err);
 
+    const nm = (name || "").trim();
+
+    const autoExternal =
+      externalId?.trim() ||
+      `acc_${type === "credit_card" ? "cc" : "checking"}_${slugify(nm)}`; // ex: acc_cc_nubank
+
     const payload = {
+      externalId: autoExternal,
       type,
-      name: (name || "").trim(),
-      color, // ✅ sempre rgba gerado do picker
+      name: nm,
+      color,
       active: initial?.active ?? true,
       openingBalance: Number(openingBalance || 0),
     };
@@ -202,8 +296,8 @@ function AccountFormDialog({ open, onClose, initial }) {
       payload.statement = null;
     }
 
-    if (isEdit) dispatch(updateAccount({ id: initial.id, patch: payload }));
-    else dispatch(addAccount(payload));
+    if (isEdit) dispatch(updateAccountThunk({ id: initial.id, patch: payload }));
+    else dispatch(createAccountThunk(payload));
 
     handleClose();
   }
@@ -215,18 +309,12 @@ function AccountFormDialog({ open, onClose, initial }) {
       <DialogContent>
         <Stack spacing={1.4} sx={{ mt: 1 }}>
           <Stack direction="row" spacing={1.2} alignItems="flex-start">
-            <TextField
-              label="Tipo"
-              select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              fullWidth
-            >
+            <TextField label="Tipo" select value={type} onChange={(e) => setType(e.target.value)} fullWidth>
               <MenuItem value="credit_card">Cartão de crédito</MenuItem>
               <MenuItem value="checking">Conta corrente</MenuItem>
             </TextField>
 
-            {/* cor (compacto e bonito) */}
+            {/* cor */}
             <Stack spacing={0.8} sx={{ minWidth: 240, flex: 1 }}>
               <Typography variant="caption" sx={{ fontWeight: 800 }}>
                 Cor
@@ -237,10 +325,7 @@ function AccountFormDialog({ open, onClose, initial }) {
                   type="color"
                   value={hexColor}
                   onChange={(e) => setHexColor(e.target.value)}
-                  sx={{
-                    width: 64,
-                    "& input": { padding: 0, height: 44, cursor: "pointer" },
-                  }}
+                  sx={{ width: 64, "& input": { padding: 0, height: 44, cursor: "pointer" } }}
                 />
                 <Box
                   sx={{
@@ -271,7 +356,7 @@ function AccountFormDialog({ open, onClose, initial }) {
               </Stack>
 
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {color}
+                {maskMoney(color)}
               </Typography>
             </Stack>
           </Stack>
@@ -282,6 +367,14 @@ function AccountFormDialog({ open, onClose, initial }) {
             onChange={(e) => setName(e.target.value)}
             fullWidth
             placeholder="Ex: Porto, Nubank, Conta Corrente"
+          />
+
+          <TextField
+            label="External ID (opcional)"
+            value={externalId}
+            onChange={(e) => setExternalId(e.target.value)}
+            fullWidth
+            placeholder='Ex: "acc_cc_nubank" (se vazio, gera automático)'
           />
 
           {type === "credit_card" ? (
@@ -350,45 +443,30 @@ function AccountFormDialog({ open, onClose, initial }) {
   );
 }
 
-/** resolve txns antigas com cardId ("xp") para accounts novas com id tipo "acc_cc_xp" */
-function resolveTxnAccountId(tx, accounts) {
-  if (tx?.accountId) return tx.accountId;
-
-  const legacy = tx?.cardId; // "xp" | "nubank" | "porto"
-  if (!legacy) return "";
-
-  // tenta match por sufixo (acc_cc_xp)
-  const found = (accounts || []).find(
-    (a) => a?.type === "credit_card" && String(a.id || "").endsWith(`_${legacy}`)
-  );
-  return found?.id || "";
-}
-
-function usedCreditAmount(tx) {
-  const v = Number(tx?.amount || 0);
-  if (!Number.isFinite(v)) return 0;
-
-  // estorno / crédito (income) reduz o “usado”
-  if (tx?.direction === "income") return -v;
-  return v;
-}
-
 export default function AccountsPage() {
   const dispatch = useDispatch();
   const accounts = useSelector(selectAccounts);
-  const txns = useSelector((s) => s.finance.txns || []);
+
+  const txns = useSelector(selectTransactionsUi);
+  const hideValues = useSelector(selectHideValues);
+  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
+
+  useEffect(() => {
+  dispatch(fetchAccountsThunk());
+  dispatch(fetchAllTransactionsThunk());
+}, [dispatch]);
+
 
   const [openNew, setOpenNew] = useState(false);
   const [editAcc, setEditAcc] = useState(null);
+  const [newType, setNewType] = useState("credit_card"); // 👈 novo
+
 
   const activeCount = useMemo(() => (accounts || []).filter((a) => safeActive(a)).length, [accounts]);
   const cardsOnly = useMemo(() => (accounts || []).filter((a) => a.type === "credit_card"), [accounts]);
   const checkingOnly = useMemo(() => (accounts || []).filter((a) => a.type === "checking"), [accounts]);
 
-  const hideValues = useSelector(selectHideValues);
-  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
-
-  // Totais cartões
+  // Totais cartões (ainda usando txns do front, mas sem quebrar)
   const { totalCardLimit, totalCardOpen, totalCardAvailable } = useMemo(() => {
     const activeCards = (cardsOnly || []).filter((a) => safeActive(a));
     const limitTotal = activeCards.reduce((acc, a) => acc + Number(a?.limit || 0), 0);
@@ -402,7 +480,7 @@ export default function AccountsPage() {
       if (!accObj || accObj.type !== "credit_card") continue;
       if (accObj.active === false) continue;
 
-      if (t?.status === "pago") continue; // em aberto = não pago
+      if (t?.status === "paid") continue; // em aberto = não pago
       usedOpen += usedCreditAmount(t);
     }
 
@@ -413,7 +491,6 @@ export default function AccountsPage() {
     };
   }, [accounts, cardsOnly, txns]);
 
-  // Total saldo contas correntes
   const totalCheckingBalance = useMemo(() => {
     return (checkingOnly || []).reduce((acc, a) => {
       const balance = calcAccountBalance(a, txns);
@@ -434,103 +511,137 @@ export default function AccountsPage() {
               <b>{checkingOnly.length}</b>
             </Typography>
           </Box>
+          {
+            cardsOnly.length > 0 && checkingOnly.length > 0 && (
+              <Button
+                variant="contained"
+                sx={{ fontWeight: 900 }}
+                onClick={() => {
+                  setNewType("credit_card");
+                  setOpenNew(true);
+                }}
+              >
+                + Nova conta
+              </Button>
 
-          <Button variant="contained" sx={{ fontWeight: 900 }} onClick={() => setOpenNew(true)}>
-            + Nova conta
-          </Button>
+            )
+          }
+
         </Stack>
 
         <Divider />
 
         {/* Cartões */}
-        <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mt: 0.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-            Cartões de crédito
-          </Typography>
+        {
+          cardsOnly.length > 0 && (
 
-          <Stack direction="row" spacing={2} alignItems="baseline" sx={{ flexWrap: "wrap" }}>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Limite total: <b>{maskMoney(moneyBRL(totalCardLimit))}</b>
-            </Typography>
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Em aberto: <b>{maskMoney(moneyBRL(totalCardOpen))}</b>
-            </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 950 }}>
-              Disponível: {maskMoney(moneyBRL(totalCardAvailable))}
-            </Typography>
-          </Stack>
-        </Stack>
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mt: 0.5 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
+                Cartões de crédito
+              </Typography>
 
+              <Stack direction="row" spacing={2} alignItems="baseline" sx={{ flexWrap: "wrap" }}>
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                  Limite total: <b>{maskMoney(moneyBRL(totalCardLimit))}</b>
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                  Em aberto: <b>{maskMoney(moneyBRL(totalCardOpen))}</b>
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 950 }}>
+                  Disponível: {maskMoney(moneyBRL(totalCardAvailable))}
+                </Typography>
+              </Stack>
+            </Stack>
+
+          )
+        }
         <Stack spacing={1.2}>
-          {cardsOnly.map((a) => (
-            <Card
-              key={a.id}
-              variant="outlined"
-              sx={{
-                borderRadius: 2,
-                borderColor: softBorder(a.color, 0.25),
-                borderWidth: 1,
-                transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                "&:hover": {
-                  borderColor: softBorder(a.color, 0.45),
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
-                },
+
+          {cardsOnly.length === 0 ? (
+            <EmptyStateCard
+              icon={<CreditCardRoundedIcon sx={{ fontSize: 30, opacity: 0.9 }} />}
+              title="Nenhum cartão cadastrado ainda"
+              subtitle="Cadastre seus cartões para controlar limite, corte e vencimento por fatura."
+              ctaLabel="Cadastrar cartão"
+              onCta={() => {
+                setNewType("credit_card");
+                setOpenNew(true);
               }}
-            >
-              <CardContent>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                  <Stack direction="row" spacing={3.5} alignItems="center">
-                    <Typography sx={{ fontSize: 32, lineHeight: "32px" }}>💳</Typography>
+            />
+          ) : (
+            cardsOnly.map((a) => (
+              <Card
+                key={a.id}
+                variant="outlined"
+                sx={{
+                  borderRadius: 2,
+                  borderColor: softBorder(a.color, 0.25),
+                  borderWidth: 1,
+                  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                  "&:hover": {
+                    borderColor: softBorder(a.color, 0.45),
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+                  },
+                }}
+              >
+                <CardContent>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                    <Stack direction="row" spacing={3.5} alignItems="center">
+                      <Typography sx={{ fontSize: 32, lineHeight: "32px" }}>💳</Typography>
 
-                    <Stack spacing={0.6}>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography sx={{ fontWeight: 950 }}>{a.name}</Typography>
-                        <AccountTypePill type={a.type} />
-                        {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
+                      <Stack spacing={0.6}>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Typography sx={{ fontWeight: 950 }}>{a.name}</Typography>
+                          <AccountTypePill type={a.type} />
+                          {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
+                        </Stack>
+
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                          Limite: <b>{maskMoney(moneyBRL(a.limit))}</b>
+                        </Typography>
+
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                          Corte: dia <b>{a?.statement?.cutoffDay ?? "—"}</b> • Vencimento: dia{" "}
+                          <b>{a?.statement?.dueDay ?? "—"}</b>
+                        </Typography>
+
+                        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                          external_id: <b>{a.externalId || a.external_id || "—"}</b>
+                        </Typography>
                       </Stack>
+                    </Stack>
 
-                      <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                        Limite: <b>{maskMoney(moneyBRL(a.limit))}</b>
-                      </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() =>
+                          dispatch(updateAccountThunk({ id: a.id, patch: { ...a, active: !safeActive(a) } }))
+                        }
+                      >
+                        {safeActive(a) ? "Desativar" : "Ativar"}
+                      </Button>
 
-                      <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                        Corte: dia <b>{a?.statement?.cutoffDay ?? "—"}</b> • Vencimento: dia{" "}
-                        <b>{a?.statement?.dueDay ?? "—"}</b>
-                      </Typography>
+                      <Button size="small" variant="outlined" onClick={() => setEditAcc(a)}>
+                        Editar
+                      </Button>
+
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        onClick={() => {
+                          const ok = window.confirm(`Remover "${a.name}"?`);
+                          if (ok) dispatch(deleteAccountThunk(a.id));
+                        }}
+                      >
+                        Remover
+                      </Button>
                     </Stack>
                   </Stack>
-
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => dispatch(setAccountActive({ id: a.id, active: !safeActive(a) }))}
-                    >
-                      {safeActive(a) ? "Desativar" : "Ativar"}
-                    </Button>
-
-                    <Button size="small" variant="outlined" onClick={() => setEditAcc(a)}>
-                      Editar
-                    </Button>
-
-                    <Button
-                      size="small"
-                      color="error"
-                      variant="outlined"
-                      onClick={() => {
-                        const ok = window.confirm(
-                          `Remover "${a.name}"? (isso não apaga lançamentos já existentes)`
-                        );
-                        if (ok) dispatch(removeAccount(a.id));
-                      }}
-                    >
-                      Remover
-                    </Button>
-                  </Stack>
-                </Stack>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            )))}
         </Stack>
 
         <Divider sx={{ my: 1.5 }} />
@@ -549,83 +660,104 @@ export default function AccountsPage() {
         </Stack>
 
         <Stack spacing={1.2}>
-          {checkingOnly.map((a) => {
-            const balance = calcAccountBalance(a, txns);
+          {checkingOnly.length === 0 ? (
+            <EmptyStateCard
+              icon={<AccountBalanceRoundedIcon sx={{ fontSize: 30, opacity: 0.9 }} />}
+              title="Nenhuma conta corrente cadastrada ainda"
+              subtitle="Cadastre sua conta para acompanhar saldo e movimentações."
+              ctaLabel="Cadastrar conta"
+              onCta={() => {
+                setNewType("checking");
+                setOpenNew(true);
+              }}
+            />
+          ) : (
+            checkingOnly.map((a) => {
+              const balance = calcAccountBalance(a, txns);
 
-            return (
-              <Card
-                key={a.id}
-                variant="outlined"
-                sx={{
-                  borderRadius: 2,
-                  borderColor: softBorder(a.color, 0.25),
-                  borderWidth: 1,
-                  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                  "&:hover": {
-                    borderColor: softBorder(a.color, 0.45),
-                    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
-                  },
-                }}
-              >
-                <CardContent>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                    <Stack direction="row" spacing={3.5} alignItems="center">
-                      <Typography sx={{ fontSize: 32, lineHeight: "32px" }}>🏦</Typography>
+              return (
+                <Card
+                  key={a.id}
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: softBorder(a.color, 0.25),
+                    borderWidth: 1,
+                    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                    "&:hover": {
+                      borderColor: softBorder(a.color, 0.45),
+                      boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+                    },
+                  }}
+                >
+                  <CardContent>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                      <Stack direction="row" spacing={3.5} alignItems="center">
+                        <Typography sx={{ fontSize: 32, lineHeight: "32px" }}>🏦</Typography>
 
-                      <Stack spacing={0.6}>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography sx={{ fontWeight: 950 }}>{a.name}</Typography>
-                          <AccountTypePill type={a.type} />
-                          {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
+                        <Stack spacing={0.6}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography sx={{ fontWeight: 950 }}>{a.name}</Typography>
+                            <AccountTypePill type={a.type} />
+                            {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
+                          </Stack>
+
+                          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                            Sem fatura (usa data de cobrança).
+                          </Typography>
+
+                          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                            Saldo atual: <b>{maskMoney(moneyBRL(balance))}</b>
+                          </Typography>
+
+                          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                            external_id: <b>{a.externalId || a.external_id || "—"}</b>
+                          </Typography>
                         </Stack>
+                      </Stack>
 
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                          Sem fatura (usa data de cobrança).
-                        </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() =>
+                            dispatch(updateAccountThunk({ id: a.id, patch: { ...a, active: !safeActive(a) } }))
+                          }
+                        >
+                          {safeActive(a) ? "Desativar" : "Ativar"}
+                        </Button>
 
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                          Saldo atual: <b>{maskMoney(moneyBRL(balance))}</b>
-                        </Typography>
+                        <Button size="small" variant="outlined" onClick={() => setEditAcc(a)}>
+                          Editar
+                        </Button>
+
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          onClick={() => {
+                            const ok = window.confirm(`Remover "${a.name}"?`);
+                            if (ok) dispatch(deleteAccountThunk(a.id));
+                          }}
+                        >
+                          Remover
+                        </Button>
                       </Stack>
                     </Stack>
-
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => dispatch(setAccountActive({ id: a.id, active: !safeActive(a) }))}
-                      >
-                        {safeActive(a) ? "Desativar" : "Ativar"}
-                      </Button>
-
-                      <Button size="small" variant="outlined" onClick={() => setEditAcc(a)}>
-                        Editar
-                      </Button>
-
-                      <Button
-                        size="small"
-                        color="error"
-                        variant="outlined"
-                        onClick={() => {
-                          const ok = window.confirm(
-                            `Remover "${a.name}"? (isso não apaga lançamentos já existentes)`
-                          );
-                          if (ok) dispatch(removeAccount(a.id));
-                        }}
-                      >
-                        Remover
-                      </Button>
-                    </Stack>
-                  </Stack>
-                </CardContent>
-              </Card>
-            );
-          })}
+                  </CardContent>
+                </Card>
+              );
+            }))}
         </Stack>
       </Stack>
 
       {/* dialog new */}
-      <AccountFormDialog open={openNew} onClose={() => setOpenNew(false)} initial={null} />
+      <AccountFormDialog
+        open={openNew}
+        onClose={() => setOpenNew(false)}
+        initial={{ type: newType }} // 👈 pré-seleciona o tipo
+      />
+
 
       {/* dialog edit */}
       <AccountFormDialog open={!!editAcc} onClose={() => setEditAcc(null)} initial={editAcc} />

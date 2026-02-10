@@ -1,24 +1,47 @@
-import React, { useMemo } from "react";
+// src/pages/Transactions.jsx
+import React, { useEffect, useMemo } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { Stack, Typography } from "@mui/material";
 import TransactionsGrid from "../components/TransactionsGrid";
 import { setMonth } from "../store/financeSlice";
+import {
+  fetchAllTransactionsThunk,
+  selectTransactionsFiltered,
+  selectTransactionsStatus,
+  selectTransactionsError,
+} from "../store/transactionsSlice";
 
 export default function Transactions() {
   const dispatch = useDispatch();
+
   const month = useSelector((s) => s.finance.month);
-  const txns = useSelector((s) => s.finance.txns);
+  const rows = useSelector(selectTransactionsFiltered);
+  const status = useSelector(selectTransactionsStatus);
+  const error = useSelector(selectTransactionsError);
+
+  useEffect(() => {
+    // ✅ busca uma vez ao entrar na página
+    dispatch(fetchAllTransactionsThunk());
+  }, [dispatch]);
 
   const all = useMemo(() => {
-    const list = Array.isArray(txns) ? txns : [];
+    const list = Array.isArray(rows) ? rows : [];
     return list.slice().sort((a, b) => (a?.chargeDate < b?.chargeDate ? 1 : -1));
-  }, [txns]);
+  }, [rows]);
 
   return (
     <Stack spacing={1.6}>
-      <Typography variant="body2" sx={{ color: "text.secondary" }}>
-        Linhas com destaque por cartão. Filtro por mês = fatura.
-      </Typography>
+      {status === "loading" ? (
+        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+          Carregando...
+        </Typography>
+      ) : null}
+
+      {error ? (
+        <Typography variant="body2" sx={{ color: "error.main" }}>
+          {String(error)}
+        </Typography>
+      ) : null}
 
       <TransactionsGrid
         rows={all}

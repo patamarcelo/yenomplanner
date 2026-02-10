@@ -32,7 +32,9 @@ import { formatBRL } from "../utils/money";
 import { formatDateBR, formatMonthBR } from "../utils/dateBR";
 
 // ✅ agora existem no slice (você já adicionou)
-import { updateTransaction, removeTransaction } from "../store/financeSlice";
+// import { updateTransaction, removeTransaction } from "../store/financeSlice";
+import { patchTransactionThunk, deleteTransactionThunk } from "../store/transactionsSlice";
+
 
 // =========================
 // Helpers: BRL input/output
@@ -247,7 +249,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
       categoryId,
       kind,
       status,
-      amount: Number(v),
+      amount: formatNumberToBrlInput(v) // "1234,56"
     });
   }
 
@@ -448,9 +450,19 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const [selectedTxn, setSelectedTxn] = useState(null);
 
   const MONTH_ALL = "__ALL__";
+
   const monthOptions = useMemo(() => {
-    return Array.from(new Set(safeRows.map((r) => r?.invoiceMonth).filter(Boolean))).sort();
+    const list = Array.from(
+      new Set((safeRows || []).map((r) => String(r?.invoiceMonth || "")).filter(Boolean))
+    ).sort().reverse();
+    return list;
   }, [safeRows]);
+
+  const monthSelectValue = useMemo(() => {
+    const v = month === "" || month == null ? MONTH_ALL : month;
+    if (v === MONTH_ALL) return v;
+    return monthOptions.includes(v) ? v : MONTH_ALL;
+  }, [month, monthOptions]);
 
   const merchantQ = merchantQuery.trim().toLowerCase();
   const descQ = descriptionQuery.trim().toLowerCase();
@@ -466,7 +478,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
       const txn = getRowShape(row);
       const ok = window.confirm(`Excluir lançamento "${txn?.merchant || "—"}" (${formatBRL(txn?.amount)})?`);
       if (!ok) return;
-      dispatch(removeTransaction(txn.id));
+      dispatch(deleteTransactionThunk(txn.id));
     },
     [dispatch]
   );
@@ -474,7 +486,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const handleSaveEdit = useCallback(
     (patch) => {
       // ✅ financeSlice.updateTransaction espera { id, patch }
-      dispatch(updateTransaction({ id: patch?.id, patch }));
+      dispatch(patchTransactionThunk({ id: patch?.id, patch }));
       setEditOpen(false);
       setSelectedTxn(null);
     },
@@ -485,7 +497,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
     return safeRows.filter((r) => {
       if (!r) return false;
 
-      if (month && r.invoiceMonth !== month) return false;
+      if (month && String(r.invoiceMonth || "") !== String(month)) return false;
 
       if ((purchaseFrom || purchaseTo) && !inDateRange(r.purchaseDate, purchaseFrom, purchaseTo)) return false;
 
@@ -694,12 +706,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
               size="small"
               value={current}
               onChange={(e) =>
-                dispatch(
-                  updateTransaction({
-                    id: row.id,
-                    patch: { status: e.target.value },
-                  })
-                )
+                dispatch(patchTransactionThunk({ id: row.id, patch: { status: e.target.value } }))
               }
               SelectProps={{ displayEmpty: true }}
               sx={{
@@ -752,8 +759,6 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
     ],
     [accounts, accountsById, dispatch, handleEdit, handleDelete]
   );
-
-  const monthSelectValue = month === "" || month == null ? MONTH_ALL : month;
 
   return (
     <Box>
