@@ -23,7 +23,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { categories } from "../data/mockCategories";
 import { splitInstallments } from "../utils/splitInstallments";
 import { formatBRL } from "../utils/money";
-import { computeInvoiceMonthFromPurchase, ymFromDate } from "../utils/billingDates";
+import { computeInvoiceMonthFromPurchase, ymFromDate } from "../utils/billingDates.js";
 import { formatMonthBR } from "../utils/dateBR";
 
 import { createTransactionThunk } from "../store/transactionsSlice";
