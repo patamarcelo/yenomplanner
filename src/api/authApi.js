@@ -1,16 +1,17 @@
 import { api } from "./client";
 
-export async function signup(payload) {
-  const { data } = await api.post("/usuario/users/", payload);
-  return data;
-}
-
 export async function login(payload) {
-  const { data } = await api.post("/auth/", payload);
-  return data;
-}
+  console.log("[LOGIN] payload recebido:", payload);
+  console.log("[LOGIN] POST:", (api.defaults.baseURL || "") + "/auth/");
 
-export async function fetchMe() {
-  const { data } = await api.get("/usuario/users/me/");
-  return data;
+  try {
+    const { data } = await api.post("/auth/", payload);
+    console.log("[LOGIN] OK response:", data);
+    return data;
+  } catch (err) {
+    console.log("[LOGIN] ERRO status:", err?.response?.status);
+    console.log("[LOGIN] ERRO response.data:", err?.response?.data);
+    console.log("[LOGIN] ERRO message:", err?.message);
+    throw err;
+  }
 }
