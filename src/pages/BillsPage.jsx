@@ -172,6 +172,34 @@ function parseBRLInputHandlePay(value) {
     return n;
 }
 
+function MsIcon({ name, size = 18, color = "inherit" }) {
+        if (!name) return null;
+
+        // se for emoji (ou qualquer char não-“word”), renderiza como texto
+        const isEmojiLike = /[^\w_]/.test(String(name));
+        if (isEmojiLike) {
+            return <span style={{ fontSize: size, lineHeight: 1, color }}>{name}</span>;
+        }
+
+        return (
+            <span
+                className="material-symbols-rounded"
+                style={{
+                    fontSize: size,
+                    lineHeight: 1,
+                    color,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginLeft: '10px',
+                }}
+                aria-hidden="true"
+            >
+                {name}
+            </span>
+        );
+    }
+
 const ICON_MAP = {
     home: "🏠",
     shopping_cart: "🛒",
@@ -508,7 +536,7 @@ function BillsFormDialog({ open, onClose, initial }) {
                             {(categories || []).map((c) => (
                                 <MenuItem key={c.id} value={c.slug}>
                                     <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
-                                        <span style={{ width: 18, textAlign: "center" }}>{pickCategoryIcon(c)}</span>
+                                            <MsIcon name={(c.icon || "").trim() || "tag"} size={18} />
                                         <span style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{c.name}</span>
                                     </Stack>
                                 </MenuItem>
@@ -1043,39 +1071,35 @@ export default function BillsPage() {
         if (st === "due_today") return <Chip size="small" label="Vence hoje" color="warning" variant="filled" />;
         return <Chip size="small" label="Previsto" variant="outlined" />;
     }
+
     
+
 
     function CategoryChip({ cat, size = "small" }) {
         if (!cat) return <Chip size={size} label="—" variant="outlined" />;
 
         const dot = cat.color || "rgba(2,6,23,0.22)";
-        const iconTxt = pickCategoryIcon(cat);
+        const iconTxt = (cat.icon || "").trim();
 
         return (
             <Chip
                 size={size}
                 variant="outlined"
-                label={
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                        <span style={{ fontSize: 14, lineHeight: 1 }}>{iconTxt}</span>
-                        <span style={{ fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {cat.name}
-                        </span>
-                    </span>
+                label={cat.name}
+                icon={
+                    iconTxt
+                        ? <MsIcon name={iconTxt} size={18} />
+                        : <span style={{ width: 10, height: 10, borderRadius: 6, background: dot, display: "inline-block" }} />
                 }
                 sx={{
                     fontWeight: 900,
                     borderColor: dot,
                     bgcolor: alpha(dot, 0.10),
-                    maxWidth: "100%",
-                    padding: '10px',
-                    minHeight: '30px',
-                    "& .MuiChip-label": { display: "block", minWidth: 0 },
+                    "& .MuiChip-icon": { marginLeft: 0 },
                 }}
             />
         );
     }
-
 
 
     const today = todayISO();
@@ -1403,13 +1427,10 @@ export default function BillsPage() {
                                     <MenuItem value="all">Todas</MenuItem>
 
                                     {categoryOptions.map((c) => {
-                                        const dot = c.color || "rgba(2,6,23,0.22)";
                                         return (
                                             <MenuItem key={c.id} value={String(c.id)}>
                                                 <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, width: "100%" }}>
-                                                    <Box sx={{ width: 18, textAlign: "center", fontSize: 14, lineHeight: 1 }}>
-                                                        {pickCategoryIcon(c)}
-                                                    </Box>
+                                                        <MsIcon name={(c.icon || "").trim() || "tag"} size={18} />
 
                                                     <Typography noWrap sx={{ fontWeight: 900, flex: 1, minWidth: 0, marginLeft: '10px' }}>
                                                         {c.name}
@@ -1556,7 +1577,7 @@ export default function BillsPage() {
                                                                     const cat = resolveCategoryFromBill(b);
                                                                     return (
                                                                         <Stack direction="row" alignItems="center" gap={1} sx={{ mt: 0.6, flexWrap: "wrap", p: 1 }}>
-                                                                            <CategoryChip cat={cat}/>
+                                                                            <CategoryChip cat={cat} />
                                                                             <Typography variant="body2" sx={{ color: "text.secondary", mt: 0.5 }}>
                                                                                 • Favorecido: <b>{b.payee || "—"}</b>
                                                                             </Typography>
