@@ -27,6 +27,9 @@ import {
     selectAuthError,
 } from "../store/authSlice";
 
+import CircularProgress from "@mui/material/CircularProgress";
+
+
 export default function LoginPage() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
@@ -78,9 +81,10 @@ export default function LoginPage() {
 
         try {
             await dispatch(loginThunk(payload)).unwrap();
-            await dispatch(meThunk()).unwrap();
+            // await dispatch(meThunk()).unwrap();
             navigate("/"); // ajuste se necessário
         } catch (err) {
+            console.log('erro de login : ', err)
             setLocalError("Não foi possível entrar. Verifique e-mail e senha.");
         }
     }
@@ -165,6 +169,7 @@ export default function LoginPage() {
                                 variant="contained"
                                 disabled={!canSubmit || loading}
                                 sx={{ fontWeight: 900, py: 1.2, borderRadius: 2 }}
+                                startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
                             >
                                 {loading ? "Entrando..." : "Entrar"}
                             </Button>
