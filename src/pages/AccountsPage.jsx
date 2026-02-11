@@ -32,7 +32,10 @@ import {
 
 import {
   fetchAccountsThunk,
-  selectAccounts
+  selectAccounts,
+  createAccountThunk,
+  updateAccountThunk,
+  deleteAccountThunk
 } from "../store/accountsSlice.js";
 
 
