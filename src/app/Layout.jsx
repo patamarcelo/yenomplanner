@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -41,15 +41,12 @@ import { toggleHideValues, selectHideValues } from "../store/uiSlice";
 import { alpha } from "@mui/material/styles";
 
 import DashboardFilters from "../components/DashboardFilters.jsx";
-import { meThunk } from "../store/authSlice";
+import { meThunk, logout } from "../store/authSlice";
 
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
-import { logout } from "../store/authSlice";
-
 import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
-
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -137,38 +134,54 @@ export default function Layout({ children }) {
     return hit?.label || "Finance";
   }, [location.pathname]);
 
-  // ✅ Guard de auth + bootstrap do /me
-  useEffect(() => {
-    if (isPublicRoute) return;
+  // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
+  const bootstrappedRef = useRef(false);
 
+  // ✅ Guard de auth + bootstrap do /me + carregar dados (somente logado)
+  useEffect(() => {
+    // rota pública: não faz nada
+    if (isPublicRoute) {
+      bootstrappedRef.current = false; // quando sair e voltar, permite bootstrap de novo
+      return;
+    }
+
+    // sem token: manda login e não busca nada
     if (!token) {
+      bootstrappedRef.current = false;
       navigate("/login", { replace: true });
       return;
     }
 
-    // carrega /me
+    // já bootstrapou nesta sessão do Layout? evita disparar de novo
+    if (bootstrappedRef.current) return;
+
+    // se não tem usuário ainda, carrega /me primeiro
     if (!currentUser && authStatus !== "loading") {
       dispatch(meThunk())
         .unwrap()
         .then(() => {
+          // ✅ agora sim pode carregar dados
           dispatch(fetchAccountsThunk());
+          dispatch(fetchAllTransactionsThunk());
+          bootstrappedRef.current = true;
         })
-        .catch(() => { });
+        .catch(() => {
+          // token inválido / expirado etc.
+          bootstrappedRef.current = false;
+          dispatch(logout());
+          navigate("/login", { replace: true });
+        });
+
       return;
     }
 
-    // se já tem user e ainda não carregou contas
+    // se já tem usuário, carrega dados direto
     if (currentUser) {
       dispatch(fetchAccountsThunk());
+      dispatch(fetchAllTransactionsThunk());
+      bootstrappedRef.current = true;
     }
   }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
-
-
-  useEffect(() => {
-  dispatch(fetchAllTransactionsThunk());
-}, [dispatch]);
-
-
 
   // ✅ em páginas públicas, não renderiza drawer/appbar
   if (isPublicRoute) {
@@ -187,13 +200,11 @@ export default function Layout({ children }) {
     }),
   };
 
-
-
   function handleLogout() {
+    bootstrappedRef.current = false;
     dispatch(logout());
     navigate("/login", { replace: true });
   }
-
 
   const DrawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
@@ -279,7 +290,6 @@ export default function Layout({ children }) {
         )}
       </Box>
 
-
       <Divider sx={{ opacity: 0.8 }} />
 
       <Box sx={{ p: collapsed ? 1 : 1.6 }}>
@@ -294,7 +304,7 @@ export default function Layout({ children }) {
               fontWeight: 900,
               justifyContent: "center",
               px: 1.6,
-              color: "#dc2626", // vermelho
+              color: "#dc2626",
               border: "1px solid rgba(220,38,38,0.35)",
               bgcolor: "rgba(220,38,38,0.08)",
               "&:hover": {
@@ -325,10 +335,6 @@ export default function Layout({ children }) {
           </Tooltip>
         )}
       </Box>
-
-
-
-
     </Box>
   );
 
@@ -476,7 +482,6 @@ export default function Layout({ children }) {
                   + Lançamento
                 </Button>
               </Stack>
-
             </Stack>
           </Toolbar>
         </AppBar>
