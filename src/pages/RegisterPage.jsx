@@ -1,8 +1,7 @@
+// src/pages/RegisterPage.jsx
 import React, { useMemo, useState } from "react";
 import {
     Box,
-    Card,
-    CardContent,
     Typography,
     TextField,
     Button,
@@ -22,12 +21,7 @@ import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import PhoneIphoneRoundedIcon from "@mui/icons-material/PhoneIphoneRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 
-import {
-    signupThunk,
-    meThunk,
-    selectAuthStatus,
-    selectAuthError,
-} from "../store/authSlice";
+import { signupThunk, meThunk, selectAuthStatus, selectAuthError } from "../store/authSlice";
 
 function normalizePhoneBR(v) {
     return String(v || "").replace(/\D/g, "").slice(0, 11);
@@ -96,155 +90,156 @@ export default function RegisterPage() {
         try {
             await dispatch(signupThunk(payload)).unwrap();
             await dispatch(meThunk()).unwrap();
-            navigate("/"); // ajuste se seu "home" for outra rota
+            navigate("/");
         } catch (err) {
-            // erro já vem no slice; aqui só garante mensagem fallback
             setLocalError("Não foi possível criar a conta. Verifique os dados e tente novamente.");
         }
     }
 
     return (
-        <Box
-            sx={{
-                minHeight: "calc(100vh - 0px)",
-                display: "grid",
-                placeItems: "center",
-                p: 2,
-            }}
-        >
-            <Card sx={{ width: "100%", maxWidth: 520, borderRadius: 3 }}>
-                <CardContent sx={{ p: 3 }}>
-                    <Stack spacing={1.2} sx={{ mb: 2 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 900 }}>
-                            Criar conta
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                            Cadastre-se para começar a usar o YenomPlanner.
-                        </Typography>
+        <Box sx={{ width: "100%" }}>
+            <Stack spacing={1.2} sx={{ mb: 2 }}>
+                <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
+                    Criar conta
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Cadastre-se para começar a usar o YenomPlanner.
+                </Typography>
+            </Stack>
+
+            {localError ? (
+                <Alert severity="error" sx={{ mb: 1.5 }}>
+                    {localError}
+                </Alert>
+            ) : null}
+            {apiError ? (
+                <Alert severity="error" sx={{ mb: 1.5 }}>
+                    {apiError}
+                </Alert>
+            ) : null}
+
+            <Box component="form" onSubmit={handleSubmit}>
+                <Stack spacing={1.3}>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
+                        <TextField
+                            label="Primeiro nome"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            fullWidth
+                            disabled={loading}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <PersonRoundedIcon fontSize="small" />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+                        <TextField
+                            label="Sobrenome"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            fullWidth
+                            disabled={loading}
+                        />
                     </Stack>
 
-                    {localError ? <Alert severity="error" sx={{ mb: 1.5 }}>{localError}</Alert> : null}
-                    {apiError ? <Alert severity="error" sx={{ mb: 1.5 }}>{apiError}</Alert> : null}
+                    <TextField
+                        label="Telefone (DDD)"
+                        value={fone}
+                        onChange={(e) => setFone(e.target.value)}
+                        fullWidth
+                        disabled={loading}
+                        inputMode="numeric"
+                        placeholder="Ex: 11999999999"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <PhoneIphoneRoundedIcon fontSize="small" />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
 
-                    <Box component="form" onSubmit={handleSubmit}>
-                        <Stack spacing={1.3}>
-                            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
-                                <TextField
-                                    label="Primeiro nome"
-                                    value={firstName}
-                                    onChange={(e) => setFirstName(e.target.value)}
-                                    fullWidth
-                                    disabled={loading}
-                                    InputProps={{
-                                        startAdornment: (
-                                            <InputAdornment position="start">
-                                                <PersonRoundedIcon fontSize="small" />
-                                            </InputAdornment>
-                                        ),
-                                    }}
-                                />
-                                <TextField
-                                    label="Sobrenome"
-                                    value={lastName}
-                                    onChange={(e) => setLastName(e.target.value)}
-                                    fullWidth
-                                    disabled={loading}
-                                />
-                            </Stack>
+                    <TextField
+                        label="E-mail"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        fullWidth
+                        disabled={loading}
+                        inputMode="email"
+                        autoComplete="email"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <MailRoundedIcon fontSize="small" />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
 
-                            <TextField
-                                label="Telefone (DDD)"
-                                value={fone}
-                                onChange={(e) => setFone(e.target.value)}
-                                fullWidth
-                                disabled={loading}
-                                inputMode="numeric"
-                                placeholder="Ex: 11999999999"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <PhoneIphoneRoundedIcon fontSize="small" />
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
+                    <TextField
+                        label="Senha"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        fullWidth
+                        disabled={loading}
+                        type={showPass ? "text" : "password"}
+                        autoComplete="new-password"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <LockRoundedIcon fontSize="small" />
+                                </InputAdornment>
+                            ),
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShowPass((v) => !v)}
+                                        edge="end"
+                                        aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                                    >
+                                        {showPass ? (
+                                            <VisibilityOffRoundedIcon fontSize="small" />
+                                        ) : (
+                                            <VisibilityRoundedIcon fontSize="small" />
+                                        )}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
 
-                            <TextField
-                                label="E-mail"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                fullWidth
-                                disabled={loading}
-                                inputMode="email"
-                                autoComplete="email"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <MailRoundedIcon fontSize="small" />
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
+                    <Button
+                        type="submit"
+                        variant="contained"
+                        disabled={!canSubmit || loading}
+                        sx={{
+                            fontWeight: 950,
+                            py: 1.25,
+                            borderRadius: 2.4,
+                            textTransform: "none",
+                        }}
+                    >
+                        {loading ? "Criando..." : "Criar conta"}
+                    </Button>
 
-                            <TextField
-                                label="Senha"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                fullWidth
-                                disabled={loading}
-                                type={showPass ? "text" : "password"}
-                                autoComplete="new-password"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <LockRoundedIcon fontSize="small" />
-                                        </InputAdornment>
-                                    ),
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => setShowPass((v) => !v)}
-                                                edge="end"
-                                                aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
-                                            >
-                                                {showPass ? (
-                                                    <VisibilityOffRoundedIcon fontSize="small" />
-                                                ) : (
-                                                    <VisibilityRoundedIcon fontSize="small" />
-                                                )}
-                                            </IconButton>
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
+                    <Divider />
 
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                disabled={!canSubmit || loading}
-                                sx={{ fontWeight: 900, py: 1.2, borderRadius: 2 }}
-                            >
-                                {loading ? "Criando..." : "Criar conta"}
-                            </Button>
-
-                            <Divider />
-
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                Já tem conta?{" "}
-                                <Typography
-                                    component={RouterLink}
-                                    to="/login"
-                                    variant="body2"
-                                    sx={{ fontWeight: 800, textDecoration: "none" }}
-                                >
-                                    Entrar
-                                </Typography>
-                            </Typography>
-                        </Stack>
-                    </Box>
-                </CardContent>
-            </Card>
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                        Já tem conta?{" "}
+                        <Typography
+                            component={RouterLink}
+                            to="/login"
+                            variant="body2"
+                            sx={{ fontWeight: 900, textDecoration: "none" }}
+                        >
+                            Entrar
+                        </Typography>
+                    </Typography>
+                </Stack>
+            </Box>
         </Box>
     );
 }

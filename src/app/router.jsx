@@ -1,4 +1,4 @@
-// src/routes/router.jsx (ou onde você define o createBrowserRouter)
+// src/routes/router.jsx
 import React from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "./App";
@@ -8,9 +8,9 @@ import Transactions from "../pages/Transactions";
 import Invoices from "../pages/Invoices";
 import Installments from "../pages/Installments";
 import AccountsPage from "../pages/AccountsPage";
-import BillsPage from "../pages/BillsPage"; // ✅ NOVO
+import BillsPage from "../pages/BillsPage";
 
-// ✅ public
+import AuthShell from "../layouts/AuthShell.jsx";
 import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 
@@ -24,15 +24,17 @@ export const router = createBrowserRouter([
       { path: "faturas", element: <Invoices /> },
       { path: "parcelamentos", element: <Installments /> },
       { path: "contas", element: <AccountsPage /> },
-
-      // ✅ NOVO
       { path: "despesas", element: <BillsPage /> },
 
-      // ✅ public
-      { path: "login", element: <LoginPage /> },
-      { path: "register", element: <RegisterPage /> },
+      // ✅ public com transição (shell + outlet animado)
+      {
+        element: <AuthShell />,
+        children: [
+          { path: "login", element: <LoginPage /> },
+          { path: "register", element: <RegisterPage /> },
+        ],
+      },
 
-      // ✅ fallback
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

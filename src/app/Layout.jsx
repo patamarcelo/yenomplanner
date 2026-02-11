@@ -214,35 +214,84 @@ export default function Layout({ children }) {
           alignItems: "center",
           justifyContent: collapsed ? "center" : "space-between",
           gap: 1,
+          position: "relative", // 👈 importante
         }}
       >
-        {!collapsed ? (
-          <Stack spacing={-0.2}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: -0.3 }}>
-              Yenom Planner
-            </Typography>
-          </Stack>
-        ) : (
-          <Typography sx={{ fontWeight: 900, letterSpacing: -0.3 }}>YP</Typography>
-        )}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: collapsed ? "center" : "flex-start",
+            width: "100%",
+            minWidth: 0,
+          }}
+        >
+          {!collapsed ? (
+            <Box
+              component="img"
+              src="/assets/image/banner-1.png"
+              alt="Yenom Planner"
+              sx={{
+                height: 64,
+                width: "100%",
+                maxWidth: 190,     // ajuste fino se quiser
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
+          ) : (
+            <Box
+              component="img"
+              src="/assets/image/LOGO-0.png"
+              alt="YP"
+              sx={{
+                marginRight: '20px',
+                height: 54,
+                width: 54,
+                objectFit: "contain",
+                display: "block",
+              }}
+            />
+          )}
+        </Box>
+
 
         {isMdUp ? (
           <Tooltip title={collapsed ? "Expandir menu" : "Recolher menu"}>
             <IconButton
               size="small"
               onClick={() => setCollapsed((v) => !v)}
-              sx={{ ml: collapsed ? 0 : 1 }}
+              sx={(theme) => ({
+                position: "absolute",
+                right: 4,
+                top: "50%",
+                transform: "translateY(-50%)",
+                zIndex: theme.zIndex.drawer + 20, // 👈 garante ficar na frente
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                backgroundColor: "background.paper",
+                boxShadow: 3,
+                border: "1px solid",
+                borderColor: "divider",
+                transition: "all .2s ease",
+                opacity: 0.85,
+                "&:hover": {
+                  backgroundColor: "background.default",
+                },
+              })}
             >
               {theme.direction === "rtl" ? (
-                collapsed ? <ChevronLeftRoundedIcon /> : <ChevronRightRoundedIcon />
+                collapsed ? <ChevronLeftRoundedIcon fontSize="small" /> : <ChevronRightRoundedIcon fontSize="small" />
               ) : collapsed ? (
-                <ChevronRightRoundedIcon />
+                <ChevronRightRoundedIcon fontSize="small" />
               ) : (
-                <ChevronLeftRoundedIcon />
+                <ChevronLeftRoundedIcon fontSize="small" />
               )}
             </IconButton>
           </Tooltip>
         ) : null}
+
       </Box>
 
       <Divider />

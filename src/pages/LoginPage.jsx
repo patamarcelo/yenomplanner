@@ -1,8 +1,7 @@
+// src/pages/LoginPage.jsx
 import React, { useMemo, useState } from "react";
 import {
     Box,
-    Card,
-    CardContent,
     Typography,
     TextField,
     Button,
@@ -20,15 +19,8 @@ import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 
-import {
-    loginThunk,
-    meThunk,
-    selectAuthStatus,
-    selectAuthError,
-} from "../store/authSlice";
-
+import { loginThunk, selectAuthStatus, selectAuthError } from "../store/authSlice";
 import CircularProgress from "@mui/material/CircularProgress";
-
 
 export default function LoginPage() {
     const dispatch = useDispatch();
@@ -69,10 +61,6 @@ export default function LoginPage() {
             return;
         }
 
-        // IMPORTANTE:
-        // Seu CustomAuthToken pode esperar "username" OU "email".
-        // Como seu USERNAME_FIELD é email, muitos setups aceitam { username: email, password }.
-        // Vamos mandar os dois para garantir compatibilidade.
         const payload = {
             username: email.trim().toLowerCase(),
             email: email.trim().toLowerCase(),
@@ -81,116 +69,117 @@ export default function LoginPage() {
 
         try {
             await dispatch(loginThunk(payload)).unwrap();
-            // await dispatch(meThunk()).unwrap();
-            navigate("/"); // ajuste se necessário
+            navigate("/");
         } catch (err) {
-            console.log('erro de login : ', err)
+            console.log("erro de login : ", err);
             setLocalError("Não foi possível entrar. Verifique e-mail e senha.");
         }
     }
 
     return (
-        <Box
-            sx={{
-                minHeight: "calc(100vh - 0px)",
-                display: "grid",
-                placeItems: "center",
-                p: 2,
-            }}
-        >
-            <Card sx={{ width: "100%", maxWidth: 520, borderRadius: 3 }}>
-                <CardContent sx={{ p: 3 }}>
-                    <Stack spacing={1.2} sx={{ mb: 2 }}>
-                        <Typography variant="h5" sx={{ fontWeight: 900 }}>
-                            Entrar
+        <Box sx={{ width: "100%" }}>
+            <Stack spacing={1.2} sx={{ mb: 2 }}>
+                <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
+                    Entrar
+                </Typography>
+                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Acesse sua conta para continuar.
+                </Typography>
+            </Stack>
+
+            {localError ? (
+                <Alert severity="error" sx={{ mb: 1.5 }}>
+                    {localError}
+                </Alert>
+            ) : null}
+            {apiError ? (
+                <Alert severity="error" sx={{ mb: 1.5 }}>
+                    {apiError}
+                </Alert>
+            ) : null}
+
+            <Box component="form" onSubmit={handleSubmit}>
+                <Stack spacing={1.3}>
+                    <TextField
+                        label="E-mail"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        fullWidth
+                        disabled={loading}
+                        inputMode="email"
+                        autoComplete="email"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <MailRoundedIcon fontSize="small" />
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+
+                    <TextField
+                        label="Senha"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        fullWidth
+                        disabled={loading}
+                        type={showPass ? "text" : "password"}
+                        autoComplete="current-password"
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <LockRoundedIcon fontSize="small" />
+                                </InputAdornment>
+                            ),
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => setShowPass((v) => !v)}
+                                        edge="end"
+                                        aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                                    >
+                                        {showPass ? (
+                                            <VisibilityOffRoundedIcon fontSize="small" />
+                                        ) : (
+                                            <VisibilityRoundedIcon fontSize="small" />
+                                        )}
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+
+                    <Button
+                        type="submit"
+                        variant="contained"
+                        disabled={!canSubmit || loading}
+                        sx={{
+                            fontWeight: 950,
+                            py: 1.25,
+                            borderRadius: 2.4,
+                            textTransform: "none",
+                        }}
+                        startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
+                    >
+                        {loading ? "Entrando..." : "Entrar"}
+                    </Button>
+
+                    <Divider />
+
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                        Não tem conta?{" "}
+                        <Typography
+                            component={RouterLink}
+                            to="/register"
+                            variant="body2"
+                            sx={{ fontWeight: 900, textDecoration: "none" }}
+                        >
+                            Criar conta
                         </Typography>
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                            Acesse sua conta para continuar.
-                        </Typography>
-                    </Stack>
-
-                    {localError ? <Alert severity="error" sx={{ mb: 1.5 }}>{localError}</Alert> : null}
-                    {apiError ? <Alert severity="error" sx={{ mb: 1.5 }}>{apiError}</Alert> : null}
-
-                    <Box component="form" onSubmit={handleSubmit}>
-                        <Stack spacing={1.3}>
-                            <TextField
-                                label="E-mail"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                fullWidth
-                                disabled={loading}
-                                inputMode="email"
-                                autoComplete="email"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <MailRoundedIcon fontSize="small" />
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
-
-                            <TextField
-                                label="Senha"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                fullWidth
-                                disabled={loading}
-                                type={showPass ? "text" : "password"}
-                                autoComplete="current-password"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <LockRoundedIcon fontSize="small" />
-                                        </InputAdornment>
-                                    ),
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => setShowPass((v) => !v)}
-                                                edge="end"
-                                                aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
-                                            >
-                                                {showPass ? (
-                                                    <VisibilityOffRoundedIcon fontSize="small" />
-                                                ) : (
-                                                    <VisibilityRoundedIcon fontSize="small" />
-                                                )}
-                                            </IconButton>
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
-
-                            <Button
-                                type="submit"
-                                variant="contained"
-                                disabled={!canSubmit || loading}
-                                sx={{ fontWeight: 900, py: 1.2, borderRadius: 2 }}
-                                startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
-                            >
-                                {loading ? "Entrando..." : "Entrar"}
-                            </Button>
-
-                            <Divider />
-
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                Não tem conta?{" "}
-                                <Typography
-                                    component={RouterLink}
-                                    to="/register"
-                                    variant="body2"
-                                    sx={{ fontWeight: 800, textDecoration: "none" }}
-                                >
-                                    Criar conta
-                                </Typography>
-                            </Typography>
-                        </Stack>
-                    </Box>
-                </CardContent>
-            </Card>
+                    </Typography>
+                </Stack>
+            </Box>
         </Box>
     );
 }
