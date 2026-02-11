@@ -1,6 +1,6 @@
 // src/pages/Dashboard.jsx
-import React, { useMemo } from "react";
-import { useSelector } from "react-redux";
+import React, { useMemo, useEffect } from "react";
+import { useSelector, useDispatch } from "react-redux";
 import {
   Box,
   Card,
@@ -32,10 +32,12 @@ import {
 
 import { formatBRL } from "../utils/money";
 import { formatMonthBR, formatDateBR } from "../utils/dateBR";
-import { categories } from "../data/mockCategories";
+// import { categories } from "../data/mockCategories";
 import { selectHideValues } from "../store/uiSlice";
 
 import { selectTransactionsUi } from "../store/transactionsSlice";
+import { bootstrapThunk } from "../store/bootstrapThunk";
+import { selectCategories } from "../store/categoriesSlice";
 
 // -----------------------------
 // Helpers
@@ -260,12 +262,15 @@ function BRLTooltip({ label, payload }) {
 // -----------------------------
 export default function Dashboard() {
   const theme = useTheme();
+  const dispatch = useDispatch();
   const month = useSelector((s) => s.finance.month);
   const txns = useSelector(selectTransactionsUi);
   const accounts = useSelector((s) => s.accounts.accounts);
   const extraFilters = useSelector((s) => s.finance.filters);
 
   const hideValues = useSelector(selectHideValues);
+  const categories = useSelector(selectCategories); // exemplo
+
 
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const maskNumber = (n) => (hideValues ? "••" : String(n));
@@ -276,6 +281,18 @@ export default function Dashboard() {
     for (const a of accounts || []) map.set(a.id, a);
     return map;
   }, [accounts]);
+
+  // escolha um sinal de “já carregou”
+  const accountsStatus = useSelector((s) => s.accounts.status);
+  const txStatus = useSelector((s) => s.transactions.status);
+
+  useEffect(() => {
+    // se já carregou, não faz de novo
+    const alreadyLoaded = accountsStatus === "succeeded" && txStatus === "succeeded";
+    if (alreadyLoaded) return;
+
+    dispatch(bootstrapThunk());
+  }, [dispatch, accountsStatus, txStatus]);
 
   // Resolve conta/cartão do lançamento (suporta legado `cardId`)
   const resolveAccountIdFromTxn = useMemo(() => {
@@ -533,6 +550,18 @@ export default function Dashboard() {
   // -----------------------------
   // Layout
   // -----------------------------
+
+  const bootLoading = accountsStatus === "loading" || txStatus === "loading";
+
+  if (bootLoading) {
+    return (
+      <Box sx={{ p: 2 }}>
+        <Typography sx={{ fontWeight: 900, mb: 1 }}>Carregando…</Typography>
+        <LinearProgress />
+      </Box>
+    );
+  }
+
   return (
     <Stack spacing={2.25} sx={{ width: "100%" }}>
       {/* Linha 1: 6 KPIs */}

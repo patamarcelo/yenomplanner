@@ -28,11 +28,20 @@ const accountsSlice = createSlice({
   name: "accounts",
   initialState,
   reducers: {
-    // opcional: limpar no logout
-    resetAccounts(state) {
-      state.accounts = [];
-      state.status = "idle";
-      state.error = "";
+    reducers: {
+      // opcional: limpar no logout
+      resetAccounts(state) {
+        state.accounts = [];
+        state.status = "idle";
+        state.error = "";
+      },
+
+      // ✅ (PASSO 3) usado pelo /bootstrap
+      setAccountsFromBootstrap(state, action) {
+        state.accounts = action.payload || [];
+        state.status = "succeeded";
+        state.error = "";
+      },
     },
   },
   extraReducers: (builder) => {
@@ -63,7 +72,7 @@ const accountsSlice = createSlice({
   },
 });
 
-export const { resetAccounts } = accountsSlice.actions;
+export const { resetAccounts, setAccountsFromBootstrap } = accountsSlice.actions;
 export default accountsSlice.reducer;
 
 export const selectAccounts = (s) => s.accounts.accounts;

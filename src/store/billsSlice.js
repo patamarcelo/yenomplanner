@@ -102,6 +102,12 @@ const billsSlice = createSlice({
         clearGenerateResult(state) {
             state.lastGenerateResult = null;
         },
+        // ✅ (PASSO 3) usado pelo /bootstrap
+        setBillsFromBootstrap(state, action) {
+            state.items = action.payload || [];
+            state.status = "succeeded";
+            state.error = "";
+        },
     },
     extraReducers: (b) => {
         b.addCase(fetchBillsThunk.pending, (s) => {
@@ -199,7 +205,7 @@ const billsSlice = createSlice({
     },
 });
 
-export const { resetBills, clearGenerateResult } = billsSlice.actions;
+export const { resetBills, clearGenerateResult, setBillsFromBootstrap } = billsSlice.actions;
 
 export const selectBills = (s) => s.bills.items || [];
 export const selectBillsStatus = (s) => s.bills.status;

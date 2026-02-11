@@ -21,6 +21,12 @@ const categoriesSlice = createSlice({
             state.status = "idle";
             state.error = "";
         },
+        // ✅ (PASSO 3) usado pelo /bootstrap
+        setCategoriesFromBootstrap(state, action) {
+            state.categories = action.payload || [];
+            state.status = "succeeded";
+            state.error = "";
+        },
     },
     extraReducers: (builder) => {
         builder
@@ -39,7 +45,7 @@ const categoriesSlice = createSlice({
     },
 });
 
-export const { resetCategories } = categoriesSlice.actions;
+export const { resetCategories, setCategoriesFromBootstrap } = categoriesSlice.actions;
 
 export const selectCategories = (state) => state.categories?.items || [];
 

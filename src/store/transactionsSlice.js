@@ -132,6 +132,13 @@ const transactionsSlice = createSlice({
             state.status = "idle";
             state.error = "";
         },
+
+        // ✅ (PASSO 3) usado pelo /bootstrap
+        setTransactionsFromBootstrap(state, action) {
+            state.items = action.payload || [];
+            state.status = "succeeded";
+            state.error = "";
+        },
     },
     extraReducers: (b) => {
         b.addCase(fetchAllTransactionsThunk.pending, (s) => {
@@ -176,7 +183,7 @@ const transactionsSlice = createSlice({
     },
 });
 
-export const { resetTransactions } = transactionsSlice.actions;
+export const { resetTransactions, setTransactionsFromBootstrap } = transactionsSlice.actions;
 export default transactionsSlice.reducer;
 
 export const selectTransactionsStatus = (s) => s.transactions.status;

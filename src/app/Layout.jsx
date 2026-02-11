@@ -161,8 +161,6 @@ export default function Layout({ children }) {
         .unwrap()
         .then(() => {
           // ✅ agora sim pode carregar dados
-          dispatch(fetchAccountsThunk());
-          dispatch(fetchAllTransactionsThunk());
           bootstrappedRef.current = true;
         })
         .catch(() => {
@@ -418,7 +416,7 @@ export default function Layout({ children }) {
                     t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
                 }}
               >
-                <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 150 }}>
+                <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 110 }}>
                   <MonthPicker value={month} onChange={(v) => dispatch(setMonth(v))} />
                 </Box>
 
@@ -464,23 +462,6 @@ export default function Layout({ children }) {
                     )}
                   </IconButton>
                 </Tooltip>
-              </Stack>
-
-              <Stack direction="row" spacing={0.8} alignItems="center">
-                <Button
-                  variant="contained"
-                  onClick={() => setNewOpen(true)}
-                  sx={{
-                    height: 36,
-                    borderRadius: 999,
-                    fontWeight: 850,
-                    px: 1.4,
-                    whiteSpace: "nowrap",
-                    boxShadow: "none",
-                  }}
-                >
-                  + Lançamento
-                </Button>
               </Stack>
             </Stack>
           </Toolbar>
