@@ -475,7 +475,7 @@ export default function NewTransactionModal({ open, onClose }) {
         <Stack spacing={1.4}>
           {err ? <Alert severity="error">{err}</Alert> : null}
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
+          <Stack direction={{ xs: "column", sm: "row", }}spacing={1.2} sx={{paddingTop: '10px'}}>
             <TextField
               label="Data compra"
               type="date"
@@ -496,6 +496,7 @@ export default function NewTransactionModal({ open, onClose }) {
               }}
               InputLabelProps={{ shrink: true }}
               fullWidth
+              sx={inputSx}
               helperText={
                 selectedAccount?.type === "credit_card"
                   ? "Auto pelo vencimento do cartão (você pode editar)."
@@ -655,7 +656,7 @@ export default function NewTransactionModal({ open, onClose }) {
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ p: 2, gap: 1 }}>
+      <DialogActions sx={{ pb: 2, pr:2,  gap: 1, marginTop: '-20px' }}>
         <Button onClick={handleClose} variant="outlined" disabled={saving}>
           Cancelar
         </Button>

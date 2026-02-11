@@ -27,13 +27,15 @@ import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 
 import { useDispatch, useSelector } from "react-redux";
-import { categories } from "../data/mockCategories";
+// import { categories } from "../data/mockCategories";
 import { formatBRL } from "../utils/money";
 import { formatDateBR, formatMonthBR } from "../utils/dateBR";
 
 // ✅ agora existem no slice (você já adicionou)
 // import { updateTransaction, removeTransaction } from "../store/financeSlice";
 import { patchTransactionThunk, deleteTransactionThunk } from "../store/transactionsSlice";
+import { selectCategories } from "../store/categoriesSlice";
+import { fetchCategoriesThunk } from "../store/categoriesSlice";
 
 
 // =========================
@@ -206,6 +208,8 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
   const [amount, setAmount] = useState(formatNumberToBrlInput(t.amount ?? ""));
   const [err, setErr] = useState("");
 
+  const categories = useSelector(selectCategories);
+
 
   React.useEffect(() => {
     const x = txn || {};
@@ -322,7 +326,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
               fullWidth
             >
               {categories.map((c) => (
-                <MenuItem key={c.id} value={c.id}>
+                <MenuItem key={c.id} value={c.slug}>
                   {c.name}
                 </MenuItem>
               ))}
@@ -378,6 +382,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
 
 export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
   const dispatch = useDispatch();
+  const categories = useSelector(selectCategories);
   const safeRows = Array.isArray(rows) ? rows : [];
   console.log('safeRo', safeRows)
 
@@ -551,7 +556,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
     categoryFilter,
     remainingMax,
     statusFilter,
-    tipoFilter
+    tipoFilter,
+    accounts
   ]);
 
   const filteredTotal = useMemo(() => {
@@ -896,7 +902,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
             >
               <MenuItem value="">Todas</MenuItem>
               {categories.map((c) => (
-                <MenuItem key={c.id} value={c.id}>
+                <MenuItem key={c.id} value={c.slug}>
                   {c.name}
                 </MenuItem>
               ))}

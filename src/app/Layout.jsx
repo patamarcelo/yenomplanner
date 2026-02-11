@@ -48,6 +48,7 @@ import { logout } from "../store/authSlice";
 
 import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
+import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
 
 const DRAWER_EXPANDED = 270;
@@ -57,6 +58,7 @@ const TOP_H = 64;
 const navItems = [
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon /> },
   { to: "/contas", label: "Contas", icon: <AccountBalanceRoundedIcon /> },
+  { to: "/despesas", label: "Despesas", icon: <PaymentsRoundedIcon /> },
   { to: "/lancamentos", label: "Lançamentos", icon: <CreditCardRoundedIcon /> },
   { to: "/faturas", label: "Faturas", icon: <ReceiptLongRoundedIcon /> },
   { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon /> },

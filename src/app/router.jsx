@@ -1,3 +1,4 @@
+// src/routes/router.jsx (ou onde você define o createBrowserRouter)
 import React from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "./App";
@@ -7,8 +8,9 @@ import Transactions from "../pages/Transactions";
 import Invoices from "../pages/Invoices";
 import Installments from "../pages/Installments";
 import AccountsPage from "../pages/AccountsPage";
+import BillsPage from "../pages/BillsPage"; // ✅ NOVO
 
-// ✅ novas páginas
+// ✅ public
 import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 
@@ -23,11 +25,14 @@ export const router = createBrowserRouter([
       { path: "parcelamentos", element: <Installments /> },
       { path: "contas", element: <AccountsPage /> },
 
+      // ✅ NOVO
+      { path: "despesas", element: <BillsPage /> },
+
       // ✅ public
       { path: "login", element: <LoginPage /> },
       { path: "register", element: <RegisterPage /> },
 
-      // ✅ fallback (evita 404)
+      // ✅ fallback
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
