@@ -651,59 +651,121 @@ export default function Layout({ children }) {
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {location.pathname === "/" && <DashboardFilters />}
+              {location.pathname === "/" &&
+                <>
+                  <DashboardFilters />
 
-              {/* ✅ filtros separados: Mês e Ano */}
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
-                <Box sx={{ ...pillSx, minWidth: 120 }}>
-                  <FormControl size="small" fullWidth>
-                    <Select value={selectedMonth} onChange={(e) => setYM(selectedYear, e.target.value)} sx={selectSx}>
-                      {MONTHS_PT.map((mm) => (
-                        <MenuItem key={mm.value} value={mm.value}>
-                          {mm.label}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
 
-                <Box sx={{ ...pillSx, minWidth: 110 }}>
-                  <FormControl size="small" fullWidth>
-                    <Select value={selectedYear} onChange={(e) => setYM(e.target.value, selectedMonth)} sx={selectSx}>
-                      {years.map((yy) => (
-                        <MenuItem key={yy} value={yy}>
-                          {yy}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
-              </Stack>
+                  {/* ✅ filtros separados: Mês e Ano */}
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
+                    <Box sx={{ ...pillSx, minWidth: 120 }}>
+                      <FormControl size="small" fullWidth>
+                        <Select value={selectedMonth} onChange={(e) => setYM(selectedYear, e.target.value)} sx={selectSx}>
+                          {MONTHS_PT.map((mm) => (
+                            <MenuItem key={mm.value} value={mm.value}>
+                              {mm.label}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Box>
+
+                    <Box sx={{ ...pillSx, minWidth: 110 }}>
+                      <FormControl size="small" fullWidth>
+                        <Select value={selectedYear} onChange={(e) => setYM(e.target.value, selectedMonth)} sx={selectSx}>
+                          {years.map((yy) => (
+                            <MenuItem key={yy} value={yy}>
+                              {yy}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Box>
+                  </Stack>
+                </>
+              }
 
               {/* ✅ ações separadas (modo + eye) */}
-              <Stack direction="row" spacing={0.6} alignItems="center" sx={pillSx}>
-                <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
-                  <IconButton onClick={themeMode.toggle} size="small" sx={{ width: 34, height: 34, borderRadius: 999 }}>
-                    {themeMode.mode === "dark" ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
-                  </IconButton>
-                </Tooltip>
+              {/* ✅ ações (modo + eye + sair) — menor e mais clean */}
+              <Stack
+                direction="row"
+                spacing={0.6}
+                alignItems="center"
+                sx={{
+                  ...pillSx,
+                  px: 0.6,
+                  py: 0.35,
+                  gap: 0.4,
+                }}
+              >
+                {(() => {
+                  const btnSx = (t) => ({
+                    width: 32,
+                    height: 32,
+                    borderRadius: 999,
+                    color: "text.secondary",
+                    transition: "all .16s ease",
+                    "&:hover": {
+                      bgcolor: alpha(t.palette.text.primary, t.palette.mode === "dark" ? 0.08 : 0.06),
+                      color: "text.primary",
+                    },
+                    "& .MuiSvgIcon-root": { fontSize: 18 }, // deixa o ícone menos robusto
+                  });
 
-                <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
-                  <IconButton
-                    size="small"
-                    onClick={() => dispatch(toggleHideValues())}
-                    sx={(theme) => ({
-                      width: 40,
-                      height: 40,
-                      borderRadius: 2,
-                      border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-                      background: alpha(theme.palette.background.paper, 0.7),
-                    })}
-                  >
-                    {hideValues ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
-                  </IconButton>
-                </Tooltip>
+                  const dangerBtnSx = (t) => ({
+                    width: 32,
+                    height: 32,
+                    borderRadius: 999,
+                    color: t.palette.error.main,
+                    transition: "all .16s ease",
+                    "&:hover": {
+                      bgcolor: alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.16 : 0.10),
+                    },
+                    "& .MuiSvgIcon-root": { fontSize: 18 },
+                  });
+
+                  return (
+                    <>
+                      <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
+                        <IconButton onClick={themeMode.toggle} size="small" sx={btnSx}>
+                          {themeMode.mode === "dark" ? (
+                            <LightModeRoundedIcon fontSize="small" />
+                          ) : (
+                            <DarkModeRoundedIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+
+                      <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
+                        <IconButton size="small" onClick={() => dispatch(toggleHideValues())} sx={btnSx}>
+                          {hideValues ? (
+                            <VisibilityOffRoundedIcon fontSize="small" />
+                          ) : (
+                            <VisibilityRoundedIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+
+                      {/* separadorzinho sutil */}
+                      <Box
+                        sx={(t) => ({
+                          width: 1,
+                          height: 18,
+                          mx: 0.2,
+                          bgcolor: alpha(t.palette.divider, 0.9),
+                        })}
+                      />
+
+                      <Tooltip title="Sair">
+                        <IconButton size="small" onClick={handleLogout} sx={dangerBtnSx}>
+                          <ExitToAppRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  );
+                })()}
               </Stack>
+
             </Stack>
           </Toolbar>
         </AppBar>

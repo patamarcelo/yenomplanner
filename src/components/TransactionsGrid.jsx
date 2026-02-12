@@ -1,5 +1,5 @@
 // src/components/TransactionsGrid.jsx
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef } from "react";
 import {
   Box,
   Stack,
@@ -16,66 +16,57 @@ import {
   DialogActions,
   Button,
   Alert,
-  CircularProgress
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 
-import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
-import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 
 import { useDispatch, useSelector } from "react-redux";
-// import { categories } from "../data/mockCategories";
 import { formatBRL } from "../utils/money";
 import { formatDateBR, formatMonthBR } from "../utils/dateBR";
 
-// ✅ agora existem no slice (você já adicionou)
-// import { updateTransaction, removeTransaction } from "../store/financeSlice";
 import { patchTransactionThunk, deleteTransactionThunk } from "../store/transactionsSlice";
 import { selectCategories } from "../store/categoriesSlice";
-import { fetchCategoriesThunk } from "../store/categoriesSlice";
 import SpinnerPage from "./ui/Spinner";
-
 
 // =========================
 // Helpers: BRL input/output
 // =========================
 
 function sanitizeBrlInput(raw) {
-  // mantém apenas dígitos, vírgula, ponto e sinal
   return String(raw ?? "")
     .replace(/\s+/g, "")
     .replace(/[^0-9,\.\-]/g, "");
 }
 
 function parseBrlToNumber(raw) {
-  // Aceita: "1.234,56" | "1234,56" | "1234.56" | "1,23" | "10" etc.
   const s0 = sanitizeBrlInput(raw);
   if (!s0) return NaN;
 
-  // Se tem vírgula, assume vírgula como decimal e remove pontos (milhar)
   if (s0.includes(",")) {
     const s = s0.replace(/\./g, "").replace(/,/g, ".");
     return Number(s);
   }
 
-  // Sem vírgula: permite decimal com ponto
   return Number(s0);
 }
 
 function formatNumberToBrlInput(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return "";
-  // converte 1234.5 -> "1234,50" (sem separador de milhar para facilitar edição)
   return v.toFixed(2).replace(".", ",");
 }
 
 // =========================
 // Helpers: direção (entrada/saída)
 // =========================
+
+function getRowShape(row) {
+  return row?.instance ? row.instance : row;
+}
 
 function getTxnDirection(row) {
   const r = getRowShape(row) || {};
@@ -86,11 +77,9 @@ function getTxnDirection(row) {
   if (["in", "entrada", "income", "receita", "credit"].includes(d)) return "in";
   if (["out", "saida", "saída", "expense", "despesa", "debit"].includes(d)) return "out";
 
-  // fallback: se amount for negativo, é saída
   const amt = Number(r.amount);
   if (Number.isFinite(amt) && amt < 0) return "out";
 
-  // padrão do app (normalmente a maioria é despesa)
   return "out";
 }
 
@@ -105,57 +94,57 @@ function inDateRange(dateISO, fromISO, toISO) {
   return true;
 }
 
-function getRowShape(row) {
-  return row?.instance ? row.instance : row;
-}
-
 function getInstallment(row) {
   const r = getRowShape(row);
   return r?.installment || null;
 }
 
 function safeAccountActive(a) {
-  // ✅ se active for undefined, consideramos ativo
   return a?.active !== false;
 }
 
 function resolveAccountId(row, accounts) {
   const r = getRowShape(row);
 
-  // já veio certo (conta corrente / novos lançamentos)
   if (r?.accountId) return r.accountId;
 
-  const legacy = r?.cardId; // "nubank" | "xp" | "porto"
+  const legacy = r?.cardId;
   if (!legacy) return "";
 
-  // 1) padrão atual do seu mock: acc_cc_${cardId}
   const byPrefix = accounts.find((a) => a?.id === `acc_cc_${legacy}`);
   if (byPrefix) return byPrefix.id;
 
-  // 2) se algum dia você usar id = "xp"
   const direct = accounts.find((a) => a?.id === legacy);
   if (direct) return direct.id;
 
-  // 3) se algum dia você adicionar legacyCardId
   const found = accounts.find((a) => a?.legacyCardId === legacy);
   return found?.id || "";
 }
 
+// ✅ resolve invoiceMonth mesmo quando não vem preenchido
+function resolveInvoiceYM(row) {
+  const r = getRowShape(row) || {};
+  const inv = String(r.invoiceMonth || "").trim();
+  if (inv && inv.length >= 7) return inv.slice(0, 7);
 
+  const p = String(r.purchaseDate || "").trim();
+  if (p && p.length >= 7) return p.slice(0, 7);
 
+  const c = String(r.chargeDate || "").trim();
+  if (c && c.length >= 7) return c.slice(0, 7);
+
+  return "";
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
 
 function AccountChip({ accountId, accountsById }) {
   const acc = accountId ? accountsById[accountId] : null;
 
   if (!acc) {
-    return (
-      <Chip
-        size="small"
-        variant="outlined"
-        label="—"
-        sx={{ fontWeight: 850 }}
-      />
-    );
+    return <Chip size="small" variant="outlined" label="—" sx={{ fontWeight: 850 }} />;
   }
 
   const iconEmoji = acc.type === "credit_card" ? "💳" : "🏦";
@@ -165,13 +154,7 @@ function AccountChip({ accountId, accountsById }) {
       size="small"
       variant="outlined"
       icon={
-        <span
-          style={{
-            fontSize: 14,
-            lineHeight: 1,
-            marginLeft: 4,
-          }}
-        >
+        <span style={{ fontSize: 14, lineHeight: 1, marginLeft: 4 }}>
           {iconEmoji}
         </span>
       }
@@ -181,19 +164,12 @@ function AccountChip({ accountId, accountsById }) {
         borderRadius: 999,
         borderColor: "rgba(0,0,0,0.10)",
         backgroundColor: acc.color || "rgba(0,0,0,0.04)",
-        "& .MuiChip-icon": {
-          marginLeft: "6px",
-          marginRight: "-4px",
-        },
-        "& .MuiChip-label": {
-          fontWeight: 850,
-          marginLeft: '10px'
-        },
+        "& .MuiChip-icon": { marginLeft: "6px", marginRight: "-4px" },
+        "& .MuiChip-label": { fontWeight: 850, marginLeft: "10px" },
       }}
     />
   );
 }
-
 
 function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId }) {
   const t = txn || {};
@@ -212,13 +188,11 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
 
   const categories = useSelector(selectCategories);
 
-
   React.useEffect(() => {
     const x = txn || {};
     setPurchaseDate(x.purchaseDate || "");
     setChargeDate(x.chargeDate || "");
     setInvoiceMonth(x.invoiceMonth || "");
-    setAccountId(x.accountId || "");
     setMerchant(x.merchant || "");
     setDescription(x.description || "");
     setCategoryId(x.categoryId || "");
@@ -226,7 +200,6 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
     setStatus(x.status || "previsto");
     setAmount(formatNumberToBrlInput(x.amount ?? ""));
     setErr("");
-    // se tiver accountId explícito no lançamento, respeita; senão usa o default resolvido
     setAccountId(x.accountId || defaultAccountId || "");
   }, [txn, defaultAccountId]);
 
@@ -255,7 +228,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
       categoryId,
       kind,
       status,
-      amount: formatNumberToBrlInput(v) // "1234,56"
+      amount: formatNumberToBrlInput(v),
     });
   }
 
@@ -310,7 +283,12 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
             </TextField>
           </Stack>
 
-          <TextField label="Loja" value={merchant} onChange={(e) => setMerchant(e.target.value)} fullWidth />
+          <TextField
+            label="Loja"
+            value={merchant}
+            onChange={(e) => setMerchant(e.target.value)}
+            fullWidth
+          />
 
           <TextField
             label="Descrição"
@@ -386,58 +364,32 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const dispatch = useDispatch();
   const categories = useSelector(selectCategories);
   const safeRows = Array.isArray(rows) ? rows : [];
-  console.log('safeRo', safeRows)
-
   const accounts = useSelector((s) => s.accounts?.accounts || []);
 
-  const status_list = ['previsto', 'confirmado', 'pago', 'atraso']
+  const status_list = ["previsto", "confirmado", "pago", "atraso"];
   const STATUS_META = {
     previsto: {
       label: "Previsto",
-      color: "default",
-      sx: { bgcolor: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.70)" }
+      sx: { bgcolor: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.70)" },
     },
     confirmado: {
       label: "Confirmado",
-      color: "success",
       sx: { bgcolor: "rgba(46,125,50,0.12)", color: "#1b5e20" },
     },
     pago: {
       label: "Pago",
-      color: "primary",
       sx: { bgcolor: "rgba(25,118,210,0.14)", color: "#0d47a1" },
     },
     atraso: {
       label: "Atraso",
-      color: "error",
       sx: { bgcolor: "rgba(211,47,47,0.14)", color: "#b71c1c" },
     },
   };
-
-
-
-
 
   const accountsById = useMemo(() => {
     const m = {};
     for (const a of accounts) m[a.id] = a;
     return m;
-  }, [accounts]);
-
-  // ✅ CSS dinâmico por conta (linhas)
-  const accountRowSx = useMemo(() => {
-    const sx = {};
-    for (const a of accounts) {
-      const id = a?.id;
-      if (!id) continue;
-      const color = a.color || "rgba(0,0,0,0.04)";
-      // row background clarinho (apple-like)
-      sx[`& .acc-${id}`] = { backgroundColor: color };
-      sx[`& .acc-${id}:hover`] = { backgroundColor: color };
-      sx[`& .acc-${id}.Mui-selected`] = { backgroundColor: color };
-      sx[`& .acc-${id}.Mui-selected:hover`] = { backgroundColor: color };
-    }
-    return sx;
   }, [accounts]);
 
   // filtros
@@ -456,20 +408,83 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const [editOpen, setEditOpen] = useState(false);
   const [selectedTxn, setSelectedTxn] = useState(null);
 
-  const MONTH_ALL = "__ALL__";
+  // =========================
+  // ✅ FILTRO: ANO + MÊS (populado)
+  // =========================
+  const YEAR_ALL = "__ALL_YEAR__";
+  const MONTH_ALL = "__ALL_MONTH__";
 
-  const monthOptions = useMemo(() => {
-    const list = Array.from(
-      new Set((safeRows || []).map((r) => String(r?.invoiceMonth || "")).filter(Boolean))
-    ).sort().reverse();
-    return list;
+  const now = new Date();
+  const currentYear = String(now.getFullYear());
+  const currentMonth = pad2(now.getMonth() + 1);
+  const currentYM = `${currentYear}-${currentMonth}`;
+
+  const ymFromProp = String(month || "").trim();
+  const YM_RE = /^\d{4}-\d{2}$/;
+
+  const propYear = YM_RE.test(ymFromProp) ? ymFromProp.slice(0, 4) : "";
+  const propMonth = YM_RE.test(ymFromProp) ? ymFromProp.slice(5, 7) : "";
+
+
+  // ✅ estado local (não sincroniza mais com o pai)
+  const [yearFilter, setYearFilter] = useState(() => propYear || currentYear);
+  const [monthFilter, setMonthFilter] = useState(() => propMonth || currentMonth);
+
+  // ✅ se o pai passar month="" (ou inválido), começa em Todos/Todos
+  React.useEffect(() => {
+    if (!YM_RE.test(ymFromProp)) {
+      setYearFilter(YEAR_ALL);
+      setMonthFilter(MONTH_ALL);
+    }
+    // só roda na montagem
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+
+
+
+  // opções de anos/meses a partir das transações
+  const ymList = useMemo(() => {
+    return (safeRows || [])
+      .map((r) => resolveInvoiceYM(r))
+      .filter(Boolean);
   }, [safeRows]);
 
-  const monthSelectValue = useMemo(() => {
-    const v = month === "" || month == null ? MONTH_ALL : month;
-    if (v === MONTH_ALL) return v;
-    return monthOptions.includes(v) ? v : MONTH_ALL;
-  }, [month, monthOptions]);
+  const yearOptions = useMemo(() => {
+    const set = new Set(ymList.map((ym) => ym.slice(0, 4)));
+    set.add(currentYear); // garante ano atual
+    return Array.from(set).sort().reverse();
+  }, [ymList, currentYear]);
+
+  const MONTHS = [
+    { value: "01", label: "Janeiro" },
+    { value: "02", label: "Fevereiro" },
+    { value: "03", label: "Março" },
+    { value: "04", label: "Abril" },
+    { value: "05", label: "Maio" },
+    { value: "06", label: "Junho" },
+    { value: "07", label: "Julho" },
+    { value: "08", label: "Agosto" },
+    { value: "09", label: "Setembro" },
+    { value: "10", label: "Outubro" },
+    { value: "11", label: "Novembro" },
+    { value: "12", label: "Dezembro" },
+  ];
+
+  function emitMonthToParent(nextYear, nextMonth) {
+    if (typeof onMonthFilterChange !== "function") return;
+
+    if (nextYear === YEAR_ALL || nextMonth === MONTH_ALL) {
+      return onMonthFilterChange("ALL"); // ✅ token explícito
+    }
+
+    return onMonthFilterChange(`${nextYear}-${nextMonth}`);
+  }
+
+
+
+
+  // =================================
 
   const merchantQ = merchantQuery.trim().toLowerCase();
   const descQ = descriptionQuery.trim().toLowerCase();
@@ -492,7 +507,6 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
 
   const handleSaveEdit = useCallback(
     (patch) => {
-      // ✅ financeSlice.updateTransaction espera { id, patch }
       dispatch(patchTransactionThunk({ id: patch?.id, patch }));
       setEditOpen(false);
       setSelectedTxn(null);
@@ -504,7 +518,18 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     return safeRows.filter((r) => {
       if (!r) return false;
 
-      if (month && String(r.invoiceMonth || "") !== String(month)) return false;
+      // ✅ FILTRO POR ANO/MÊS
+      const ym = resolveInvoiceYM(r); // YYYY-MM
+      if (yearFilter !== YEAR_ALL) {
+        if (!ym) return false;
+
+        const y = ym.slice(0, 4);
+        const m = ym.slice(5, 7);
+
+        if (y !== yearFilter) return false;
+
+        if (monthFilter !== MONTH_ALL && m !== monthFilter) return false;
+      }
 
       if ((purchaseFrom || purchaseTo) && !inDateRange(r.purchaseDate, purchaseFrom, purchaseTo)) return false;
 
@@ -512,7 +537,6 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         const accId = resolveAccountId(r, accounts);
         if ((accId || "") !== accountFilter) return false;
       }
-
 
       if (merchantQ) {
         const m = String(r.merchant || "").toLowerCase();
@@ -525,15 +549,10 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       }
 
       if (kindFilter && r.kind !== kindFilter) return false;
-
       if (categoryFilter && r.categoryId !== categoryFilter) return false;
-
       if (statusFilter && r.status !== statusFilter) return false;
-
       if (tipoFilter && getTxnDirection(r) !== tipoFilter) return false;
-      const getTipo = getTxnDirection(r)
-      console.log('get', getTipo)
-      console.log('tipoFilter', tipoFilter)
+
       if (remainingMax !== "") {
         const inst = getInstallment(r);
         if (!inst || typeof inst.current !== "number" || typeof inst.total !== "number") return false;
@@ -548,7 +567,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     });
   }, [
     safeRows,
-    month,
+    yearFilter,
+    monthFilter,
     purchaseFrom,
     purchaseTo,
     accountFilter,
@@ -559,8 +579,9 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     remainingMax,
     statusFilter,
     tipoFilter,
-    accounts
+    accounts,
   ]);
+  console.log('filteredRows', filteredRows)
 
   const filteredTotal = useMemo(() => {
     return filteredRows.reduce((acc, r) => acc + Number(r?.amount || 0), 0);
@@ -587,7 +608,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
                 sx={{
                   width: 26,
                   height: 26,
-                  marginTop: '4px',
+                  marginTop: "12px",
                   borderRadius: 999,
                   display: "grid",
                   placeItems: "center",
@@ -595,11 +616,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
                   color: isIn ? "#1b5e20" : "#b71c1c",
                 }}
               >
-                {isIn ? (
-                  <ArrowUpwardRoundedIcon fontSize="small" />
-                ) : (
-                  <ArrowDownwardRoundedIcon fontSize="small" />
-                )}
+                {isIn ? <ArrowUpwardRoundedIcon fontSize="small" /> : <ArrowDownwardRoundedIcon fontSize="small" />}
               </Box>
             </Tooltip>
           );
@@ -611,17 +628,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         width: 120,
         renderCell: (params) => formatDateBR(params?.row?.purchaseDate),
       },
-      // {
-      //   field: "chargeDate",
-      //   headerName: "Data Cobrança",
-      //   width: 120,
-      //   renderCell: (params) => formatDateBR(params?.row?.chargeDate),
-      // },
       {
         field: "invoiceMonth",
         headerName: "Mês Fatura",
         width: 100,
-        renderCell: (params) => formatMonthBR(params?.row?.invoiceMonth),
+        renderCell: (params) => {
+          const ym = resolveInvoiceYM(params?.row);
+          return formatMonthBR(ym || params?.row?.invoiceMonth);
+        },
       },
       {
         field: "accountBadge",
@@ -713,22 +727,19 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
               select
               size="small"
               value={current}
-              onChange={(e) =>
-                dispatch(patchTransactionThunk({ id: row.id, patch: { status: e.target.value } }))
-              }
+              onChange={(e) => dispatch(patchTransactionThunk({ id: row.id, patch: { status: e.target.value } }))}
               SelectProps={{ displayEmpty: true }}
               sx={{
                 minWidth: 110,
                 "& .MuiOutlinedInput-root": {
-                  height: 25,
-                  marginTop: '5px',
+                  height: 30,
+                  marginTop: "10px",
+                  
                   fontSize: 13,
                   bgcolor: meta.sx.bgcolor,
                   color: meta.sx.color,
                 },
-                "& .MuiOutlinedInput-notchedOutline": {
-                  border: "none",
-                },
+                "& .MuiOutlinedInput-notchedOutline": { border: "none" },
               }}
             >
               {Object.entries(STATUS_META).map(([value, m]) => (
@@ -750,7 +761,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         align: "right",
         headerAlign: "right",
         renderCell: (params) => (
-          <Stack direction="row" spacing={0.2} justifyContent="flex-end" sx={{ width: "100%", marginTop: '2px' }}>
+          <Stack direction="row" spacing={0.2} justifyContent="flex-end" sx={{ width: "100%", marginTop: "12px" }}>
             <Tooltip title="Editar">
               <IconButton size="small" onClick={() => handleEdit(params?.row)}>
                 <EditRoundedIcon fontSize="small" />
@@ -765,38 +776,101 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         ),
       },
     ],
-    [accounts, accountsById, dispatch, handleEdit, handleDelete]
+    [accounts, accountsById, dispatch, handleEdit, handleDelete, categories]
   );
 
+  const handleYearChange = useCallback((e) => {
+    const nextYear = e.target.value;
+    setYearFilter(nextYear);
+    if (nextYear === YEAR_ALL) {
+      setMonthFilter(MONTH_ALL);
+      emitMonthToParent(YEAR_ALL, MONTH_ALL);
+    } else {
+      emitMonthToParent(nextYear, monthFilter);
+    }
+  }, [monthFilter, emitMonthToParent]); // Memoriaza a função
+
   return (
-    <Box>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: 'calc(100vh - 120px)', // Ocupa a tela inteira menos o header (ajuste os 120px se necessário)
+        width: '100%',
+        overflow: 'hidden' // Impede que a página inteira ganhe scroll, mantendo o scroll só na tabela
+      }}
+    >
       <Stack spacing={1.2} sx={{ mb: 1.2 }}>
-        <Stack spacing={0.9}>
+        <Stack spacing={0.9} pt={1}>
           {/* 🔹 LINHA 1 — PERÍODO / CONTA */}
-          <Stack
-            direction="row"
-            spacing={0.9}
-            useFlexGap
-            sx={{ flexWrap: "wrap" }}
-            alignItems="baseline"
-          >
+          <Stack direction="row" spacing={0.9} useFlexGap sx={{ flexWrap: "wrap" }} alignItems="baseline">
+            {/* ✅ Ano */}
+            <TextField
+              size="small"
+              select
+              label="Ano"
+              value={yearFilter}
+              onChange={(e) => {
+                const nextYear = e.target.value;
+
+                // ✅ Ano = Todos => Mês também vira Todos e remove filtro
+                if (nextYear === YEAR_ALL) {
+                  setYearFilter(YEAR_ALL);
+                  setMonthFilter(MONTH_ALL);
+                  emitMonthToParent(YEAR_ALL, MONTH_ALL);
+                  return;
+                }
+
+                setYearFilter(nextYear);
+                emitMonthToParent(nextYear, monthFilter);
+              }}
+
+              sx={{ minWidth: 120, width: { xs: "49%", sm: 130 } }}
+            >
+              <MenuItem value={YEAR_ALL}>Todos</MenuItem>
+              <Divider sx={{ my: 0.5 }} />
+              {yearOptions.map((y) => (
+                <MenuItem key={y} value={y}>
+                  {y}
+                </MenuItem>
+              ))}
+            </TextField>
+
+
+            {/* ✅ Mês */}
             <TextField
               size="small"
               select
               label="Mês"
-              value={monthSelectValue}
+              value={monthFilter}
+              // Localize o TextField do Mês e altere o onChange:
               onChange={(e) => {
-                const v = e.target.value;
-                onMonthFilterChange(v === MONTH_ALL ? "" : v);
+                const nextMonth = e.target.value;
+
+                if (nextMonth === MONTH_ALL) {
+                  setYearFilter(YEAR_ALL); // Se o mês é todos, o ano deve ser todos para mostrar TUDO
+                  setMonthFilter(MONTH_ALL);
+                  emitMonthToParent(YEAR_ALL, MONTH_ALL);
+                  return;
+                }
+
+                setMonthFilter(nextMonth);
+                // Se escolheu um mês mas o ano estava em "Todos", força o ano atual
+                if (yearFilter === YEAR_ALL) {
+                  setYearFilter(currentYear);
+                  emitMonthToParent(currentYear, nextMonth);
+                } else {
+                  emitMonthToParent(yearFilter, nextMonth);
+                }
               }}
-              sx={{ minWidth: 132, width: { xs: "100%", sm: 140 } }}
+              sx={{ minWidth: 120, width: { xs: "49%", sm: 160 } }}
             >
               <MenuItem value={MONTH_ALL}>Todos</MenuItem>
               <Divider sx={{ my: 0.5 }} />
 
-              {monthOptions.map((ym) => (
-                <MenuItem key={ym} value={ym}>
-                  {formatMonthBR(ym)}
+              {MONTHS.map((m) => (
+                <MenuItem key={m.value} value={m.value}>
+                  {m.label}
                 </MenuItem>
               ))}
             </TextField>
@@ -831,15 +905,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
               sx={{ minWidth: 170, width: { xs: "100%", sm: 200 } }}
             >
               <MenuItem value="">Todas</MenuItem>
-              {accounts
-                .filter(safeAccountActive)
-                .map((a) => (
-                  <MenuItem key={a.id} value={a.id}>
-                    {a.type === "credit_card" ? "💳 " : "🏦 "}
-                    {a.name}
-                  </MenuItem>
-                ))}
+              {accounts.filter(safeAccountActive).map((a) => (
+                <MenuItem key={a.id} value={a.id}>
+                  {a.type === "credit_card" ? "💳 " : "🏦 "}
+                  {a.name}
+                </MenuItem>
+              ))}
             </TextField>
+
             <TextField
               size="small"
               select
@@ -855,13 +928,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           </Stack>
 
           {/* 🔹 LINHA 2 — FILTROS AVANÇADOS */}
-          <Stack
-            direction="row"
-            spacing={0.9}
-            useFlexGap
-            sx={{ flexWrap: "wrap" }}
-            alignItems="baseline"
-          >
+          <Stack direction="row" spacing={0.9} useFlexGap sx={{ flexWrap: "wrap" }} alignItems="baseline">
             <TextField
               size="small"
               label="Loja"
@@ -945,7 +1012,6 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           </Stack>
         </Stack>
 
-
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             Itens: <b>{filteredRows.length}</b>
@@ -960,40 +1026,48 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
 
       {status === "loading" ? (
         <SpinnerPage status={status} />
-      ) :
-
-        <Box sx={{ height: 560, width: "100%" }}>
+      ) : (
+        <Box
+          sx={{
+            flex: 1,           // Faz o Box crescer para ocupar o espaço restante
+            width: "100%",
+            minHeight: 0,      // CRUCIAL: No Flexbox, isso permite que o filho tenha scroll em vez de empurrar o pai
+            position: "relative",
+            zoom: 0.9
+          }}
+        >
           <DataGrid
             rows={filteredRows}
+            density="comfortable"
             columns={columns}
             getRowId={(r) => r?.id}
-            // rowHeight={60}   // padrão é ~52
-            // columnHeaderHeight={70}
-            // density="standard"
             disableRowSelectionOnClick
+            rowHeight={42} // Altura fixa ajuda a performance
+            pageSizeOptions={[25, 50, 100]}
+            initialState={{
+              pagination: { paginationModel: { pageSize: 50 } },
+            }}
+            // Isso impede que o Grid renderize o que não está na tela:
+            // virtualization
             getRowClassName={(params) =>
               params.indexRelativeToCurrentPage % 2 === 0 ? "row-even" : "row-odd"
             }
             sx={{
               border: "none",
+              alignItems: 'center',
               "& .MuiDataGrid-columnHeaders": {
                 borderBottom: "1px solid rgba(0,0,0,0.08)",
               },
               "& .MuiDataGrid-cell": {
                 borderBottom: "1px solid rgba(0,0,0,0.05)",
               },
-
-              /* ✅ zebra */
-              "& .row-even": {
-                backgroundColor: "rgba(0,0,0,0.041)",
-              },
-              "& .row-odd": {
-                backgroundColor: "transparent",
-              },
+              "& .row-even": { backgroundColor: "rgba(0,0,0,0.041)" },
+              "& .row-odd": { backgroundColor: "transparent" },
             }}
           />
         </Box>
-      }
+      )}
+
       <EditTxnDialog
         open={editOpen}
         onClose={() => {

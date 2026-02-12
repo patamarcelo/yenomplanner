@@ -6,7 +6,7 @@ import TransactionsGrid from "../components/TransactionsGrid";
 import { setMonth } from "../store/financeSlice";
 import {
   fetchAllTransactionsThunk,
-  selectTransactionsFiltered,
+  selectTransactionsUi,
   selectTransactionsStatus,
   selectTransactionsError,
 } from "../store/transactionsSlice";
@@ -14,8 +14,8 @@ import {
 export default function Transactions() {
   const dispatch = useDispatch();
 
-  const month = useSelector((s) => s.finance.month);
-  const rows = useSelector(selectTransactionsFiltered);
+  
+  const rows = useSelector(selectTransactionsUi);
   const status = useSelector(selectTransactionsStatus);
   const error = useSelector(selectTransactionsError);
 
@@ -40,7 +40,6 @@ export default function Transactions() {
       <TransactionsGrid
         rows={all}
         status={status}
-        month={month}
         onMonthFilterChange={(v) => dispatch(setMonth(v))}
       />
     </Stack>
