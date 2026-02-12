@@ -1,3 +1,4 @@
+// src/layouts/Layout.jsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
@@ -165,7 +166,6 @@ export default function Layout({ children }) {
   const transactionsUi = useSelector(selectTransactionsUi);
   const bills = useSelector(selectBills);
 
-
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
 
   // ✅ rotas públicas: sem menu/topbar
@@ -189,6 +189,88 @@ export default function Layout({ children }) {
 
   // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
   const bootstrappedRef = useRef(false);
+
+  // =========================================================
+  // ✅ IMPORTANTÍSSIMO: hooks devem vir ANTES de qualquer return
+  // (corrige "Rendered fewer hooks than expected")
+  // =========================================================
+
+  // ✅ valores atuais do filtro
+  const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
+
+  function extractYear(v) {
+    if (!v) return null;
+
+    // aceita Date
+    if (v instanceof Date && !Number.isNaN(v.getTime())) return v.getFullYear();
+
+    const s = String(v).trim();
+    if (!s) return null;
+
+    // YYYY-MM / YYYY-MM-DD / YYYY...
+    const m = s.match(/^(\d{4})/);
+    if (!m) return null;
+
+    const y = Number(m[1]);
+    if (!Number.isFinite(y) || y < 1900 || y > 2500) return null;
+    return y;
+  }
+
+  function collectYearsFromObject(obj) {
+    if (!obj || typeof obj !== "object") return [];
+
+    // tenta os campos mais prováveis (bills e transactions)
+    const candidates = [
+      obj.invoiceMonth,
+      obj.invoice_month,
+      obj.purchaseDate,
+      obj.purchase_date,
+      obj.chargeDate,
+      obj.charge_date,
+      obj.dueDate,
+      obj.due_date,
+      obj.date,
+      obj.createdAt,
+      obj.created_at,
+      obj.paidAt,
+      obj.paid_at,
+      obj.month,
+      obj.year, // se existir
+    ];
+
+    const out = [];
+    for (const c of candidates) {
+      const y = extractYear(c);
+      if (y) out.push(y);
+    }
+
+    // caso raro: year numérico já vindo pronto
+    if (typeof obj.year === "number" && Number.isFinite(obj.year)) out.push(obj.year);
+
+    return out;
+  }
+
+  const years = useMemo(() => {
+    // ✅ base fixa
+    const base = [2025, 2026];
+    const set = new Set(base);
+
+    // ✅ anos vindos de transactions
+    (transactionsUi || []).forEach((t) => {
+      collectYearsFromObject(t).forEach((y) => set.add(y));
+    });
+
+    // ✅ anos vindos de bills
+    (bills || []).forEach((b) => {
+      collectYearsFromObject(b).forEach((y) => set.add(y));
+    });
+
+    // ✅ garante ano atualmente selecionado
+    set.add(selectedYear);
+
+    // ordena
+    return Array.from(set).sort((a, b) => a - b);
+  }, [transactionsUi, bills, selectedYear]);
 
   // ✅ garante "YYYY-MM" válido (ano atual por padrão)
   useEffect(() => {
@@ -345,7 +427,11 @@ export default function Layout({ children }) {
               })}
             >
               {theme.direction === "rtl" ? (
-                collapsed ? <ChevronLeftRoundedIcon fontSize="small" /> : <ChevronRightRoundedIcon fontSize="small" />
+                collapsed ? (
+                  <ChevronLeftRoundedIcon fontSize="small" />
+                ) : (
+                  <ChevronRightRoundedIcon fontSize="small" />
+                )
               ) : collapsed ? (
                 <ChevronRightRoundedIcon fontSize="small" />
               ) : (
@@ -447,92 +533,12 @@ export default function Layout({ children }) {
     </Box>
   );
 
-  // ✅ valores atuais do filtro
-  const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
-  const currentYear = new Date().getFullYear();
-
-  function extractYear(v) {
-    if (!v) return null;
-
-    // aceita Date
-    if (v instanceof Date && !Number.isNaN(v.getTime())) return v.getFullYear();
-
-    const s = String(v).trim();
-    if (!s) return null;
-
-    // YYYY-MM / YYYY-MM-DD / YYYY...
-    const m = s.match(/^(\d{4})/);
-    if (!m) return null;
-
-    const y = Number(m[1]);
-    if (!Number.isFinite(y) || y < 1900 || y > 2500) return null;
-    return y;
-  }
-
-  function collectYearsFromObject(obj) {
-    if (!obj || typeof obj !== "object") return [];
-
-    // tenta os campos mais prováveis (bills e transactions)
-    const candidates = [
-      obj.invoiceMonth,
-      obj.invoice_month,
-      obj.purchaseDate,
-      obj.purchase_date,
-      obj.chargeDate,
-      obj.charge_date,
-      obj.dueDate,
-      obj.due_date,
-      obj.date,
-      obj.createdAt,
-      obj.created_at,
-      obj.paidAt,
-      obj.paid_at,
-      obj.month,
-      obj.year, // se existir
-    ];
-
-    const out = [];
-    for (const c of candidates) {
-      const y = extractYear(c);
-      if (y) out.push(y);
-    }
-
-    // caso raro: year numérico já vindo pronto
-    if (typeof obj.year === "number" && Number.isFinite(obj.year)) out.push(obj.year);
-
-    return out;
-  }
-
-  const years = useMemo(() => {
-    // ✅ base fixa
-    const base = [2025, 2026];
-    const set = new Set(base);
-
-    // ✅ anos vindos de transactions
-    (transactionsUi || []).forEach((t) => {
-      collectYearsFromObject(t).forEach((y) => set.add(y));
-    });
-
-    // ✅ anos vindos de bills
-    (bills || []).forEach((b) => {
-      collectYearsFromObject(b).forEach((y) => set.add(y));
-    });
-
-    // ✅ garante ano atualmente selecionado
-    set.add(selectedYear);
-
-    // ordena
-    return Array.from(set).sort((a, b) => a - b);
-  }, [transactionsUi, bills, selectedYear]);
-
-
   const pillSx = {
     border: (t) => `1px solid ${t.palette.divider}`,
     borderRadius: 999,
     px: 1,
     py: 0.35,
-    bgcolor: (t) =>
-      t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+    bgcolor: (t) => (t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
   };
 
   const selectSx = {
@@ -608,10 +614,7 @@ export default function Layout({ children }) {
                 </IconButton>
               ) : null}
 
-              <Typography
-                variant="subtitle1"
-                sx={{ fontWeight: 900, letterSpacing: -0.2, whiteSpace: "nowrap" }}
-              >
+              <Typography variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: -0.2, whiteSpace: "nowrap" }}>
                 {title}
               </Typography>
             </Stack>
@@ -623,11 +626,7 @@ export default function Layout({ children }) {
               <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
                 <Box sx={{ ...pillSx, minWidth: 120 }}>
                   <FormControl size="small" fullWidth>
-                    <Select
-                      value={selectedMonth}
-                      onChange={(e) => setYM(selectedYear, e.target.value)}
-                      sx={selectSx}
-                    >
+                    <Select value={selectedMonth} onChange={(e) => setYM(selectedYear, e.target.value)} sx={selectSx}>
                       {MONTHS_PT.map((mm) => (
                         <MenuItem key={mm.value} value={mm.value}>
                           {mm.label}
@@ -639,11 +638,7 @@ export default function Layout({ children }) {
 
                 <Box sx={{ ...pillSx, minWidth: 110 }}>
                   <FormControl size="small" fullWidth>
-                    <Select
-                      value={selectedYear}
-                      onChange={(e) => setYM(e.target.value, selectedMonth)}
-                      sx={selectSx}
-                    >
+                    <Select value={selectedYear} onChange={(e) => setYM(e.target.value, selectedMonth)} sx={selectSx}>
                       {years.map((yy) => (
                         <MenuItem key={yy} value={yy}>
                           {yy}
@@ -657,15 +652,7 @@ export default function Layout({ children }) {
               {/* ✅ ações separadas (modo + eye) */}
               <Stack direction="row" spacing={0.6} alignItems="center" sx={pillSx}>
                 <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
-                  <IconButton
-                    onClick={themeMode.toggle}
-                    size="small"
-                    sx={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 999,
-                    }}
-                  >
+                  <IconButton onClick={themeMode.toggle} size="small" sx={{ width: 34, height: 34, borderRadius: 999 }}>
                     {themeMode.mode === "dark" ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
                   </IconButton>
                 </Tooltip>
@@ -682,11 +669,7 @@ export default function Layout({ children }) {
                       background: alpha(theme.palette.background.paper, 0.7),
                     })}
                   >
-                    {hideValues ? (
-                      <VisibilityOffRoundedIcon fontSize="small" />
-                    ) : (
-                      <VisibilityRoundedIcon fontSize="small" />
-                    )}
+                    {hideValues ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
                   </IconButton>
                 </Tooltip>
               </Stack>
