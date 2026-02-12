@@ -22,8 +22,19 @@ import AutoGraphRoundedIcon from "@mui/icons-material/AutoGraphRounded";
 const HERO_IMG = "/assets/image/banner-1.png";
 const MotionBox = motion(Box);
 
-function Pill({ icon, label }) {
+// paleta (pode ajustar depois)
+const ICON_COLORS = {
+    dashboard: "#3b82f6", // blue
+    invoices: "#ef4444",  // red
+    transactions: "#a855f7", // purple
+    insights: "#06b6d4",  // cyan
+    speed: "#f59e0b",     // amber
+    security: "#22c55e",  // green
+};
+
+function Pill({ icon, label, color }) {
     const theme = useTheme();
+
     return (
         <Box
             sx={{
@@ -41,13 +52,25 @@ function Pill({ icon, label }) {
                 userSelect: "none",
             }}
         >
-            <Box sx={{ display: "grid", placeItems: "center", opacity: 0.9 }}>{icon}</Box>
+            <Box
+                sx={{
+                    display: "grid",
+                    placeItems: "center",
+                    opacity: 0.95,
+                    color: color,
+                    filter: "saturate(1.2)",
+                    textShadow:
+                        theme.palette.mode === "dark" ? `0 0 10px ${color}55` : "none",
+                }}
+            >
+                {icon}
+            </Box>
             {label}
         </Box>
     );
 }
 
-function Feature({ icon, title, desc }) {
+function Feature({ icon, title, desc, color }) {
     return (
         <Stack direction="row" spacing={1.2} sx={{ alignItems: "flex-start" }}>
             <Box
@@ -62,8 +85,21 @@ function Feature({ icon, title, desc }) {
                     flex: "0 0 auto",
                 })}
             >
-                {icon}
+                <Box
+                    sx={(theme) => ({
+                        display: "grid",
+                        placeItems: "center",
+                        color: color,
+                        filter: "saturate(1.25)",
+                        transform: "translateY(-0.5px)",
+                        textShadow:
+                            theme.palette.mode === "dark" ? `0 0 10px ${color}55` : "none",
+                    })}
+                >
+                    {icon}
+                </Box>
             </Box>
+
             <Box sx={{ minWidth: 0 }}>
                 <Typography sx={{ fontWeight: 900, fontSize: 13, lineHeight: 1.2 }}>
                     {title}
@@ -113,7 +149,7 @@ export default function AuthShell() {
                         minHeight: { xs: "auto", md: 600 },
                     }}
                 >
-                    {/* ===== ESQUERDA (MELHORADA) ===== */}
+                    {/* ===== ESQUERDA ===== */}
                     <Box
                         sx={{
                             p: { xs: 2.2, md: 3.2 },
@@ -143,11 +179,23 @@ export default function AuthShell() {
                                     : "Acesse sua conta e tenha uma visão clara do mês: despesas, faturas e lançamentos no mesmo lugar."}
                             </Typography>
 
-                            {/* Pills (igual você curtia) */}
+                            {/* Pills */}
                             <Stack direction="row" spacing={1} sx={{ mt: 1.2, flexWrap: "wrap" }}>
-                                <Pill icon={<DashboardRoundedIcon fontSize="small" />} label="Dashboard" />
-                                <Pill icon={<ReceiptLongRoundedIcon fontSize="small" />} label="Faturas" />
-                                <Pill icon={<CreditCardRoundedIcon fontSize="small" />} label="Lançamentos" />
+                                <Pill
+                                    icon={<DashboardRoundedIcon fontSize="small" />}
+                                    label="Dashboard"
+                                    color={ICON_COLORS.dashboard}
+                                />
+                                <Pill
+                                    icon={<ReceiptLongRoundedIcon fontSize="small" />}
+                                    label="Faturas"
+                                    color={ICON_COLORS.invoices}
+                                />
+                                <Pill
+                                    icon={<CreditCardRoundedIcon fontSize="small" />}
+                                    label="Lançamentos"
+                                    color={ICON_COLORS.transactions}
+                                />
                             </Stack>
                         </Stack>
 
@@ -170,7 +218,7 @@ export default function AuthShell() {
                             />
                         </Box>
 
-                        {/* Bottom: features com ícones */}
+                        {/* Bottom: features */}
                         <Box>
                             <Divider sx={{ opacity: 0.7, mb: 1.8 }} />
 
@@ -179,24 +227,27 @@ export default function AuthShell() {
                                     icon={<AutoGraphRoundedIcon fontSize="small" />}
                                     title="Visão do mês em 1 clique"
                                     desc="KPIs e filtros rápidos para entender onde seu dinheiro está indo."
+                                    color={ICON_COLORS.insights}
                                 />
 
                                 <Feature
                                     icon={<BoltRoundedIcon fontSize="small" />}
                                     title="Fluxo rápido de lançamentos"
                                     desc="Crie e organize lançamentos sem fricção, com categorização simples."
+                                    color={ICON_COLORS.speed}
                                 />
 
                                 <Feature
                                     icon={<ShieldRoundedIcon fontSize="small" />}
                                     title="Sessão e dados protegidos"
                                     desc="Autenticação e navegação consistentes para você focar no que importa."
+                                    color={ICON_COLORS.security}
                                 />
                             </Stack>
                         </Box>
                     </Box>
 
-                    {/* ===== DIREITA (FORM) COM SLIDE ===== */}
+                    {/* ===== DIREITA (FORM) ===== */}
                     <Box
                         sx={{
                             p: { xs: 2.2, md: 3.2 },

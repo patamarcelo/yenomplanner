@@ -59,18 +59,19 @@ const DRAWER_COLLAPSED = 76;
 const TOP_H = 64;
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon /> },
-  { to: "/contas", label: "Contas", icon: <AccountBalanceRoundedIcon /> },
-  { to: "/despesas", label: "Despesas", icon: <PaymentsRoundedIcon /> },
-  { to: "/lancamentos", label: "Lançamentos", icon: <CreditCardRoundedIcon /> },
-  { to: "/faturas", label: "Faturas", icon: <ReceiptLongRoundedIcon /> },
-  { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon /> },
+  { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon />, color: "#3b82f6" },
+  { to: "/contas", label: "Contas", icon: <AccountBalanceRoundedIcon />, color: "#22c55e" },
+  { to: "/despesas", label: "Despesas", icon: <PaymentsRoundedIcon />, color: "#f59e0b" },
+  { to: "/lancamentos", label: "Lançamentos", icon: <CreditCardRoundedIcon />, color: "#a855f7" },
+  { to: "/faturas", label: "Faturas", icon: <ReceiptLongRoundedIcon />, color: "#ef4444" },
+  { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon />, color: "#06b6d4" },
 ];
 
-function NavItem({ to, label, icon, collapsed }) {
+
+function NavItem({ to, label, icon, collapsed, color }) {
   const theme = useTheme();
 
-  const base = (
+  return (
     <NavLink
       to={to}
       style={({ isActive }) => ({
@@ -86,21 +87,42 @@ function NavItem({ to, label, icon, collapsed }) {
             ? "rgba(10,132,255,0.18)"
             : "rgba(0,122,255,0.10)"
           : "transparent",
+        transition: "all .18s ease",
       })}
     >
-      <Box sx={{ opacity: 0.9, display: "grid", placeItems: "center", width: 36 }}>
-        {icon}
-      </Box>
-      {!collapsed ? <Typography sx={{ fontWeight: 650 }}>{label}</Typography> : null}
+      {({ isActive }) => (
+        <>
+          <Box
+            sx={{
+              display: "grid",
+              placeItems: "center",
+              width: 36,
+              color: color,
+              transition: "all .18s ease",
+              transform: isActive ? "scale(1.15)" : "scale(1)",
+              filter: isActive ? "saturate(1.4)" : "saturate(0.9)",
+              textShadow:
+                isActive && theme.palette.mode === "dark"
+                  ? `0 0 8px ${color}`
+                  : "none",
+            }}
+          >
+            {icon}
+          </Box>
+
+          {!collapsed && (
+            <Typography
+              sx={{
+                fontWeight: isActive ? 800 : 650,
+                transition: "all .18s ease",
+              }}
+            >
+              {label}
+            </Typography>
+          )}
+        </>
+      )}
     </NavLink>
-  );
-
-  if (!collapsed) return base;
-
-  return (
-    <Tooltip title={label} placement="right">
-      <Box>{base}</Box>
-    </Tooltip>
   );
 }
 
@@ -446,8 +468,17 @@ export default function Layout({ children }) {
 
       <Box sx={{ p: collapsed ? 1 : 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
         {navItems.map((it) => (
-          <NavItem key={it.to} to={it.to} label={it.label} icon={it.icon} collapsed={collapsed} />
+          <NavItem
+            key={it.to}
+            to={it.to}
+            label={it.label}
+            icon={it.icon}
+            color={it.color}
+            collapsed={collapsed}
+          />
         ))}
+
+
       </Box>
 
       <Box sx={{ flex: 1 }} />
