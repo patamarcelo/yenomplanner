@@ -38,7 +38,7 @@ import { selectHideValues } from "../store/uiSlice";
 import { selectTransactionsUi } from "../store/transactionsSlice";
 import { bootstrapThunk } from "../store/bootstrapThunk";
 import { selectCategories } from "../store/categoriesSlice";
-
+import Spinner from "../components/ui/Spinner"
 // -----------------------------
 // Helpers
 // -----------------------------
@@ -555,10 +555,7 @@ export default function Dashboard() {
 
   if (bootLoading) {
     return (
-      <Box sx={{ p: 2 }}>
-        <Typography sx={{ fontWeight: 900, mb: 1 }}>Carregando…</Typography>
-        <LinearProgress />
-      </Box>
+      <Spinner status={bootLoading} />
     );
   }
 
