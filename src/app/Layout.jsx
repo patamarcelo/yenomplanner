@@ -13,6 +13,9 @@ import {
   useTheme,
   Tooltip,
   useMediaQuery,
+  FormControl,
+  Select,
+  MenuItem,
 } from "@mui/material";
 
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
@@ -28,7 +31,6 @@ import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
-import MonthPicker from "../components/MonthPicker";
 import NewTransactionModal from "../components/NewTransactionModal";
 import { useThemeMode } from "../theme";
 
@@ -47,6 +49,9 @@ import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
+
+import { selectTransactionsUi } from "../store/transactionsSlice.js";
+import { selectBills } from "../store/billsSlice.js";
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -98,6 +103,50 @@ function NavItem({ to, label, icon, collapsed }) {
   );
 }
 
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function getDefaultYM() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  return `${y}-${pad2(m)}`;
+}
+
+function parseYM(ym) {
+  // ym esperado: "YYYY-MM"
+  if (!ym || typeof ym !== "string" || !ym.includes("-")) {
+    const def = getDefaultYM();
+    const [y0, m0] = def.split("-");
+    return { y: Number(y0), m: Number(m0) };
+  }
+  const [ys, ms] = ym.split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  if (!y || !m || m < 1 || m > 12) {
+    const def = getDefaultYM();
+    const [y0, m0] = def.split("-");
+    return { y: Number(y0), m: Number(m0) };
+  }
+  return { y, m };
+}
+
+const MONTHS_PT = [
+  { value: 1, label: "Jan" },
+  { value: 2, label: "Fev" },
+  { value: 3, label: "Mar" },
+  { value: 4, label: "Abr" },
+  { value: 5, label: "Mai" },
+  { value: 6, label: "Jun" },
+  { value: 7, label: "Jul" },
+  { value: 8, label: "Ago" },
+  { value: 9, label: "Set" },
+  { value: 10, label: "Out" },
+  { value: 11, label: "Nov" },
+  { value: 12, label: "Dez" },
+];
+
 export default function Layout({ children }) {
   const theme = useTheme();
   const themeMode = useThemeMode();
@@ -105,13 +154,17 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
-  const month = useSelector((s) => s.finance.month);
+  const month = useSelector((s) => s.finance.month); // "YYYY-MM"
   const hideValues = useSelector(selectHideValues);
 
   // ✅ auth (reducer registrado como "user" no store)
   const token = useSelector((s) => s.user.token) || localStorage.getItem("authToken") || "";
   const currentUser = useSelector((s) => s.user.user);
   const authStatus = useSelector((s) => s.user.status);
+
+  const transactionsUi = useSelector(selectTransactionsUi);
+  const bills = useSelector(selectBills);
+
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
 
@@ -137,6 +190,19 @@ export default function Layout({ children }) {
   // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
   const bootstrappedRef = useRef(false);
 
+  // ✅ garante "YYYY-MM" válido (ano atual por padrão)
+  useEffect(() => {
+    if (isPublicRoute) return;
+    if (!month) {
+      dispatch(setMonth(getDefaultYM()));
+      return;
+    }
+    // se estiver inválido, normaliza
+    const { y, m } = parseYM(month);
+    const normalized = `${y}-${pad2(m)}`;
+    if (normalized !== month) dispatch(setMonth(normalized));
+  }, [month, dispatch, isPublicRoute]);
+
   // ✅ Guard de auth + bootstrap do /me + carregar dados (somente logado)
   useEffect(() => {
     // rota pública: não faz nada
@@ -160,11 +226,9 @@ export default function Layout({ children }) {
       dispatch(meThunk())
         .unwrap()
         .then(() => {
-          // ✅ agora sim pode carregar dados
           bootstrappedRef.current = true;
         })
         .catch(() => {
-          // token inválido / expirado etc.
           bootstrappedRef.current = false;
           dispatch(logout());
           navigate("/login", { replace: true });
@@ -214,7 +278,7 @@ export default function Layout({ children }) {
           alignItems: "center",
           justifyContent: collapsed ? "center" : "space-between",
           gap: 1,
-          position: "relative", // 👈 importante
+          position: "relative",
         }}
       >
         <Box
@@ -234,7 +298,7 @@ export default function Layout({ children }) {
               sx={{
                 height: 64,
                 width: "100%",
-                maxWidth: 190,     // ajuste fino se quiser
+                maxWidth: 190,
                 objectFit: "contain",
                 display: "block",
               }}
@@ -245,7 +309,7 @@ export default function Layout({ children }) {
               src="/assets/image/LOGO-0.png"
               alt="YP"
               sx={{
-                marginRight: '20px',
+                marginRight: "20px",
                 height: 54,
                 width: 54,
                 objectFit: "contain",
@@ -254,7 +318,6 @@ export default function Layout({ children }) {
             />
           )}
         </Box>
-
 
         {isMdUp ? (
           <Tooltip title={collapsed ? "Expandir menu" : "Recolher menu"}>
@@ -266,7 +329,7 @@ export default function Layout({ children }) {
                 right: 4,
                 top: "50%",
                 transform: "translateY(-50%)",
-                zIndex: theme.zIndex.drawer + 20, // 👈 garante ficar na frente
+                zIndex: theme.zIndex.drawer + 20,
                 width: 28,
                 height: 28,
                 borderRadius: "50%",
@@ -291,7 +354,6 @@ export default function Layout({ children }) {
             </IconButton>
           </Tooltip>
         ) : null}
-
       </Box>
 
       <Divider />
@@ -385,6 +447,111 @@ export default function Layout({ children }) {
     </Box>
   );
 
+  // ✅ valores atuais do filtro
+  const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
+  const currentYear = new Date().getFullYear();
+
+  function extractYear(v) {
+    if (!v) return null;
+
+    // aceita Date
+    if (v instanceof Date && !Number.isNaN(v.getTime())) return v.getFullYear();
+
+    const s = String(v).trim();
+    if (!s) return null;
+
+    // YYYY-MM / YYYY-MM-DD / YYYY...
+    const m = s.match(/^(\d{4})/);
+    if (!m) return null;
+
+    const y = Number(m[1]);
+    if (!Number.isFinite(y) || y < 1900 || y > 2500) return null;
+    return y;
+  }
+
+  function collectYearsFromObject(obj) {
+    if (!obj || typeof obj !== "object") return [];
+
+    // tenta os campos mais prováveis (bills e transactions)
+    const candidates = [
+      obj.invoiceMonth,
+      obj.invoice_month,
+      obj.purchaseDate,
+      obj.purchase_date,
+      obj.chargeDate,
+      obj.charge_date,
+      obj.dueDate,
+      obj.due_date,
+      obj.date,
+      obj.createdAt,
+      obj.created_at,
+      obj.paidAt,
+      obj.paid_at,
+      obj.month,
+      obj.year, // se existir
+    ];
+
+    const out = [];
+    for (const c of candidates) {
+      const y = extractYear(c);
+      if (y) out.push(y);
+    }
+
+    // caso raro: year numérico já vindo pronto
+    if (typeof obj.year === "number" && Number.isFinite(obj.year)) out.push(obj.year);
+
+    return out;
+  }
+
+  const years = useMemo(() => {
+    // ✅ base fixa
+    const base = [2025, 2026];
+    const set = new Set(base);
+
+    // ✅ anos vindos de transactions
+    (transactionsUi || []).forEach((t) => {
+      collectYearsFromObject(t).forEach((y) => set.add(y));
+    });
+
+    // ✅ anos vindos de bills
+    (bills || []).forEach((b) => {
+      collectYearsFromObject(b).forEach((y) => set.add(y));
+    });
+
+    // ✅ garante ano atualmente selecionado
+    set.add(selectedYear);
+
+    // ordena
+    return Array.from(set).sort((a, b) => a - b);
+  }, [transactionsUi, bills, selectedYear]);
+
+
+  const pillSx = {
+    border: (t) => `1px solid ${t.palette.divider}`,
+    borderRadius: 999,
+    px: 1,
+    py: 0.35,
+    bgcolor: (t) =>
+      t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+  };
+
+  const selectSx = {
+    "& .MuiSelect-select": {
+      py: 0.55,
+      px: 1,
+      fontWeight: 800,
+      fontSize: 13,
+      display: "flex",
+      alignItems: "center",
+    },
+    "& fieldset": { border: "none" },
+  };
+
+  function setYM(nextYear, nextMonth) {
+    const next = `${Number(nextYear)}-${pad2(Number(nextMonth))}`;
+    dispatch(setMonth(next));
+  }
+
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
       {isMdUp ? (
@@ -450,34 +617,45 @@ export default function Layout({ children }) {
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              <DashboardFilters />
+              {location.pathname === "/" && <DashboardFilters />}
 
-              <Stack
-                direction="row"
-                spacing={0.8}
-                alignItems="center"
-                sx={{
-                  border: (t) => `1px solid ${t.palette.divider}`,
-                  borderRadius: 999,
-                  px: 0.6,
-                  py: 0.35,
-                  bgcolor: (t) =>
-                    t.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                }}
-              >
-                <Box sx={{ display: { xs: "none", sm: "block" }, minWidth: 110 }}>
-                  <MonthPicker value={month} onChange={(v) => dispatch(setMonth(v))} />
+              {/* ✅ filtros separados: Mês e Ano */}
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
+                <Box sx={{ ...pillSx, minWidth: 120 }}>
+                  <FormControl size="small" fullWidth>
+                    <Select
+                      value={selectedMonth}
+                      onChange={(e) => setYM(selectedYear, e.target.value)}
+                      sx={selectSx}
+                    >
+                      {MONTHS_PT.map((mm) => (
+                        <MenuItem key={mm.value} value={mm.value}>
+                          {mm.label}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
                 </Box>
 
-                <Box
-                  sx={{
-                    width: 1,
-                    alignSelf: "stretch",
-                    bgcolor: (t) => t.palette.divider,
-                    mx: 0.2,
-                  }}
-                />
+                <Box sx={{ ...pillSx, minWidth: 110 }}>
+                  <FormControl size="small" fullWidth>
+                    <Select
+                      value={selectedYear}
+                      onChange={(e) => setYM(e.target.value, selectedMonth)}
+                      sx={selectSx}
+                    >
+                      {years.map((yy) => (
+                        <MenuItem key={yy} value={yy}>
+                          {yy}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+              </Stack>
 
+              {/* ✅ ações separadas (modo + eye) */}
+              <Stack direction="row" spacing={0.6} alignItems="center" sx={pillSx}>
                 <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
                   <IconButton
                     onClick={themeMode.toggle}

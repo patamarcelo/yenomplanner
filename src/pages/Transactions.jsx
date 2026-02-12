@@ -1,7 +1,7 @@
 // src/pages/Transactions.jsx
 import React, { useEffect, useMemo } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Stack, Typography } from "@mui/material";
+import { Stack, Typography, Alert, CircularProgress } from "@mui/material";
 import TransactionsGrid from "../components/TransactionsGrid";
 import { setMonth } from "../store/financeSlice";
 import {
@@ -31,12 +31,6 @@ export default function Transactions() {
 
   return (
     <Stack spacing={1.6}>
-      {status === "loading" ? (
-        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-          Carregando...
-        </Typography>
-      ) : null}
-
       {error ? (
         <Typography variant="body2" sx={{ color: "error.main" }}>
           {String(error)}
@@ -45,6 +39,7 @@ export default function Transactions() {
 
       <TransactionsGrid
         rows={all}
+        status={status}
         month={month}
         onMonthFilterChange={(v) => dispatch(setMonth(v))}
       />

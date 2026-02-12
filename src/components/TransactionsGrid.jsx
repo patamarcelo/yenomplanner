@@ -16,6 +16,7 @@ import {
   DialogActions,
   Button,
   Alert,
+  CircularProgress
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 
@@ -36,6 +37,7 @@ import { formatDateBR, formatMonthBR } from "../utils/dateBR";
 import { patchTransactionThunk, deleteTransactionThunk } from "../store/transactionsSlice";
 import { selectCategories } from "../store/categoriesSlice";
 import { fetchCategoriesThunk } from "../store/categoriesSlice";
+import SpinnerPage from "./ui/Spinner";
 
 
 // =========================
@@ -380,7 +382,7 @@ function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId 
   );
 }
 
-export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
+export default function TransactionsGrid({ rows, month, onMonthFilterChange, status }) {
   const dispatch = useDispatch();
   const categories = useSelector(selectCategories);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -956,38 +958,42 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange }) {
         <Divider />
       </Stack>
 
-      <Box sx={{ height: 560, width: "100%" }}>
-        <DataGrid
-          rows={filteredRows}
-          columns={columns}
-          getRowId={(r) => r?.id}
-          // rowHeight={60}   // padrão é ~52
-          // columnHeaderHeight={70}
-          // density="standard"
-          disableRowSelectionOnClick
-          getRowClassName={(params) =>
-            params.indexRelativeToCurrentPage % 2 === 0 ? "row-even" : "row-odd"
-          }
-          sx={{
-            border: "none",
-            "& .MuiDataGrid-columnHeaders": {
-              borderBottom: "1px solid rgba(0,0,0,0.08)",
-            },
-            "& .MuiDataGrid-cell": {
-              borderBottom: "1px solid rgba(0,0,0,0.05)",
-            },
+      {status === "loading" ? (
+        <SpinnerPage status={status} />
+      ) :
 
-            /* ✅ zebra */
-            "& .row-even": {
-              backgroundColor: "rgba(0,0,0,0.041)",
-            },
-            "& .row-odd": {
-              backgroundColor: "transparent",
-            },
-          }}
-        />
-      </Box>
+        <Box sx={{ height: 560, width: "100%" }}>
+          <DataGrid
+            rows={filteredRows}
+            columns={columns}
+            getRowId={(r) => r?.id}
+            // rowHeight={60}   // padrão é ~52
+            // columnHeaderHeight={70}
+            // density="standard"
+            disableRowSelectionOnClick
+            getRowClassName={(params) =>
+              params.indexRelativeToCurrentPage % 2 === 0 ? "row-even" : "row-odd"
+            }
+            sx={{
+              border: "none",
+              "& .MuiDataGrid-columnHeaders": {
+                borderBottom: "1px solid rgba(0,0,0,0.08)",
+              },
+              "& .MuiDataGrid-cell": {
+                borderBottom: "1px solid rgba(0,0,0,0.05)",
+              },
 
+              /* ✅ zebra */
+              "& .row-even": {
+                backgroundColor: "rgba(0,0,0,0.041)",
+              },
+              "& .row-odd": {
+                backgroundColor: "transparent",
+              },
+            }}
+          />
+        </Box>
+      }
       <EditTxnDialog
         open={editOpen}
         onClose={() => {

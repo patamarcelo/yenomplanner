@@ -67,6 +67,7 @@ import { selectCategories } from "../store/categoriesSlice";
 import { selectActiveCategories, selectCategoryById, fetchCategoriesThunk } from "../store/categoriesSlice";
 
 import Swal from "sweetalert2";
+import SpinnerPage from "../components/ui/Spinner";
 
 
 const pageSx = { maxWidth: 1120, mx: "auto", px: { xs: 2, md: 3 }, py: 2 };
@@ -1465,12 +1466,8 @@ export default function BillsPage() {
                         </Stack>
                     </CardContent>
                 </Card>
-
-                {status === "loading" ? (
-                    <Alert severity="info" icon={<CircularProgress size={16} />}>
-                        Carregando...
-                    </Alert>
-                ) : null}
+                
+                <SpinnerPage status={status}/>
 
                 {error ? <Alert severity="error">{String(error)}</Alert> : null}
 
