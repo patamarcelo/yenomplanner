@@ -1,5 +1,6 @@
 // src/layouts/Layout.jsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { lazy, Suspense } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -32,7 +33,7 @@ import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
-import NewTransactionModal from "../components/NewTransactionModal";
+// import NewTransactionModal from "../components/NewTransactionModal";
 import { useThemeMode } from "../theme";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -51,8 +52,10 @@ import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
-import { selectTransactionsUi } from "../store/transactionsSlice.js";
-import { selectBills } from "../store/billsSlice.js";
+// import { selectTransactionsUi } from "../store/transactionsSlice.js";
+// import { selectBills } from "../store/billsSlice.js";
+
+const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -185,8 +188,8 @@ export default function Layout({ children }) {
   const currentUser = useSelector((s) => s.user.user);
   const authStatus = useSelector((s) => s.user.status);
 
-  const transactionsUi = useSelector(selectTransactionsUi);
-  const bills = useSelector(selectBills);
+  // const transactionsUi = useSelector(selectTransactionsUi);
+  // const bills = useSelector(selectBills);
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
 
@@ -216,6 +219,14 @@ export default function Layout({ children }) {
   // ✅ IMPORTANTÍSSIMO: hooks devem vir ANTES de qualquer return
   // (corrige "Rendered fewer hooks than expected")
   // =========================================================
+
+  useEffect(() => {
+    const t0 = performance.now();
+    requestAnimationFrame(() => {
+      const dt = performance.now() - t0;
+      console.log("[route paint]", location.pathname, Math.round(dt), "ms");
+    });
+  }, [location.pathname]);
 
   // ✅ valores atuais do filtro
   const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
@@ -272,27 +283,8 @@ export default function Layout({ children }) {
     return out;
   }
 
-  const years = useMemo(() => {
-    // ✅ base fixa
-    const base = [2025, 2026];
-    const set = new Set(base);
+  const years = useMemo(() => [2025, 2026], []);
 
-    // ✅ anos vindos de transactions
-    (transactionsUi || []).forEach((t) => {
-      collectYearsFromObject(t).forEach((y) => set.add(y));
-    });
-
-    // ✅ anos vindos de bills
-    (bills || []).forEach((b) => {
-      collectYearsFromObject(b).forEach((y) => set.add(y));
-    });
-
-    // ✅ garante ano atualmente selecionado
-    set.add(selectedYear);
-
-    // ordena
-    return Array.from(set).sort((a, b) => a - b);
-  }, [transactionsUi, bills, selectedYear]);
 
   // ✅ garante "YYYY-MM" válido (ano atual por padrão)
   useEffect(() => {
@@ -772,7 +764,14 @@ export default function Layout({ children }) {
 
         <Box sx={{ p: { xs: 1.5, md: 2.5 }, flex: 1, overflow: "auto" }}>{children}</Box>
 
-        <NewTransactionModal open={newOpen} onClose={() => setNewOpen(false)} />
+
+
+        {newOpen ? (
+          <Suspense fallback={null}>
+            <NewTransactionModal open={newOpen} onClose={() => setNewOpen(false)} />
+          </Suspense>
+        ) : null}
+
       </Box>
     </Box>
   );

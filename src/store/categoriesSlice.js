@@ -47,16 +47,17 @@ const categoriesSlice = createSlice({
 
 export const { resetCategories, setCategoriesFromBootstrap } = categoriesSlice.actions;
 
-export const selectCategories = (state) => state.categories?.items || [];
-
-export const selectActiveCategories = (state) =>
-    (state.categories?.items || []).filter((c) => c.active !== false);
-
-
 export const selectCategoriesStatus = (s) => s.categories.status;
 export const selectCategoriesError = (s) => s.categories.error;
 
 export const selectCategoryById = (id) => (s) =>
     (s.categories.categories || []).find((c) => String(c.id) === String(id)) || null;
+
+
+export const selectCategories = (state) => state.categories?.categories || [];
+
+export const selectActiveCategories = (state) =>
+    (state.categories?.categories || []).filter((c) => c.active !== false);
+
 
 export default categoriesSlice.reducer;

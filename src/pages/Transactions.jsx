@@ -1,7 +1,8 @@
 // src/pages/Transactions.jsx
 import React, { useEffect, useMemo } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Stack, Typography, Alert, CircularProgress } from "@mui/material";
+import { Stack, Typography } from "@mui/material";
+
 import TransactionsGrid from "../components/TransactionsGrid";
 import { setMonth } from "../store/financeSlice";
 import {
@@ -14,19 +15,27 @@ import {
 export default function Transactions() {
   const dispatch = useDispatch();
 
-  
   const rows = useSelector(selectTransactionsUi);
   const status = useSelector(selectTransactionsStatus);
   const error = useSelector(selectTransactionsError);
 
+  const month = useSelector((s) => s.finance?.month || "");
+
   useEffect(() => {
-    // ✅ busca uma vez ao entrar na página
+    // ✅ evita refetch ao navegar entre telas
+    if (status === "loading") return;
+    if (status === "succeeded") return;
     dispatch(fetchAllTransactionsThunk());
-  }, [dispatch]);
+  }, [dispatch, status]);
 
   const all = useMemo(() => {
     const list = Array.isArray(rows) ? rows : [];
-    return list.slice().sort((a, b) => (a?.chargeDate < b?.chargeDate ? 1 : -1));
+    // ISO yyyy-mm-dd compara bem como string
+    return list
+      .slice()
+      .sort((a, b) =>
+        String(b?.chargeDate || "").localeCompare(String(a?.chargeDate || ""))
+      );
   }, [rows]);
 
   return (
@@ -39,8 +48,12 @@ export default function Transactions() {
 
       <TransactionsGrid
         rows={all}
+        month={month}
         status={status}
-        onMonthFilterChange={(v) => dispatch(setMonth(v))}
+        onMonthFilterChange={(v) => {
+          // grid emite "ALL" quando seleciona todos
+          dispatch(setMonth(v === "ALL" ? "" : v));
+        }}
       />
     </Stack>
   );
