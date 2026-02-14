@@ -28,6 +28,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  LabelList
 } from "recharts";
 
 import { formatBRL } from "../utils/money";
@@ -267,6 +268,8 @@ export default function Dashboard() {
   const txns = useSelector(selectTransactionsUi);
   const accounts = useSelector((s) => s.accounts.accounts);
   const extraFilters = useSelector((s) => s.finance.filters);
+
+
 
   const hideValues = useSelector(selectHideValues);
   const categories = useSelector(selectCategories); // exemplo
@@ -647,34 +650,76 @@ export default function Dashboard() {
 
               <Box sx={{ flex: 1, minHeight: 360 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 10, right: 18, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 30, right: 18, left: 0, bottom: 0 }}
+                  >
+                    {/* 🔹 Gradiente das barras */}
+                    <defs>
+                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={theme.palette.primary.main} stopOpacity={1} />
+                        <stop offset="100%" stopColor={theme.palette.primary.main} stopOpacity={0.6} />
+                      </linearGradient>
+                    </defs>
+
+                    <CartesianGrid
+                      vertical={false}
+                      stroke={theme.palette.divider}
+                      strokeDasharray="4 4"
+                      opacity={0.3}
+                    />
+
                     <XAxis
                       dataKey="label"
                       tick={{ fontSize: 12 }}
-                      interval={2}
                       axisLine={false}
                       tickLine={false}
                     />
+
                     <YAxis
                       tick={{ fontSize: 12 }}
                       axisLine={false}
                       tickLine={false}
-                      width={44}
+                      width={60}
                       domain={[0, Math.max(10, maxChartValue * 1.15)]}
-                      tickFormatter={(v) => {
-                        if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
-                        if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-                        return `${Math.round(v)}`;
-                      }}
+                      tickFormatter={(v) => formatBRL(v)}
                     />
+
                     <Tooltip content={<BRLTooltip />} />
+
                     <Bar
                       dataKey="value"
-                      radius={[10, 10, 6, 6]}
-                      fill={theme.palette.primary.main}
-                      opacity={0.9}
-                    />
+                      fill="url(#barGradient)"
+                      radius={[12, 12, 0, 0]}
+                      barSize={24}
+                      isAnimationActive
+                      animationDuration={600}
+                    >
+                      {/* 🔹 Valor no topo da barra */}
+                      <LabelList
+                        dataKey="value"
+                        position="top"
+                        content={(props) => {
+                          const { x, y, width, value } = props;
+
+                          if (!value || Number(value) <= 0) return null; // ✅ só mostra se > 0
+
+                          return (
+                            <text
+                              x={x + width / 2}
+                              y={y - 6}
+                              textAnchor="middle"
+                              fontSize={12}
+                              fontWeight={600}
+                              fill={theme.palette.text.primary}
+                            >
+                              {formatBRL(value)}
+                            </text>
+                          );
+                        }}
+                      />
+
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -912,6 +957,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </Box>
-    </Stack>
+    </Stack >
   );
 }

@@ -56,6 +56,7 @@ import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 // import { selectBills } from "../store/billsSlice.js";
 
 const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
+import { selectAuthUser } from "../store/authSlice";
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -179,6 +180,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const user = useSelector(selectAuthUser)
 
   const month = useSelector((s) => s.finance.month); // "YYYY-MM"
   const hideValues = useSelector(selectHideValues);
@@ -637,9 +639,30 @@ export default function Layout({ children }) {
                 </IconButton>
               ) : null}
 
-              <Typography variant="subtitle1" sx={{ fontWeight: 900, letterSpacing: -0.2, whiteSpace: "nowrap" }}>
-                {title}
-              </Typography>
+              <Stack spacing={0.2} sx={{ lineHeight: 1.1 }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    opacity: 0.75,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Olá, {user?.first_name} 👋
+                </Typography>
+
+                <Typography
+                  variant="h6"
+                  sx={{
+                    fontWeight: 900,
+                    letterSpacing: -0.4,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {title}
+                </Typography>
+              </Stack>
+
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
