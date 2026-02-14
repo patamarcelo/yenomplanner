@@ -1324,14 +1324,15 @@ export default function BillsPage() {
                             </Stack>
 
                             <ToggleButtonGroup
-                                value={filterMonth} // "all" ou "01".."12"
+                                value={filterMonth}
                                 exclusive
                                 onChange={(_, v) => v != null && setFilterMonth(v)}
-                                sx={{
+                                sx={(theme) => ({
                                     width: "100%",
                                     display: "grid",
                                     gridTemplateColumns: "repeat(13, 1fr)",
                                     gap: 0.6,
+
                                     "& .MuiToggleButton-root": {
                                         m: 0,
                                         borderRadius: 1.2,
@@ -1341,9 +1342,30 @@ export default function BillsPage() {
                                         fontSize: 11.5,
                                         fontWeight: 900,
                                         textTransform: "none",
-                                        border: "1px solid rgba(0,0,0,0.12)",
+                                        border: `1px solid ${theme.palette.divider}`,
+                                        color: theme.palette.text.secondary,
+                                        backgroundColor: "transparent",
+                                        transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease",
                                     },
-                                }}
+
+                                    // ✅ selecionado: azul padrão do theme
+                                    "& .MuiToggleButton-root.Mui-selected": {
+                                        color: theme.palette.primary.contrastText,
+                                        backgroundColor: theme.palette.primary.main,
+                                        borderColor: theme.palette.primary.main,
+                                    },
+
+                                    // ✅ hover do selecionado
+                                    "& .MuiToggleButton-root.Mui-selected:hover": {
+                                        backgroundColor: theme.palette.primary.dark,
+                                        borderColor: theme.palette.primary.dark,
+                                    },
+
+                                    // ✅ hover do não selecionado
+                                    "& .MuiToggleButton-root:hover": {
+                                        backgroundColor: theme.palette.action.hover,
+                                    },
+                                })}
                             >
                                 {monthOptions.map((m) => (
                                     <ToggleButton key={m.v} value={m.v} aria-label={m.label}>
