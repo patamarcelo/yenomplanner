@@ -1,5 +1,5 @@
 // src/components/NewTransactionModal.jsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -17,18 +17,29 @@ import {
   CircularProgress,
   ToggleButtonGroup,
   ToggleButton,
+  Autocomplete,
 } from "@mui/material";
+
 import { useDispatch, useSelector } from "react-redux";
 
-import { categories } from "../data/mockCategories";
 import { splitInstallments } from "../utils/splitInstallments";
 import { formatBRL } from "../utils/money";
 import { computeInvoiceMonthFromPurchase, ymFromDate } from "../utils/BillingDates.js";
-
 import { formatMonthBR } from "../utils/dateBR";
 
 import { createTransactionThunk } from "../store/transactionsSlice";
+import { selectCategories } from "../store/categoriesSlice";
 
+import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
+
+import { selectTransactionsUi } from "../store/transactionsSlice";
+
+
+const MIN_MERCHANT_CHARS = 2; // use 1 se preferir
+const MIN_DESC_CHARS = 0;
+
+
+// ---------- helpers ----------
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -55,10 +66,51 @@ function genClientId() {
   return `manual:${Date.now()}:${rand}`;
 }
 
-export default function NewTransactionModal({ open, onClose }) {
+// BRL input helpers (igual ao grid/dialog)
+function sanitizeBrlInput(raw) {
+  return String(raw ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[^0-9,\.\-]/g, "");
+}
+
+function parseBrlToNumber(raw) {
+  const s0 = sanitizeBrlInput(raw);
+  if (!s0) return NaN;
+
+  if (s0.includes(",")) {
+    const s = s0.replace(/\./g, "").replace(/,/g, ".");
+    return Number(s);
+  }
+  return Number(s0);
+}
+
+function formatNumberToBrlInput(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  return v.toFixed(2).replace(".", ",");
+}
+
+function safeAccountActive(a) {
+  return a?.active !== false;
+}
+
+// -----------------------------------------------
+// ✅ Modal
+// -----------------------------------------------
+export default function NewTransactionModal({ open, onClose, rows }) {
   const dispatch = useDispatch();
+
   const accounts = useSelector((s) => s.accounts?.accounts || []);
   const apiError = useSelector((s) => s.transactions?.error || "");
+
+  const rowsFromStore = useSelector(selectTransactionsUi);
+  const historyRows = useMemo(() => (Array.isArray(rowsFromStore) ? rowsFromStore : []), [rowsFromStore]);
+
+  // ✅ categorias reais do store (para ficar consistente com grid)
+  const categories = useSelector(selectCategories) || [];
+
+
+  const historyIndex = useMemo(() => buildTxnHistoryIndex(historyRows), [historyRows]);
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -72,12 +124,18 @@ export default function NewTransactionModal({ open, onClose }) {
 
   const [merchant, setMerchant] = useState("");
   const [description, setDescription] = useState("");
+
+  // ✅ usar slug (consistente com grid)
   const [categoryId, setCategoryId] = useState("outros");
 
-  // guardar como string (o thunk vai converter pra amount string e o serializer vira cents)
+  // ✅ guardar como string BRL (sempre positivo)
   const [amount, setAmount] = useState("0");
 
+  // ✅ status (mantive seus valores em inglês para não quebrar back/store)
   const [status, setStatus] = useState("planned"); // planned | confirmed | paid | overdue
+
+  // ✅ trava auto-status quando usuário mexer manualmente
+  const statusTouchedRef = useRef(false);
 
   const [kind, setKind] = useState("one_off"); // one_off | recurring | installment
   const [nParts, setNParts] = useState(2);
@@ -99,6 +157,34 @@ export default function NewTransactionModal({ open, onClose }) {
     return ymFromDate(chargeDate);
   }, [purchaseDate, chargeDate, selectedAccount]);
 
+  // ✅ status automático ao selecionar conta
+  function applyAutoStatusByAccount(nextAccountId) {
+    if (statusTouchedRef.current) return;
+
+    const acc = nextAccountId ? accounts.find((a) => a.id === nextAccountId) : null;
+    if (!acc) return;
+
+    if (acc.type === "credit_card") setStatus("confirmed");
+    else setStatus("paid");
+  }
+
+  // ✅ auto categoria pela loja (mais frequente)
+  const suggestedCategoryForMerchant = useMemo(() => {
+    return historyIndex?.getBestCategoryForMerchant?.(merchant) || "";
+  }, [historyIndex, merchant]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!merchant) return;
+    if (!suggestedCategoryForMerchant) return;
+
+    // autopreenche se está vazio ou no default "outros"
+    if (!categoryId || categoryId === "outros") {
+      setCategoryId(suggestedCategoryForMerchant);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, merchant, suggestedCategoryForMerchant]);
+
   // auto-ajuste chargeDate quando trocar conta / purchaseDate (se usuário não editou manualmente)
   useEffect(() => {
     if (!open) return;
@@ -107,18 +193,15 @@ export default function NewTransactionModal({ open, onClose }) {
       const today = todayISO();
 
       if (!selectedAccount) {
-        // sem conta: cobrança = hoje
         setChargeDate(today);
         return;
       }
 
       if (selectedAccount.type === "checking") {
-        // conta corrente: cobrança = compra (padrão hoje)
         setChargeDate(purchaseDate || today);
         return;
       }
 
-      // cartão: cobrança = (invoiceMonth + dueDay)
       const dueDay = selectedAccount?.statement?.dueDay ?? 10;
       const ym = computeInvoiceMonthFromPurchase(purchaseDate || today, selectedAccount?.statement?.cutoffDay);
       const d = makeChargeDateFromYM(ym, dueDay);
@@ -128,7 +211,7 @@ export default function NewTransactionModal({ open, onClose }) {
 
   const previewParts = useMemo(() => {
     const n = Math.max(1, Number(nParts || 1));
-    const v = Number(String(amount || "0").replace(",", "."));
+    const v = parseBrlToNumber(amount);
     if (kind !== "installment" || !Number.isFinite(v) || v <= 0 || n <= 1) return [];
     return splitInstallments(v, n);
   }, [amount, kind, nParts]);
@@ -143,8 +226,12 @@ export default function NewTransactionModal({ open, onClose }) {
     setMerchant("");
     setDescription("");
     setCategoryId("outros");
+
     setAmount("0");
+
     setStatus("planned");
+    statusTouchedRef.current = false;
+
     setKind("one_off");
     setNParts(2);
     setDirection("expense");
@@ -160,7 +247,7 @@ export default function NewTransactionModal({ open, onClose }) {
   }
 
   function validate() {
-    const v = Number(String(amount || "0").replace(",", "."));
+    const v = parseBrlToNumber(amount);
     const loja = (merchant || "").trim();
     const desc = (description || "").trim();
 
@@ -170,7 +257,6 @@ export default function NewTransactionModal({ open, onClose }) {
     if (!desc) return "Preencha a Descrição.";
     if (!Number.isFinite(v) || v <= 0) return "Informe um valor válido.";
 
-    // regra: confirmed/paid idealmente com conta
     if ((status === "confirmed" || status === "paid") && !accountId) {
       return "Para Confirmado/Pago, selecione uma Conta/Cartão (ou use Previsto).";
     }
@@ -187,6 +273,9 @@ export default function NewTransactionModal({ open, onClose }) {
     const loja = (merchant || "").trim();
     const desc = (description || "").trim();
 
+    const vNum = parseBrlToNumber(amount);
+    const amountStr = formatNumberToBrlInput(Math.abs(vNum)); // sempre positivo
+
     return {
       client_id: genClientId(),
       purchaseDate,
@@ -196,7 +285,7 @@ export default function NewTransactionModal({ open, onClose }) {
       merchant: loja,
       description: desc,
       categoryId,
-      amount, // string
+      amount: amountStr, // string BRL
       status,
       direction,
       kind,
@@ -219,7 +308,7 @@ export default function NewTransactionModal({ open, onClose }) {
 
       // AVULSO
       if (kind === "one_off") {
-        const res = await dispatch(
+        await dispatch(
           createTransactionThunk({
             ...base,
             kind: "one_off",
@@ -230,7 +319,6 @@ export default function NewTransactionModal({ open, onClose }) {
           })
         ).unwrap();
 
-        // ok
         handleClose();
         return;
       }
@@ -251,16 +339,14 @@ export default function NewTransactionModal({ open, onClose }) {
 
       // PARCELADO
       const n = Math.max(2, Number(nParts));
-      const vNum = Number(String(amount || "0").replace(",", "."));
+      const vNum = parseBrlToNumber(base.amount);
       const parts = splitInstallments(vNum, n);
 
       const groupId = `inst_${Math.random().toString(16).slice(2, 9)}`;
 
-      // baseDate = mês da chargeDate, dia 01
       const baseDate = new Date(base.chargeDate);
       baseDate.setDate(1);
 
-      // cria N lançamentos (um por mês)
       const creates = parts.map((partValue, idx) => {
         const d = new Date(baseDate);
         d.setMonth(d.getMonth() + idx);
@@ -279,7 +365,7 @@ export default function NewTransactionModal({ open, onClose }) {
             installmentGroupId: groupId,
             installmentCurrent: idx + 1,
             installmentTotal: n,
-            amount: String(partValue.toFixed(2)).replace(".", ","), // manda string
+            amount: formatNumberToBrlInput(partValue),
             status: idx === 0 ? base.status : "planned",
           })
         ).unwrap();
@@ -298,19 +384,37 @@ export default function NewTransactionModal({ open, onClose }) {
     }
   }
 
+  // ✅ sugestões
+  const merchantOptions = useMemo(() => {
+    const q = String(merchant || "").trim();
+    if (q.length < MIN_MERCHANT_CHARS) return [];
+    const list = historyIndex?.getMerchantSuggestions?.(q, 12) || [];
+    return list.map((x) => x.label);
+  }, [historyIndex, merchant]);
+
+
+  const descriptionOptions = useMemo(() => {
+    const m = String(merchant || "").trim();
+    const q = String(description || "").trim();
+    if (!m) return [];
+    if (q.length < MIN_DESC_CHARS) return [];
+    const list = historyIndex?.getDescriptionSuggestions?.(m, q, 12) || [];
+    return list.map((x) => x.label);
+  }, [historyIndex, merchant, description]);
+
+  // ======= (seu styling original mantido) =======
   const isExpense = direction === "expense";
 
-  const borderColor = isExpense
-    ? "rgba(211,47,47,0.45)"   // vermelho mais presente
-    : "rgba(46,125,50,0.45)"; // verde mais presente
+  const borderColor = isExpense ? "rgba(211,47,47,0.45)" : "rgba(46,125,50,0.45)";
+  // const tintBg = isExpense
+  //   ? "rgba(211,47,47,0.45)"
+  //   : "rgba(46,125,50,0.45)";
 
-  const tintBg = isExpense
-    ? "rgba(211,47,47,0.22)"  // MUITO suave
-    : "rgba(46,125,50,0.22)";
+  // const gradientAccent = isExpense
+  //   ? "rgba(211,47,47,0.55)"
+  //   : "rgba(46,125,50,0.55)";
 
-  const gradientAccent = isExpense
-    ? "rgba(211,47,47,0.28)"
-    : "rgba(46,125,50,0.28)";
+
 
   const headerToggleSx = {
     borderRadius: 999,
@@ -329,41 +433,46 @@ export default function NewTransactionModal({ open, onClose }) {
     },
   };
 
-
   const inputSx = {
     "& .MuiInputLabel-root": {
-      color: "whitesmoke",
-      fontWeight: 600,
+      color: "rgba(15,23,42,0.78)", // slate-900 suave
+      fontWeight: 800,
     },
     "& .MuiInputLabel-root.Mui-focused": {
-      color: "whitesmoke",
+      color: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)",
     },
-    "& .MuiInputBase-input": {
-      color: "#111", // texto digitado (mantém legível)
-    },
+    "& .MuiInputBase-input": { color: "#0f172a" },
+
     "& .MuiOutlinedInput-root": {
-      backgroundColor: "rgba(255,255,255,0.92)",
-      borderRadius: 2,
+      backgroundColor: "#fff",        // sólido (sem transparência)
+      borderRadius: 10,
     },
-    "& .MuiOutlinedInput-notchedOutline": {
-      borderColor: "rgba(255,255,255,0.35)",
-    },
+
+    "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(2,6,23,0.18)" },
     "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
-      borderColor: "rgba(255,255,255,0.6)",
+      borderColor: isExpense ? "rgba(211,47,47,0.55)" : "rgba(46,125,50,0.55)",
     },
     "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
-      borderColor: "rgba(255,255,255,0.9)",
+      borderColor: isExpense ? "rgba(211,47,47,0.85)" : "rgba(46,125,50,0.85)",
+      borderWidth: 1,
     },
-    "& .MuiFormHelperText-root": {
-      color: "rgba(245,245,245,0.8)", // whitesmoke mais suave
-    },
+
+    "& .MuiFormHelperText-root": { color: "rgba(15,23,42,0.62)" },
   };
 
 
+  const inputBg = isExpense
+    ? "rgba(211,47,47,0.10)"
+    : "rgba(46,125,50,0.10)";
 
-  const inputBg = isExpense ? "rgba(211,47,47,0.045)" : "rgba(46,125,50,0.045)";
-  const inputBgHover = isExpense ? "rgba(211,47,47,0.070)" : "rgba(46,125,50,0.070)";
-  const inputBgFocus = isExpense ? "rgba(211,47,47,0.095)" : "rgba(46,125,50,0.095)";
+  const inputBgHover = isExpense
+    ? "rgba(211,47,47,0.18)"
+    : "rgba(46,125,50,0.18)";
+
+  const inputBgFocus = isExpense
+    ? "rgba(211,47,47,0.25)"
+    : "rgba(46,125,50,0.25)";
+
 
   const inputBorder = "rgba(0,0,0,0.14)";
   const inputBorderHover = isExpense ? "rgba(211,47,47,0.35)" : "rgba(46,125,50,0.35)";
@@ -372,40 +481,47 @@ export default function NewTransactionModal({ open, onClose }) {
   const inputRing = isExpense ? "rgba(211,47,47,0.16)" : "rgba(46,125,50,0.16)";
 
 
+  const gradientAccent = isExpense ? "#f04444" : "#22c55e"; // topo
+  const tintBg = isExpense ? "#ffd5d5" : "#d7ffe7";         // faixa suave
+
   return (
     <Dialog
       open={open}
       onClose={handleClose}
       fullWidth
       maxWidth="sm"
+      slotProps={{
+        backdrop: {
+          sx: {
+            backgroundColor: "rgba(2,6,23,0.72)", // escurece fundo
+            backdropFilter: "blur(10px)",          // blur premium
+          },
+        },
+      }}
       PaperProps={{
         sx: {
           borderRadius: 2,
           border: `1.5px solid ${borderColor}`,
-
-          // fundo legível + elegante
           background: `
             linear-gradient(
               -180deg,
-              ${gradientAccent} 10%,
-              ${tintBg} 10px,
-              rgba(255,255,255,0.96) 80%
+              ${gradientAccent} 0%,
+              ${tintBg} 60px,
+              rgba(255,255,255,1) 85%
             )
           `,
           boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
           transition: "all 0.2s ease",
           "&:hover": {
             boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
-            borderColor: isExpense
-              ? "rgba(211,47,47,0.65)"
-              : "rgba(46,125,50,0.65)",
+            borderColor: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)",
           },
-        }
+        },
       }}
     >
       <DialogTitle sx={{ fontWeight: 950, py: 1.5 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.5}>
-          <Typography sx={{ fontWeight: 950, color: 'whitesmoke' }}>Novo lançamento</Typography>
+          <Typography sx={{ fontWeight: 950, color: "whitesmoke" }}>Novo lançamento</Typography>
 
           <ToggleButtonGroup
             exclusive
@@ -426,57 +542,24 @@ export default function NewTransactionModal({ open, onClose }) {
       <DialogContent
         sx={{
           pt: 1.5,
-
-          // aplica em TODOS os TextFields/Selects do modal
           "& .MuiTextField-root .MuiOutlinedInput-root": {
-            borderRadius: 2,
-            backgroundColor: inputBg,
-            transition: "background-color .15s ease, box-shadow .15s ease, border-color .15s ease",
-
-            "& .MuiOutlinedInput-notchedOutline": {
-              borderColor: inputBorder,
-            },
-
-            "&:hover": {
-              backgroundColor: inputBgHover,
-              "& .MuiOutlinedInput-notchedOutline": {
-                borderColor: inputBorderHover,
-              },
-            },
+            borderRadius: 10,
+            backgroundColor: "#fff",
+            transition: "box-shadow .15s ease, border-color .15s ease",
 
             "&.Mui-focused": {
-              backgroundColor: inputBgFocus,
-              boxShadow: `0 0 0 4px ${inputRing}`,
-              "& .MuiOutlinedInput-notchedOutline": {
-                borderColor: inputBorderFocus,
-                borderWidth: 1,
-              },
+              boxShadow: `0 0 0 4px ${isExpense ? "rgba(211,47,47,0.18)" : "rgba(46,125,50,0.18)"}`,
             },
           },
-
-          // deixa o placeholder mais visível
-          "& .MuiInputBase-input::placeholder": {
-            opacity: 0.85,
-          },
-
-          // helper text discreto e alinhado
-          "& .MuiFormHelperText-root": {
-            marginLeft: 0,
-            marginRight: 0,
-            opacity: 0.85,
-          },
-
-          // melhora o Select (ícone / padding)
-          "& .MuiSelect-select": {
-            paddingTop: "12.5px",
-            paddingBottom: "12.5px",
-          },
+          "& .MuiInputBase-input::placeholder": { opacity: 0.85 },
+          "& .MuiFormHelperText-root": { marginLeft: 0, marginRight: 0, opacity: 0.85 },
+          "& .MuiSelect-select": { paddingTop: "12.5px", paddingBottom: "12.5px" },
         }}
       >
         <Stack spacing={1.4}>
           {err ? <Alert severity="error">{err}</Alert> : null}
 
-          <Stack direction={{ xs: "column", sm: "row", }}spacing={1.2} sx={{paddingTop: '10px'}}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ paddingTop: "10px" }}>
             <TextField
               label="Data compra"
               type="date"
@@ -513,16 +596,22 @@ export default function NewTransactionModal({ open, onClose }) {
               select
               value={accountId}
               onChange={(e) => {
-                setAccountId(e.target.value);
-                // ao trocar a conta, volta a auto-calcular (se usuário não tinha mexido)
+                const next = e.target.value;
+                setAccountId(next);
+
+                // ao trocar a conta, volta a auto-calcular
                 setChargeTouched(false);
+
+                // ✅ status automático (💳 => confirmed, 🏦 => paid)
+                statusTouchedRef.current = false;
+                applyAutoStatusByAccount(next);
               }}
               fullWidth
             >
               <MenuItem value="">(Sem conta) — Provisionar</MenuItem>
               <Divider />
               {accounts
-                .filter((a) => a.active !== false)
+                .filter(safeAccountActive)
                 .map((a) => (
                   <MenuItem key={a.id} value={a.id}>
                     {a.type === "credit_card" ? `💳 ${a.name}` : `🏦 ${a.name}`}
@@ -531,7 +620,16 @@ export default function NewTransactionModal({ open, onClose }) {
             </TextField>
 
             <TextField
-              sx={inputSx} label="Status" select value={status} onChange={(e) => setStatus(e.target.value)} fullWidth>
+              sx={inputSx}
+              label="Status"
+              select
+              value={status}
+              onChange={(e) => {
+                statusTouchedRef.current = true;
+                setStatus(e.target.value);
+              }}
+              fullWidth
+            >
               <MenuItem value="planned">Previsto</MenuItem>
               <MenuItem value="confirmed">Confirmado</MenuItem>
               <MenuItem value="paid">Pago</MenuItem>
@@ -539,22 +637,49 @@ export default function NewTransactionModal({ open, onClose }) {
             </TextField>
           </Stack>
 
-          <TextField
-            sx={inputSx}
-            label="Loja *"
+          {/* ✅ Loja com sugestões (histórico) */}
+          <Autocomplete
+            freeSolo
+            options={merchantOptions}
+            openOnFocus={false}
+            filterOptions={(x) => x} // evita filtro duplicado (já filtramos no index)
             value={merchant}
-            onChange={(e) => setMerchant(e.target.value)}
-            placeholder="Ex: iFood, Uber, Amazon..."
-            fullWidth
+            onChange={(e, val) => setMerchant(val || "")}
+            inputValue={merchant}
+            onInputChange={(e, val) => setMerchant(val || "")}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Loja *"
+                fullWidth
+                helperText={
+                  String(merchant || "").trim().length < MIN_MERCHANT_CHARS
+                    ? `Digite pelo menos ${MIN_MERCHANT_CHARS} caracteres`
+                    : "Sugestões do histórico"
+                }
+              />
+            )}
           />
 
-          <TextField
-            sx={inputSx}
-            label="Descrição *"
+
+          {/* ✅ Descrição com sugestões por loja */}
+          <Autocomplete
+            freeSolo
+            options={descriptionOptions}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ex: Mercado semana, assinatura..."
-            fullWidth
+            onChange={(e, val) => setDescription(val || "")}
+            inputValue={description}
+            onInputChange={(e, val) => setDescription(val || "")}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                sx={inputSx}
+                label="Descrição *"
+                placeholder="Ex: Mercado semana, assinatura..."
+                fullWidth
+                helperText={merchant ? "Sugestões baseadas nessa loja" : "Selecione uma loja para sugestões"}
+              />
+            )}
           />
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
@@ -565,9 +690,10 @@ export default function NewTransactionModal({ open, onClose }) {
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
               fullWidth
+              helperText={suggestedCategoryForMerchant ? `Sugestão da loja: ${suggestedCategoryForMerchant}` : "—"}
             >
               {categories.map((c) => (
-                <MenuItem key={c.id} value={c.id}>
+                <MenuItem key={c.id} value={c.slug}>
                   {c.name}
                 </MenuItem>
               ))}
@@ -577,7 +703,11 @@ export default function NewTransactionModal({ open, onClose }) {
               sx={inputSx}
               label="Valor (R$)"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(sanitizeBrlInput(e.target.value))}
+              onBlur={() => {
+                const v = parseBrlToNumber(amount);
+                if (Number.isFinite(v)) setAmount(formatNumberToBrlInput(Math.abs(v)));
+              }}
               inputMode="decimal"
               fullWidth
             />
@@ -657,7 +787,7 @@ export default function NewTransactionModal({ open, onClose }) {
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ pb: 2, pr:2,  gap: 1, marginTop: '-20px' }}>
+      <DialogActions sx={{ pb: 2, pr: 2, gap: 1, marginTop: "-20px" }}>
         <Button onClick={handleClose} variant="outlined" disabled={saving}>
           Cancelar
         </Button>
@@ -666,11 +796,7 @@ export default function NewTransactionModal({ open, onClose }) {
           onClick={handleSave}
           variant="contained"
           disabled={saving}
-          sx={{
-            fontWeight: 950,
-            borderRadius: 2,
-            minWidth: 140,
-          }}
+          sx={{ fontWeight: 950, borderRadius: 2, minWidth: 140 }}
         >
           {saving ? <CircularProgress size={18} /> : "Salvar"}
         </Button>

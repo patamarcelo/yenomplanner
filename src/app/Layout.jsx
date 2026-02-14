@@ -785,7 +785,7 @@ export default function Layout({ children }) {
           </Toolbar>
         </AppBar>
 
-        <Box sx={{ p: { xs: 1.5, md: 2.5 }, flex: 1, overflow: "auto" }}>{children}</Box>
+        <Box sx={{ p: { xs: 1.5, md: 1.5 }, flex: 1, overflow: "auto" }}>{children}</Box>
 
 
 

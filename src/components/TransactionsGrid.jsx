@@ -29,9 +29,16 @@ import { alpha } from "@mui/material/styles";
 
 import { formatBRL } from "../utils/money";
 import { formatDateBR, formatMonthBR } from "../utils/dateBR";
-import { patchTransactionThunk, deleteTransactionThunk } from "../store/transactionsSlice";
+import { patchTransactionThunk, deleteTransactionThunk, createTransactionThunk } from "../store/transactionsSlice";
 import { selectCategories } from "../store/categoriesSlice";
 import SpinnerPage from "./ui/Spinner";
+
+import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+
+import useDebouncedValue from "../hooks/useDebouncedValue";
+import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
+import EditTxnDialog from "./transactions/EditTxnDialog";
+
 
 // =========================
 // Constantes (fora do componente)
@@ -296,186 +303,6 @@ function AccountChip({ accountId, accountsById }) {
 // =========================
 // Edit dialog
 // =========================
-function EditTxnDialog({ open, onClose, txn, accounts, onSave, defaultAccountId }) {
-  const t = txn || {};
-
-  const [purchaseDate, setPurchaseDate] = useState(t.purchaseDate || "");
-  const [chargeDate, setChargeDate] = useState(t.chargeDate || "");
-  const [invoiceMonth, setInvoiceMonth] = useState(t.invoiceMonth || "");
-  const [accountId, setAccountId] = useState(t.accountId || "");
-  const [merchant, setMerchant] = useState(t.merchant || "");
-  const [description, setDescription] = useState(t.description || "");
-  const [categoryId, setCategoryId] = useState(t.categoryId || "");
-  const [kind, setKind] = useState(t.kind || "one_off");
-  const [status, setStatus] = useState(t.status || "previsto");
-  const [amount, setAmount] = useState(formatNumberToBrlInput(Math.abs(Number(t.amount ?? 0))));
-  const [err, setErr] = useState("");
-
-  const categories = useSelector(selectCategories);
-
-  React.useEffect(() => {
-    const x = txn || {};
-    setPurchaseDate(x.purchaseDate || "");
-    setChargeDate(x.chargeDate || "");
-    setInvoiceMonth(x.invoiceMonth || "");
-    setMerchant(x.merchant || "");
-    setDescription(x.description || "");
-    setCategoryId(x.categoryId || "");
-    setKind(x.kind || "one_off");
-    setStatus(x.status || "previsto");
-    setAmount(formatNumberToBrlInput(Math.abs(Number(x.amount ?? 0))));
-    setErr("");
-    setAccountId(x.accountId || defaultAccountId || "");
-  }, [txn, defaultAccountId]);
-
-  function validate() {
-    if (!merchant.trim()) return "Preencha a Loja.";
-    if (!description.trim()) return "Preencha a Descrição.";
-    const v = parseBrlToNumber(amount);
-    if (!Number.isFinite(v) || v <= 0) return "Informe um valor válido.";
-    return "";
-  }
-
-  function handleSave() {
-    const e = validate();
-    if (e) return setErr(e);
-
-    const v = parseBrlToNumber(amount);
-
-    onSave({
-      ...t,
-      purchaseDate,
-      chargeDate,
-      invoiceMonth,
-      accountId: accountId || null,
-      merchant: merchant.trim(),
-      description: description.trim(),
-      categoryId,
-      kind,
-      status,
-      amount: formatNumberToBrlInput(v),
-    });
-  }
-
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle sx={{ fontWeight: 900 }}>Editar lançamento</DialogTitle>
-      <DialogContent>
-        <Stack spacing={1.2} sx={{ mt: 1 }}>
-          {err ? <Alert severity="error">{err}</Alert> : null}
-
-          <Stack direction="row" spacing={1.2}>
-            <TextField
-              label="Data compra"
-              type="date"
-              value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-            <TextField
-              label="Data cobrança"
-              type="date"
-              value={chargeDate}
-              onChange={(e) => setChargeDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-            />
-          </Stack>
-
-          <Stack direction="row" spacing={1.2}>
-            <TextField
-              label="Mês fatura (YYYY-MM)"
-              value={invoiceMonth}
-              onChange={(e) => setInvoiceMonth(e.target.value)}
-              fullWidth
-              placeholder="2026-02"
-            />
-            <TextField
-              label="Conta"
-              select
-              value={accountId || ""}
-              onChange={(e) => setAccountId(e.target.value)}
-              fullWidth
-            >
-              <MenuItem value="">(Sem conta)</MenuItem>
-              {accounts.filter(safeAccountActive).map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.type === "credit_card" ? "💳 " : "🏦 "}
-                  {a.name}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Stack>
-
-          <TextField label="Loja" value={merchant} onChange={(e) => setMerchant(e.target.value)} fullWidth />
-          <TextField label="Descrição" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth />
-
-          <Stack direction="row" spacing={1.2}>
-            <TextField
-              label="Categoria"
-              select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              fullWidth
-            >
-              {categories.map((c) => (
-                <MenuItem key={c.id} value={c.slug}>
-                  <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
-                    <MsIcon name={(c.icon || "").trim() || "tag"} size={18} />
-                    <span style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{c.name}</span>
-                  </Stack>
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <TextField label="Tipo" select value={kind} onChange={(e) => setKind(e.target.value)} fullWidth>
-              <MenuItem value="one_off">Avulso</MenuItem>
-              <MenuItem value="recurring">Mensal</MenuItem>
-              <MenuItem value="installment">Parcela</MenuItem>
-            </TextField>
-          </Stack>
-
-          <Stack direction="row" spacing={1.2}>
-            <TextField label="Status" select value={status} onChange={(e) => setStatus(e.target.value)} fullWidth>
-              <MenuItem value="previsto">Previsto</MenuItem>
-              <MenuItem value="confirmado">Confirmado</MenuItem>
-              <MenuItem value="pago">Pago</MenuItem>
-              <MenuItem value="atraso">Atraso</MenuItem>
-            </TextField>
-
-            <TextField
-              label="Valor (R$)"
-              value={amount}
-              onChange={(e) => setAmount(sanitizeBrlInput(e.target.value))}
-              onBlur={() => {
-                const v = parseBrlToNumber(amount);
-                if (Number.isFinite(v)) setAmount(formatNumberToBrlInput(v));
-              }}
-              inputMode="decimal"
-              fullWidth
-            />
-          </Stack>
-
-          {t?.installment ? (
-            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Parcelamento: <b>{t.installment.current}/{t.installment.total}</b>
-            </Typography>
-          ) : null}
-        </Stack>
-      </DialogContent>
-
-      <DialogActions sx={{ p: 2, gap: 1 }}>
-        <Button onClick={onClose} variant="outlined">
-          Cancelar
-        </Button>
-        <Button onClick={handleSave} variant="contained" sx={{ fontWeight: 900 }}>
-          Salvar
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-}
 
 // =========================
 // Componente principal
@@ -486,6 +313,27 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const categories = useSelector(selectCategories);
   const accounts = useSelector((s) => s.accounts?.accounts || []);
   const safeRows = Array.isArray(rows) ? rows : [];
+
+  const historyIndex = useMemo(() => buildTxnHistoryIndex(safeRows), [safeRows]);
+
+  const [busy, setBusy] = useState(false);
+
+
+  const runBusy = useCallback(async (thunkAction) => {
+    try {
+      setBusy(true);
+      const res = dispatch(thunkAction);
+      // se for RTK createAsyncThunk, unwrap existe:
+      if (res?.unwrap) await res.unwrap();
+      else await Promise.resolve(res);
+    } finally {
+      setBusy(false);
+    }
+  }, [dispatch]);
+
+  const [dialogMode, setDialogMode] = useState("edit"); // "edit" | "duplicate"
+
+
 
   // ✅ maps memoizados (evita .find() por linha)
   const categoriesBySlug = useMemo(() => {
@@ -627,33 +475,50 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const [editOpen, setEditOpen] = useState(false);
   const [selectedTxn, setSelectedTxn] = useState(null);
 
-  const merchantQ = useMemo(() => merchantQuery.trim().toLowerCase(), [merchantQuery]);
-  const descQ = useMemo(() => descriptionQuery.trim().toLowerCase(), [descriptionQuery]);
+  const debouncedMerchantQuery = useDebouncedValue(merchantQuery, 1200);
+  const debouncedDescriptionQuery = useDebouncedValue(descriptionQuery, 1200);
+
+  const merchantQ = useMemo(() => debouncedMerchantQuery.trim().toLowerCase(), [debouncedMerchantQuery]);
+  const descQ = useMemo(() => debouncedDescriptionQuery.trim().toLowerCase(), [debouncedDescriptionQuery]);
+
 
   const handleEdit = useCallback((row) => {
     const txn = getRowShape(row);
+    setDialogMode("edit");
     setSelectedTxn(txn);
     setEditOpen(true);
   }, []);
 
-  const handleDelete = useCallback(
-    (row) => {
-      const txn = getRowShape(row);
-      const ok = window.confirm(`Excluir lançamento "${txn?.merchant || "—"}" (${formatBRL(txn?.amount)})?`);
-      if (!ok) return;
-      dispatch(deleteTransactionThunk(txn.id));
-    },
-    [dispatch]
-  );
+  const handleDuplicate = useCallback((row) => {
+    const txn = getRowShape(row);
+    setDialogMode("duplicate");
+    setSelectedTxn(txn);
+    setEditOpen(true);
+  }, []);
 
-  const handleSaveEdit = useCallback(
-    (patch) => {
-      dispatch(patchTransactionThunk({ id: patch?.id, patch }));
-      setEditOpen(false);
-      setSelectedTxn(null);
-    },
-    [dispatch]
-  );
+
+  const handleDelete = useCallback((row) => {
+    const txn = getRowShape(row);
+    const ok = window.confirm(`Excluir lançamento "${txn?.merchant || "—"}" (${formatBRL(txn?.amount)})?`);
+    if (!ok) return;
+    runBusy(deleteTransactionThunk(txn.id));
+  }, [runBusy]);
+
+
+  const handleSaveDialog = useCallback(async (payload) => {
+    if (dialogMode === "duplicate") {
+      // cria novo
+      await runBusy(createTransactionThunk(payload));
+    } else {
+      // edita existente
+      await runBusy(patchTransactionThunk({ id: payload?.id, patch: payload }));
+    }
+
+    setEditOpen(false);
+    setSelectedTxn(null);
+    setDialogMode("edit");
+  }, [dialogMode, runBusy]);
+
 
   // ✅ filtro pesado memoizado
   const filteredRows = useMemo(() => {
@@ -938,25 +803,74 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       {
         field: "actions",
         headerName: "Opções",
-        width: 90,
+        width: 98,
         sortable: false,
         filterable: false,
         disableColumnMenu: true,
         align: "right",
         headerAlign: "right",
         renderCell: (params) => (
-          <Stack direction="row" spacing={0.2} justifyContent="flex-end" sx={{ width: "100%", marginTop: "12px" }}>
+          <Stack
+            direction="row"
+            spacing={0.4}
+            justifyContent="flex-end"
+            sx={{ width: "100%", mt: 2.8, ml: 1 }}
+          >
             <Tooltip title="Editar">
-              <IconButton size="small" onClick={() => handleEdit(params?.row)}>
+              <IconButton
+                size="small"
+                onClick={() => handleEdit(params?.row)}
+                sx={{
+                  color: "primary.main",
+                  bgcolor: "rgba(25,118,210,0.08)",
+                  transition: "all .15s ease",
+                  "&:hover": {
+                    bgcolor: "rgba(25,118,210,0.18)",
+                    transform: "scale(1.08)",
+                  },
+                }}
+              >
                 <EditRoundedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+
+            <Tooltip title="Duplicar">
+              <IconButton
+                size="small"
+                onClick={() => handleDuplicate(params?.row)}
+                sx={{
+                  color: "#6a1b9a", // roxo elegante
+                  bgcolor: "rgba(106,27,154,0.08)",
+                  transition: "all .15s ease",
+                  "&:hover": {
+                    bgcolor: "rgba(106,27,154,0.18)",
+                    transform: "scale(1.08)",
+                  },
+                }}
+              >
+                <ContentCopyRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+
             <Tooltip title="Excluir">
-              <IconButton size="small" onClick={() => handleDelete(params?.row)}>
+              <IconButton
+                size="small"
+                onClick={() => handleDelete(params?.row)}
+                sx={{
+                  color: "error.main",
+                  bgcolor: "rgba(211,47,47,0.08)",
+                  transition: "all .15s ease",
+                  "&:hover": {
+                    bgcolor: "rgba(211,47,47,0.18)",
+                    transform: "scale(1.08)",
+                  },
+                }}
+              >
                 <DeleteOutlineRoundedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
           </Stack>
+
         ),
       },
     ],
@@ -1333,13 +1247,17 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           onClose={() => {
             setEditOpen(false);
             setSelectedTxn(null);
+            setDialogMode("edit");
           }}
+          mode={dialogMode}
           txn={selectedTxn}
           accounts={accounts}
           defaultAccountId={resolveAccountIdFast(selectedTxn)}
-          onSave={handleSaveEdit}
+          onSave={handleSaveDialog}
+          historyIndex={historyIndex}
         />
       ) : null}
+
     </Box>
   );
 }
