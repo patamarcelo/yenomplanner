@@ -1,7 +1,6 @@
 export const CATEGORY_SUGGESTIONS = [
   { name: "Academia", icon: "fitness_center", color: "#ef4444" },
   { name: "Alimentação", icon: "restaurant", color: "#f97316" },
-  { name: "Assinatura", icon: "subscriptions", color: "#8b5cf6" },
   { name: "Bebidas", icon: "local_bar", color: "#0ea5e9" },
   { name: "Café", icon: "☕", color: "#a16207" },
   { name: "Churrasco", icon: "🍖", color: "#dc2626" },
