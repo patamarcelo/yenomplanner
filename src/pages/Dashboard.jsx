@@ -131,11 +131,40 @@ function dueDateISO(monthYM, dueDay) {
   if (!monthYM) return "";
   const [y, m] = String(monthYM).split("-").map(Number);
   if (!y || !m) return "";
-  const d = clamp(Number(dueDay || 1), 1, 31);
+  const lastDay = new Date(y, m, 0).getDate(); // último dia do mês
+  const d0 = Number(dueDay);
+  const d = clamp(Number.isFinite(d0) && d0 > 0 ? d0 : 10, 1, lastDay);
   const mm = String(m).padStart(2, "0");
   const dd = String(d).padStart(2, "0");
   return `${y}-${mm}-${dd}`;
 }
+function hashCode(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
+  return Math.abs(h);
+}
+
+function pickFallbackColor(theme, key) {
+  const palette = [
+    theme.palette.primary.main,
+    theme.palette.secondary.main,
+    theme.palette.info.main,
+    theme.palette.success.main,
+    theme.palette.warning.main,
+    theme.palette.error.main,
+  ];
+  return palette[hashCode(String(key)) % palette.length];
+}
+
+function addMonthsYM(ym, add = 1) {
+  const [yy, mm] = String(ym || "").split("-").map(Number);
+  if (!Number.isFinite(yy) || !Number.isFinite(mm)) return "";
+  const base = yy * 12 + (mm - 1) + Number(add || 0);
+  const y2 = Math.floor(base / 12);
+  const m2 = (base % 12) + 1;
+  return `${y2}-${String(m2).padStart(2, "0")}`;
+}
+
 
 function normalizeStatus(s) {
   const v = String(s || "").toLowerCase();
@@ -244,19 +273,55 @@ function KpiCard({ title, value, subtitle, icon: Icon, tone = "neutral" }) {
   );
 }
 
-function BRLTooltip({ label, payload }) {
-  const v = payload?.[0]?.value ?? 0;
+function StackedDayTooltip({ active, label, payload, catMeta, theme }) {
+  if (!active || !payload?.length) return null;
+
+  // payload vem com cada stack + o "total" (se você renderizar)
+  const rows = (payload || [])
+    .filter((p) => p && p.dataKey && p.dataKey !== "total")
+    .map((p) => {
+      const meta = catMeta?.get(String(p.dataKey));
+      const name = meta?.name || String(p.dataKey);
+      const color = meta?.color || pickFallbackColor(theme, p.dataKey);
+      const value = Number(p.value || 0);
+      return { key: String(p.dataKey), name, color, value };
+    })
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const total = rows.reduce((acc, r) => acc + r.value, 0);
+
   return (
-    <Card sx={{ borderRadius: 2, border: "1px solid rgba(255,255,255,0.10)" }}>
-      <CardContent sx={{ p: 1.1 }}>
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+    <Card sx={{ borderRadius: 2 }}>
+      <CardContent sx={{ p: 1.1, minWidth: 220 }}>
+        <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
           Dia {label}
         </Typography>
-        <Typography sx={{ fontWeight: 900 }}>{formatBRL(v)}</Typography>
+
+        <Typography sx={{ fontWeight: 950, mb: 0.8 }}>
+          {formatBRL(total)}
+        </Typography>
+
+        <Stack spacing={0.55}>
+          {rows.map((r) => (
+            <Stack key={r.key} direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+              <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                <Box sx={{ width: 8, height: 8, borderRadius: 999, bgcolor: r.color, flexShrink: 0 }} />
+                <Typography variant="caption" noWrap sx={{ fontWeight: 900 }}>
+                  {r.name}
+                </Typography>
+              </Stack>
+              <Typography variant="caption" sx={{ fontWeight: 900 }}>
+                {formatBRL(r.value)}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
       </CardContent>
     </Card>
   );
 }
+
 
 // -----------------------------
 // Dashboard
@@ -273,6 +338,25 @@ export default function Dashboard() {
 
   const hideValues = useSelector(selectHideValues);
   const categories = useSelector(selectCategories); // exemplo
+
+  const categoriesById = useMemo(() => {
+    const m = new Map();
+    (categories || []).forEach((c) => m.set(String(c.id), c));
+    return m;
+  }, [categories]);
+
+  const categoriesBySlug = useMemo(() => {
+    const m = new Map();
+    (categories || []).forEach((c) => m.set(String(c.slug), c));
+    return m;
+  }, [categories]);
+
+  function resolveCategoryFromTxn(t) {
+    const raw = t?.categoryId ?? t?.category_id ?? t?.category ?? "";
+    const key = String(raw);
+    return categoriesById.get(key) || categoriesBySlug.get(key) || null;
+  }
+
 
 
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
@@ -444,62 +528,97 @@ export default function Dashboard() {
   // Chart (purchaseDate) — somando TODAS as despesas do mês
   // label = dia (1..31)
   // -----------------------------
-  const chartData = useMemo(() => {
-    if (!month) return [];
+  const chartStack = useMemo(() => {
+    if (!month) return { data: [], catKeys: [], catMeta: new Map() };
+
     const [y, m] = String(month).split("-").map(Number);
-    if (!y || !m) return [];
+    if (!y || !m) return { data: [], catKeys: [], catMeta: new Map() };
 
     const daysInMonth = new Date(y, m, 0).getDate();
+
+    // categoria -> meta (nome/cor)
+    const catMeta = new Map(); // key -> { name, color }
+    const catKeysSet = new Set();
+
+    // dia -> obj
     const byDay = new Map();
-    for (let d = 1; d <= daysInMonth; d++) byDay.set(d, 0);
+    for (let d = 1; d <= daysInMonth; d++) {
+      byDay.set(d, { day: d, label: String(d), total: 0 });
+    }
 
     for (const t of monthTx || []) {
       if (resolvedDirection(t) !== "expense") continue;
 
-      // compra do item que está nesta fatura
-      const dnum = dayFromISODate(t?.purchaseDate) || 1;
-
-      // atenção: se purchaseDate for de outro mês, ele cai em "1" (ou some)
-      // pra não distorcer, melhor não forçar:
-      // if (ymFromISODate(t?.purchaseDate) !== month) continue;
-
+      const dnum = dayFromISODate(t?.purchaseDate);
       if (!dnum || !byDay.has(dnum)) continue;
-      byDay.set(dnum, byDay.get(dnum) + Math.abs(signedAmount(t)));
+
+      const cat = resolveCategoryFromTxn(t);
+      const key = String(cat?.id ?? cat?.slug ?? "outros");
+      const name = cat?.name || "Outros";
+      const color = cat?.color || cat?.tint || null;
+
+      catKeysSet.add(key);
+      if (!catMeta.has(key)) catMeta.set(key, { name, color });
+
+      const v = Math.abs(signedAmountNormalized(t));
+      const row = byDay.get(dnum);
+
+      row[key] = (row[key] || 0) + v;
+      row.total += v;
     }
 
-    return Array.from(byDay.entries()).map(([day, value]) => ({
-      day,
-      label: String(day),
-      value: Number(Number(value || 0).toFixed(2)),
-    }));
-  }, [month, monthTx]);
+    // ordenar categorias por total (pra stacks ficarem “bonitos”)
+    const totalsByCat = new Map();
+    for (const row of byDay.values()) {
+      for (const k of catKeysSet) {
+        const v = Number(row[k] || 0);
+        if (!v) continue;
+        totalsByCat.set(k, (totalsByCat.get(k) || 0) + v);
+      }
+    }
+
+    const catKeys = Array.from(catKeysSet).sort(
+      (a, b) => (totalsByCat.get(b) || 0) - (totalsByCat.get(a) || 0)
+    );
+
+    const data = Array.from(byDay.values()).map((r) => {
+      const out = { ...r };
+      // arredonda só no final
+      out.total = Number(Number(out.total || 0).toFixed(2));
+      for (const k of catKeys) out[k] = Number(Number(out[k] || 0).toFixed(2));
+      return out;
+    });
+
+    return { data, catKeys, catMeta };
+  }, [month, monthTx, resolveCategoryFromTxn]);
 
 
   const maxChartValue = useMemo(() => {
-    return Math.max(0, ...(chartData || []).map((d) => Number(d.value || 0)));
-  }, [chartData]);
+    return Math.max(0, ...(chartStack.data || []).map((d) => Number(d.total || 0)));
+  }, [chartStack]);
 
   // -----------------------------
   // Categorias (purchaseDate)
   // -----------------------------
   const categoriesRank = useMemo(() => {
-    const map = new Map(); // categoryId -> totalAbs
+    const map = new Map(); // key (id/slug) -> totalAbs
 
     for (const t of monthTx || []) {
       if (resolvedDirection(t) !== "expense") continue;
 
-      const cid = String(t?.categoryId || "outros");
-      map.set(cid, (map.get(cid) || 0) + Math.abs(signedAmount(t)));
+      const cat = resolveCategoryFromTxn(t);
+      const key = String(cat?.id ?? cat?.slug ?? "outros"); // só vira outros se realmente não tiver
+      map.set(key, (map.get(key) || 0) + Math.abs(signedAmountNormalized(t)));
     }
 
     const rows = Array.from(map.entries())
-      .map(([categoryId, total]) => {
-        const cat = (categories || []).find((c) => String(c.id) === String(categoryId));
+      .map(([key, total]) => {
+        const cat = categoriesById.get(String(key)) || categoriesBySlug.get(String(key));
         return {
-          categoryId,
+          key,
           name: cat?.name || "Outros",
           total: Number(Number(total || 0).toFixed(2)),
-          tint: cat?.tint || cat?.color || "rgba(120,120,120,1)",
+          color: cat?.color || cat?.tint || null,
         };
       })
       .sort((a, b) => b.total - a.total);
@@ -510,7 +629,7 @@ export default function Dashboard() {
       rows: rows.slice(0, 10),
       totalGastoMes: Number(totalGastoMes.toFixed(2)),
     };
-  }, [monthTx]);
+  }, [monthTx, resolveCategoryFromTxn, categoriesById, categoriesBySlug]);
 
 
   // -----------------------------
@@ -535,9 +654,13 @@ export default function Dashboard() {
       totals.set(acc.id, (totals.get(acc.id) || 0) + Math.abs(sa));
     }
 
+
     return creditCards
       .map((a) => {
-        const dueISO = dueDateISO(month, a?.due_day);
+        const dueDay = a?.statement?.dueDay ?? a?.due_day ?? a?.dueDay;
+        const dueYM = addMonthsYM(month, 1);
+        const dueISO = dueDateISO(dueYM, dueDay);
+        console.log('aaaa', a)
         return {
           id: a.id,
           name: a.name,
@@ -549,6 +672,13 @@ export default function Dashboard() {
       })
       .sort((a, b) => b.total - a.total);
   }, [accounts, accountsById, month, monthTxInvoice, resolveAccountIdFromTxn, theme]);
+
+
+  const totalInvoicesMonth = useMemo(() => {
+    return (invoicesByCard || []).reduce((acc, c) => acc + Number(c.total || 0), 0);
+  }, [invoicesByCard]);
+
+
 
   // -----------------------------
   // Layout
@@ -631,7 +761,7 @@ export default function Dashboard() {
           alignItems: "stretch",
           gridTemplateColumns: {
             xs: "1fr",
-            md: "minmax(0, 1fr) 340px 340px",
+            // md: "minmax(0, 1fr) 340px",
           },
         }}
       >
@@ -651,30 +781,17 @@ export default function Dashboard() {
               <Box sx={{ flex: 1, minHeight: 360 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={chartData}
-                    margin={{ top: 30, right: 18, left: 0, bottom: 0 }}
+                    data={chartStack.data}
+                    margin={{ top: 26, right: 18, left: 0, bottom: 0 }}
                   >
-                    {/* 🔹 Gradiente das barras */}
-                    <defs>
-                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={theme.palette.primary.main} stopOpacity={1} />
-                        <stop offset="100%" stopColor={theme.palette.primary.main} stopOpacity={0.6} />
-                      </linearGradient>
-                    </defs>
-
                     <CartesianGrid
                       vertical={false}
-                      stroke={theme.palette.divider}
-                      strokeDasharray="4 4"
-                      opacity={0.3}
+                      stroke={alpha(theme.palette.divider, 0.55)}
+                      strokeDasharray="3 6"
+                      opacity={0.18}
                     />
 
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 12 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
+                    <XAxis dataKey="label" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
 
                     <YAxis
                       tick={{ fontSize: 12 }}
@@ -685,42 +802,58 @@ export default function Dashboard() {
                       tickFormatter={(v) => formatBRL(v)}
                     />
 
-                    <Tooltip content={<BRLTooltip />} />
+                    <Tooltip
+                      content={
+                        <StackedDayTooltip
+                          catMeta={chartStack.catMeta}
+                          theme={theme}
+                        />
+                      }
+                    />
 
-                    <Bar
-                      dataKey="value"
-                      fill="url(#barGradient)"
-                      radius={[12, 12, 0, 0]}
-                      barSize={24}
-                      isAnimationActive
-                      animationDuration={600}
-                    >
-                      {/* 🔹 Valor no topo da barra */}
+                    {/* ✅ stacks por categoria */}
+                    {chartStack.catKeys.map((k) => {
+                      const meta = chartStack.catMeta.get(String(k));
+                      const fill = meta?.color || pickFallbackColor(theme, k);
+
+                      return (
+                        <Bar
+                          key={k}
+                          dataKey={k}
+                          stackId="day"
+                          fill={fill}
+                          radius={[0, 0, 0, 0]}
+                          barSize={24}
+                          isAnimationActive
+                          animationDuration={500}
+                        />
+                      );
+                    })}
+
+                    {/* ✅ label do TOTAL em cima (bar “fantasma”) */}
+                    <Bar dataKey="total" fill="transparent" stackId="__total_label__">
                       <LabelList
-                        dataKey="value"
+                        dataKey="total"
                         position="top"
-                        content={(props) => {
-                          const { x, y, width, value } = props;
-
-                          if (!value || Number(value) <= 0) return null; // ✅ só mostra se > 0
-
+                        content={({ x, y, width, value }) => {
+                          if (!value || Number(value) <= 0) return null;
                           return (
                             <text
                               x={x + width / 2}
                               y={y - 6}
                               textAnchor="middle"
-                              fontSize={12}
-                              fontWeight={600}
-                              fill={theme.palette.text.primary}
+                              fontSize={9}
+                              fontWeight={700}
+                              fill={theme.palette.text.secondary}
                             >
                               {formatBRL(value)}
                             </text>
                           );
                         }}
                       />
-
                     </Bar>
                   </BarChart>
+
                 </ResponsiveContainer>
               </Box>
 
@@ -733,6 +866,23 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
+        
+
+
+      </Box>
+      <Box
+        sx={{
+          width: "100%",
+          display: "grid",
+          gap: 2,
+          minHeight: '350px',
+          alignItems: "stretch",
+          gridTemplateColumns: {
+            xs: "1fr",
+            md: "1fr 1fr ",
+          },
+        }}
+      >
         {/* Col 2: Categorias */}
         <Card sx={(t) => cardBg(t, "info")}>
           <CardContent sx={{ p: 2.25, height: "100%" }}>
@@ -810,10 +960,10 @@ export default function Dashboard() {
                                     sx={(t) => ({
                                       height: 4,
                                       borderRadius: 999,
-                                      background: alpha(t.palette.primary.main, 0.10),
+                                      background: alpha(row.color || t.palette.primary.main, 0.12),
                                       "& .MuiLinearProgress-bar": {
                                         borderRadius: 999,
-                                        backgroundColor: alpha(t.palette.primary.main, 0.85),
+                                        backgroundColor: alpha(row.color || t.palette.primary.main, 0.95),
                                       },
                                     })}
                                   />
@@ -837,7 +987,7 @@ export default function Dashboard() {
               </Box>
 
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Top 10 • depois colocamos “ver todas”.
+                Top 10 • 
               </Typography>
             </Stack>
           </CardContent>
@@ -847,20 +997,42 @@ export default function Dashboard() {
         <Card sx={(t) => cardBg(t, "success")}>
           <CardContent sx={{ p: 2.25, height: "100%" }}>
             <Stack spacing={1} sx={{ height: "100%" }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-                <Stack spacing={0.2}>
+              <Stack spacing={0.4}>
+                {/* Linha 1: título + total */}
+                <Stack direction="row" justifyContent="space-between" alignItems="baseline">
                   <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
                     Faturas (cartões)
                   </Typography>
-                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    invoiceMonth • {formatMonthBR(month)}
+
+                  <Typography
+                    sx={{
+                      fontWeight: 950,
+                      fontSize: 15,
+                      letterSpacing: -0.2,
+                    }}
+                  >
+                    {formatBRL(totalInvoicesMonth)}
                   </Typography>
                 </Stack>
 
-                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
-                  {(invoicesByCard || []).length} cartões
-                </Typography>
+                {/* Linha 2: subtítulo + quantidade */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    fatura {formatMonthBR(month)} • venc. próximo mês
+                  </Typography>
+
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "text.secondary",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {(invoicesByCard || []).length} cartões
+                  </Typography>
+                </Stack>
               </Stack>
+
 
               <Divider />
 
@@ -880,64 +1052,84 @@ export default function Dashboard() {
                         return (
                           <React.Fragment key={c.id}>
                             <Box
-                              sx={(t) => ({
-                                py: 1,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 1,
-                                borderRadius: 1.5,
-                                px: 0.5,
-                                transition: "background 140ms ease",
-                                "&:hover": {
-                                  background: alpha(t.palette.action.hover, 0.7),
-                                },
-                              })}
+                              sx={(t) => {
+                                const base = c.color || pickFallbackColor(theme, c.id || c.name); // ✅ fallback consistente
+                                return {
+                                  py: 1,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 1,
+                                  borderRadius: 1.5,
+                                  px: 0.5,
+                                  transition: "background 140ms ease",
+                                  "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
+                                };
+                              }}
                             >
-                              <Box
-                                sx={{
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: 999,
-                                  background: c.color || alpha(theme.palette.success.main, 0.35),
-                                  flexShrink: 0,
-                                }}
-                              />
+                              {(() => {
+                                const base = c.color || pickFallbackColor(theme, c.id || c.name);
 
-                              <Box sx={{ minWidth: 0, flex: 1 }}>
-                                <Stack direction="row" justifyContent="space-between" alignItems="baseline" spacing={1}>
-                                  <Typography sx={{ fontWeight: 900, fontSize: 13 }} noWrap>
-                                    {c.name}
-                                  </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ color: "text.secondary", fontWeight: 800 }}
-                                    noWrap
-                                  >
-                                    {c.dueLabel}
-                                  </Typography>
-                                </Stack>
-
-                                <Box sx={{ mt: 0.55 }}>
-                                  <LinearProgress
-                                    variant="determinate"
-                                    value={pct}
-                                    sx={(t) => ({
-                                      height: 4,
-                                      borderRadius: 999,
-                                      background: alpha(t.palette.primary.main, 0.10),
-                                      "& .MuiLinearProgress-bar": {
+                                return (
+                                  <>
+                                    {/* dot do cartão */}
+                                    <Box
+                                      sx={{
+                                        width: 10,
+                                        height: 10,
                                         borderRadius: 999,
-                                        backgroundColor: alpha(t.palette.primary.main, 0.85),
-                                      },
-                                    })}
-                                  />
-                                </Box>
-                              </Box>
+                                        background: base,
+                                        flexShrink: 0,
+                                        boxShadow: `0 0 0 3px ${alpha(base, 0.12)}`,
+                                      }}
+                                    />
 
-                              <Typography sx={{ fontWeight: 950, fontSize: 13, whiteSpace: "nowrap" }}>
-                                {formatBRL(c.total)}
-                              </Typography>
+                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                      {/* Nome */}
+                                      <Typography sx={{ fontWeight: 950, fontSize: 13 }} noWrap>
+                                        {c.name}
+                                      </Typography>
+
+                                      {/* Vencimento abaixo do nome (pequeno, mas um pouco maior) */}
+                                      <Typography
+                                        sx={{
+                                          mt: 0.15,
+                                          fontSize: 9.6,
+                                          fontWeight: 850,
+                                          color: "text.secondary",
+                                          lineHeight: 1.1,
+                                        }}
+                                        noWrap
+                                      >
+                                        Vence em {c.dueLabel}
+                                      </Typography>
+
+                                      {/* Barra com cor do cartão */}
+                                      <Box sx={{ mt: 0.75 }}>
+                                        <LinearProgress
+                                          variant="determinate"
+                                          value={pct}
+                                          sx={{
+                                            height: 4,
+                                            borderRadius: 999,
+                                            background: alpha(base, 0.14),
+                                            "& .MuiLinearProgress-bar": {
+                                              borderRadius: 999,
+                                              backgroundColor: alpha(base, 0.92),
+                                            },
+                                          }}
+                                        />
+                                      </Box>
+                                    </Box>
+
+                                    {/* Total */}
+                                    <Typography sx={{ fontWeight: 950, fontSize: 13, whiteSpace: "nowrap" }}>
+                                      {formatBRL(c.total)}
+                                    </Typography>
+                                  </>
+                                );
+                              })()}
                             </Box>
+
 
                             {idx < (invoicesByCard || []).length - 1 ? (
                               <Divider sx={{ opacity: 0.5 }} />

@@ -913,10 +913,15 @@ export default function BillsPage() {
 
 
     // mês: "all" = Todos
-    const [filterMonth, setFilterMonth] = useState("all");
-    // ano: vazio => todos os anos (ou setar default pelo ano atual)
+    // ✅ data atual (usada pra defaults)
     const now = new Date();
     const currentYear = String(now.getFullYear());
+    const currentMonth = String(now.getMonth() + 1).padStart(2, "0"); 
+
+    // mês: "all" = Todos (mas o default ao abrir é o mês corrente)
+    const [filterMonth, setFilterMonth] = useState(currentMonth);
+
+    // ano: vazio => todos os anos (ou setar default pelo ano atual)
 
     const [filterYear, setFilterYear] = useState(currentYear); // ✅ default ano atual
     const [filterCategory, setFilterCategory] = useState("all"); // ✅ novo filtro
