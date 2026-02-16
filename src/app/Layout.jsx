@@ -230,7 +230,7 @@ export default function Layout({ children }) {
     return sorted.find((n) => location.pathname === n.to || location.pathname.startsWith(n.to + "/"));
   }, [location.pathname]);
 
-  
+
   const activeIcon = location.pathname.startsWith("/cadastros") ? activeNav?.icon : null;
 
 
@@ -377,10 +377,14 @@ export default function Layout({ children }) {
     boxSizing: "border-box",
     borderRight: `1px solid ${theme.palette.divider}`,
     overflowX: "hidden",
+    borderRadius: 0,
+    borderTopRightRadius: 0,   // ✅ remove o radius superior direito
+    borderBottomRightRadius: 0, // opcional, mantém consistente
     transition: theme.transitions.create(["width"], {
       duration: theme.transitions.duration.shortest,
     }),
   };
+
 
   function handleLogout() {
     bootstrappedRef.current = false;
@@ -644,6 +648,7 @@ export default function Layout({ children }) {
           sx={{
             borderBottom: `1px solid ${theme.palette.divider}`,
             background: theme.palette.background.paper,
+            borderRadius: '0px'
           }}
         >
           <Toolbar
@@ -660,7 +665,7 @@ export default function Layout({ children }) {
                   <MenuRoundedIcon />
                 </IconButton>
               ) : null}
-              
+
               {activeIcon ? (
                 <Box
                   sx={(t) => ({
