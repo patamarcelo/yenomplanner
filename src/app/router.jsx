@@ -18,6 +18,10 @@ const Installments = lazy(() => import("../pages/Installments"));
 const AccountsPage = lazy(() => import("../pages/AccountsPage"));
 const BillsPage = lazy(() => import("../pages/BillsPage"));
 
+const CadastrosPage = lazy(() => import("../pages/CadastrosPage"));
+const CategoriasPage = lazy(() => import("../pages/CategoriasPage"));
+
+
 import AuthShell from "../layouts/AuthShell.jsx";
 import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
@@ -44,6 +48,9 @@ export const router = createBrowserRouter([
           { path: "register", element: <RegisterPage /> },
         ],
       },
+      { path: "cadastros", element: wrap(<CadastrosPage />) },
+      { path: "cadastros/categorias", element: wrap(<CategoriasPage />) },
+
 
       { path: "*", element: <Navigate to="/" replace /> },
     ],

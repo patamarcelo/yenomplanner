@@ -52,6 +52,9 @@ import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
+import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+
+
 // import { selectTransactionsUi } from "../store/transactionsSlice.js";
 // import { selectBills } from "../store/billsSlice.js";
 
@@ -69,15 +72,18 @@ const navItems = [
   { to: "/lancamentos", label: "Lançamentos", icon: <CreditCardRoundedIcon />, color: "#a855f7" },
   { to: "/faturas", label: "Faturas", icon: <ReceiptLongRoundedIcon />, color: "#ef4444" },
   { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon />, color: "#06b6d4" },
+  { to: "/cadastros", label: "Cadastros", icon: <SettingsRoundedIcon />, color: "#64748b" },
 ];
 
 
 function NavItem({ to, label, icon, collapsed, color }) {
   const theme = useTheme();
+  const isRoot = to === "/";
 
   return (
     <NavLink
       to={to}
+      end={isRoot}
       style={({ isActive }) => ({
         display: "flex",
         alignItems: "center",
@@ -209,10 +215,26 @@ export default function Layout({ children }) {
   const [newOpen, setNewOpen] = useState(false);
 
   const title = useMemo(() => {
-    const hit = navItems.find((n) => n.to === location.pathname);
     if (location.pathname === "/") return "Dashboard";
+
+    const sorted = [...navItems].sort((a, b) => b.to.length - a.to.length);
+    const hit = sorted.find((n) => location.pathname === n.to || location.pathname.startsWith(n.to + "/"));
+
+    if (location.pathname.startsWith("/cadastros/categorias")) return "Categorias";
+
     return hit?.label || "Finance";
   }, [location.pathname]);
+
+  const activeNav = useMemo(() => {
+    const sorted = [...navItems].sort((a, b) => b.to.length - a.to.length);
+    return sorted.find((n) => location.pathname === n.to || location.pathname.startsWith(n.to + "/"));
+  }, [location.pathname]);
+
+  
+  const activeIcon = location.pathname.startsWith("/cadastros") ? activeNav?.icon : null;
+
+
+
 
   // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
   const bootstrappedRef = useRef(false);
@@ -637,6 +659,23 @@ export default function Layout({ children }) {
                 <IconButton onClick={() => setMobileOpen(true)} size="small">
                   <MenuRoundedIcon />
                 </IconButton>
+              ) : null}
+              
+              {activeIcon ? (
+                <Box
+                  sx={(t) => ({
+                    width: 34,
+                    height: 34,
+                    borderRadius: 12,
+                    display: "grid",
+                    placeItems: "center",
+                    bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.08),
+                    border: `1px solid ${alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.28 : 0.18)}`,
+                    "& .MuiSvgIcon-root": { fontSize: 18 },
+                  })}
+                >
+                  {activeIcon}
+                </Box>
               ) : null}
 
               <Stack spacing={0.2} sx={{ lineHeight: 1.1 }}>
