@@ -7,6 +7,7 @@ import authReducer from './authSlice.js'
 import transactionsReducer from './transactionsSlice.js'
 import billsReducer from "./billsSlice";
 import categoriesReducer from './categoriesSlice.js'
+import invoiceReducer from './invoicesSlice.js'
 
 
 const preloadedState = loadState();
@@ -19,7 +20,8 @@ export const store = configureStore({
     user: authReducer,
     transactions: transactionsReducer,
     bills: billsReducer,
-    categories: categoriesReducer
+    categories: categoriesReducer,
+    invoices: invoiceReducer
   },
   preloadedState, // <-- traz do localStorage se existir
 });

@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Stack, Typography, Card, CardActionArea } from "@mui/material";
+import { Box, Stack, Typography, Card, CardActionArea, Paper } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import CategoryRoundedIcon from "@mui/icons-material/CategoryRounded";
 
@@ -10,7 +10,7 @@ export default function CadastrosPage() {
         <Box>
         
             <Stack direction="row" spacing={2} flexWrap="wrap">
-                <Card sx={{ width: 240, borderRadius: 3 }}>
+                <Card sx={{ width: 240, borderRadius: 1 }} elevation={8}component={Paper}>
                     <CardActionArea onClick={() => navigate("/cadastros/categorias")}>
                         <Stack p={2.2} spacing={1} alignItems="center">
                             <CategoryRoundedIcon />

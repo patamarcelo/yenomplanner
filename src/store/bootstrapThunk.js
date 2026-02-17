@@ -7,6 +7,7 @@ import { setAccountsFromBootstrap } from "./accountsSlice";
 import { setTransactionsFromBootstrap } from "./transactionsSlice";
 import { setBillsFromBootstrap } from "./billsSlice";
 import { setCategoriesFromBootstrap } from "./categoriesSlice";
+import { setInvoicesFromBootstrap } from "./invoicesSlice";
 
 export const bootstrapThunk = createAsyncThunk("bootstrap/load", async (_, { dispatch }) => {
     const data = await fetchBootstrap();
@@ -16,6 +17,8 @@ export const bootstrapThunk = createAsyncThunk("bootstrap/load", async (_, { dis
     if (data?.transactions) dispatch(setTransactionsFromBootstrap(data.transactions));
     if (data?.bills) dispatch(setBillsFromBootstrap(data.bills));
     if (data?.categories) dispatch(setCategoriesFromBootstrap(data.categories));
+    if (data?.invoices) dispatch(setInvoicesFromBootstrap(data.invoices || []));
+
 
     return { ok: true };
 });
