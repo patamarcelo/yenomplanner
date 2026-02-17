@@ -43,14 +43,44 @@ import EditTxnDialog from "./transactions/EditTxnDialog";
 // =========================
 // Constantes (fora do componente)
 // =========================
-const STATUS_LIST = ["previsto", "confirmado", "pago", "atraso"];
+// ✅ adicionar "invoiced"
+const STATUS_LIST = ["previsto", "confirmado", "invoiced", "pago", "atraso"];
 
 const STATUS_META = {
   previsto: { label: "Previsto", sx: { bgcolor: "rgba(0,0,0,0.06)", color: "rgba(0,0,0,0.70)" } },
   confirmado: { label: "Confirmado", sx: { bgcolor: "rgba(46,125,50,0.12)", color: "#1b5e20" } },
+
+  // ✅ novo status
+  invoiced: { label: "Faturado", sx: { bgcolor: "rgba(245,124,0,0.16)", color: "#e65100" } },
+
   pago: { label: "Pago", sx: { bgcolor: "rgba(25,118,210,0.14)", color: "#0d47a1" } },
   atraso: { label: "Atraso", sx: { bgcolor: "rgba(211,47,47,0.14)", color: "#b71c1c" } },
 };
+
+// ✅ helper: trava quando está em fatura
+function getInvoiceRef(row) {
+  const r = getRowShape(row) || {};
+  // aceita invoice como string/uuid, invoiceId, invoice_id, ou objeto {id}
+  return (
+    r.invoice ||
+    r.invoiceId ||
+    r.invoice_id ||
+    (r.invoice && r.invoice.id) ||
+    null
+  );
+}
+
+function isTxnLocked(row) {
+  const r = getRowShape(row) || {};
+  const invRef = getInvoiceRef(r);
+  const st = String(r.status || "").trim().toLowerCase();
+
+  // ✅ trava por vínculo OU (fallback) por status
+  return !!invRef || st === "invoiced";
+}
+
+
+
 
 const YEAR_ALL = "__ALL_YEAR__";
 const MONTH_ALL = "__ALL_MONTH__";
@@ -74,6 +104,28 @@ const MONTHS = [
 // =========================
 // Helpers: BRL input/output
 // =========================
+
+function isInvoicePaymentTxn(row) {
+  const r = getRowShape(row) || {};
+
+  // ✅ melhor caso: veio algum campo explícito do backend
+  if (r.isInvoicePayment) return true;
+  if (r.kind === "transfer") return true;
+  if (r.category_id === "cc_payment" || r.categoryId === "cc_payment") return true;
+
+  // ✅ se veio bill com kind
+  const billKind = String(r?.bill?.kind || r?.bill_kind || "").toLowerCase();
+  if (billKind === "cc_invoice") return true;
+
+  // ⚠️ fallback heurístico (último recurso)
+  const merchant = String(r.merchant || "").toLowerCase();
+  const desc = String(r.description || "").toLowerCase();
+  const hasPayWords = merchant.includes("pag") || desc.includes("pag");
+  const hasInvoiceWords = merchant.includes("fatura") || desc.includes("fatura") || merchant.includes("invoice") || desc.includes("invoice");
+
+  return !!r.invoice && hasPayWords && hasInvoiceWords;
+}
+
 function normalizeKey(v) {
   return String(v ?? "").trim().toLowerCase();
 }
@@ -620,18 +672,18 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     let income = 0;
     let expense = 0;
 
-    for (const r of filteredRows) {
-      const value = Math.abs(Number(r?.amount || 0));
+    for (const r0 of filteredRows) {
+      const r = getRowShape(r0);
 
+      // ✅ não soma pagamento de fatura (evita double counting)
+      if (isInvoicePaymentTxn(r)) continue;
+
+      const value = Math.abs(Number(r?.amount || 0));
       if (r?.direction === "income") income += value;
       if (r?.direction === "expense") expense += value;
     }
 
-    return {
-      income,
-      expense,
-      balance: income - expense,
-    };
+    return { income, expense, balance: income - expense };
   }, [filteredRows]);
 
 
@@ -772,12 +824,41 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           const current = row?.status || "previsto";
           const meta = STATUS_META[current] || STATUS_META.previsto;
 
+          const locked = isTxnLocked(row);
+
+          // ✅ quando travado: mostra chip e não deixa editar
+          if (locked) {
+            return (
+              <Tooltip title="Bloqueado: este lançamento está vinculado a uma fatura">
+                <Chip
+                  size="small"
+                  label={meta.label}
+                  sx={{
+                    height: 30,
+                    fontWeight: 900,
+                    bgcolor: meta.sx.bgcolor,
+                    color: meta.sx.color,
+                    border: "1px solid rgba(0,0,0,0.06)",
+                  }}
+                />
+              </Tooltip>
+            );
+          }
+
+          // ✅ normal: select editável
           return (
             <TextField
               select
               size="small"
               value={current}
-              onChange={(e) => dispatch(patchTransactionThunk({ id: row.id, patch: { status: e.target.value } }))}
+              onChange={(e) =>
+                dispatch(
+                  patchTransactionThunk({
+                    id: row.id,
+                    patch: { status: e.target.value },
+                  })
+                )
+              }
               SelectProps={{ displayEmpty: true }}
               sx={{
                 minWidth: 110,
@@ -800,6 +881,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           );
         },
       },
+
       {
         field: "actions",
         headerName: "Opções",
@@ -809,70 +891,76 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         disableColumnMenu: true,
         align: "right",
         headerAlign: "right",
-        renderCell: (params) => (
-          <Stack
-            direction="row"
-            spacing={0.4}
-            justifyContent="flex-end"
-            sx={{ width: "100%", mt: 2.8, ml: 1 }}
-          >
-            <Tooltip title="Editar">
-              <IconButton
-                size="small"
-                onClick={() => handleEdit(params?.row)}
-                sx={{
-                  color: "primary.main",
-                  bgcolor: "rgba(25,118,210,0.08)",
-                  transition: "all .15s ease",
-                  "&:hover": {
-                    bgcolor: "rgba(25,118,210,0.18)",
-                    transform: "scale(1.08)",
-                  },
-                }}
-              >
-                <EditRoundedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+        renderCell: (params) => {
+          const row = getRowShape(params?.row);
+          const locked = isTxnLocked(row);
+          const lockTip = "Bloqueado: lançamento vinculado a fatura (invoiced)";
 
-            <Tooltip title="Duplicar">
-              <IconButton
-                size="small"
-                onClick={() => handleDuplicate(params?.row)}
-                sx={{
-                  color: "#6a1b9a", // roxo elegante
-                  bgcolor: "rgba(106,27,154,0.08)",
-                  transition: "all .15s ease",
-                  "&:hover": {
-                    bgcolor: "rgba(106,27,154,0.18)",
-                    transform: "scale(1.08)",
-                  },
-                }}
-              >
-                <ContentCopyRoundedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+          return (
+            <Stack
+              direction="row"
+              spacing={0.4}
+              justifyContent="flex-end"
+              sx={{ width: "100%", ml: 1, opacity: locked ? 0.55 : 1 }}
+            >
+              <Tooltip title={locked ? lockTip : "Editar"}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={locked}
+                    onClick={() => handleEdit(params?.row)}
+                    sx={{
+                      color: "primary.main",
+                      bgcolor: "rgba(25,118,210,0.08)",
+                      transition: "all .15s ease",
+                      "&:hover": { bgcolor: "rgba(25,118,210,0.18)", transform: "scale(1.08)" },
+                    }}
+                  >
+                    <EditRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
 
-            <Tooltip title="Excluir">
-              <IconButton
-                size="small"
-                onClick={() => handleDelete(params?.row)}
-                sx={{
-                  color: "error.main",
-                  bgcolor: "rgba(211,47,47,0.08)",
-                  transition: "all .15s ease",
-                  "&:hover": {
-                    bgcolor: "rgba(211,47,47,0.18)",
-                    transform: "scale(1.08)",
-                  },
-                }}
-              >
-                <DeleteOutlineRoundedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
+              <Tooltip title={locked ? lockTip : "Duplicar"}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={locked}
+                    onClick={() => handleDuplicate(params?.row)}
+                    sx={{
+                      color: "#6a1b9a",
+                      bgcolor: "rgba(106,27,154,0.08)",
+                      transition: "all .15s ease",
+                      "&:hover": { bgcolor: "rgba(106,27,154,0.18)", transform: "scale(1.08)" },
+                    }}
+                  >
+                    <ContentCopyRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
 
-        ),
+              <Tooltip title={locked ? lockTip : "Excluir"}>
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={locked}
+                    onClick={() => handleDelete(params?.row)}
+                    sx={{
+                      color: "error.main",
+                      bgcolor: "rgba(211,47,47,0.08)",
+                      transition: "all .15s ease",
+                      "&:hover": { bgcolor: "rgba(211,47,47,0.18)", transform: "scale(1.08)" },
+                    }}
+                  >
+                    <DeleteOutlineRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Stack>
+          );
+        },
       },
+
     ],
     [dispatch, handleEdit, handleDelete, categoriesBySlug, resolveAccountIdFast, accountsIndex.accountsById]
   );

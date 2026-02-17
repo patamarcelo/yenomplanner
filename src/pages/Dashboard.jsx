@@ -12,7 +12,6 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
-
 import TrendingUpRoundedIcon from "@mui/icons-material/TrendingUpRounded";
 import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
@@ -28,21 +27,66 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  LabelList
+  LabelList,
 } from "recharts";
 
 import { formatBRL } from "../utils/money";
 import { formatMonthBR, formatDateBR } from "../utils/dateBR";
-// import { categories } from "../data/mockCategories";
 import { selectHideValues } from "../store/uiSlice";
-
 import { selectTransactionsUi } from "../store/transactionsSlice";
 import { bootstrapThunk } from "../store/bootstrapThunk";
 import { selectCategories } from "../store/categoriesSlice";
-import Spinner from "../components/ui/Spinner"
+import Spinner from "../components/ui/Spinner";
+
+// =============================
+// DEBUG SWITCH (ÚNICO)
+// =============================
+const DEBUG = true;
+
+// eslint-disable-next-line no-console
+const dbg = (...args) => DEBUG && console.log(...args);
+// eslint-disable-next-line no-console
+const dbgGroup = (title, fn) => {
+  if (!DEBUG) return;
+  console.groupCollapsed(title);
+  try {
+    fn?.();
+  } finally {
+    console.groupEnd();
+  }
+};
+
 // -----------------------------
 // Helpers
 // -----------------------------
+function sum(arr) {
+  return (arr || []).reduce((a, b) => a + b, 0);
+}
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function normalizeStatus(s) {
+  const v = String(s || "").toLowerCase().trim();
+  if (v === "confirmado" || v === "confirmed") return "confirmed";
+  if (v === "previsto" || v === "planned") return "planned";
+  if (v === "pago" || v === "paid") return "paid";
+  if (v === "faturado" || v === "invoiced") return "invoiced";
+  if (v === "atrasado" || v === "overdue") return "overdue";
+  return v || "";
+}
+
+function statusRank(statusRaw) {
+  const s = normalizeStatus(statusRaw);
+  if (s === "paid") return 5;
+  if (s === "confirmed") return 4;
+  if (s === "overdue") return 3;
+  if (s === "invoiced") return 2;
+  if (s === "planned") return 1;
+  return 0;
+}
+
 function cardBg(theme, color = "primary") {
   const base = theme.palette[color]?.main || theme.palette.primary.main;
   return {
@@ -58,39 +102,6 @@ function cardBg(theme, color = "primary") {
   };
 }
 
-function sum(arr) {
-  return arr.reduce((a, b) => a + b, 0);
-}
-
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
-}
-
-// direction real: income|expense
-function signedAmount(t) {
-  const raw = Number(t?.amount || 0);
-  const abs = Math.abs(raw);
-  if (raw < 0) return raw;
-
-  const dir = String(t?.direction || "").toLowerCase();
-  if (dir === "income" || dir === "entrada") return abs;
-  if (dir === "expense" || dir === "despesa" || dir === "saida" || dir === "saída") return -abs;
-
-  // legado: se não souber, assume despesa
-  return -abs;
-}
-
-function resolvedDirection(t) {
-  const d = String(t?.direction || "").toLowerCase();
-  if (d === "income" || d === "expense") return d;
-  return signedAmount(t) < 0 ? "expense" : "income";
-}
-
-function isInstallment(t) {
-  const k = String(t?.kind || "").toLowerCase();
-  return k === "installment" || k === "parcelado" || k === "parcela";
-}
-
 function normalizeISODate(d) {
   if (!d) return "";
 
@@ -102,7 +113,6 @@ function normalizeISODate(d) {
   }
 
   const s = String(d);
-
   if (s.includes("T")) return s.slice(0, 10);
 
   if (s.includes("/")) {
@@ -127,17 +137,51 @@ function dayFromISODate(d) {
   return Number.isFinite(n) ? n : null;
 }
 
-function dueDateISO(monthYM, dueDay) {
-  if (!monthYM) return "";
-  const [y, m] = String(monthYM).split("-").map(Number);
-  if (!y || !m) return "";
-  const lastDay = new Date(y, m, 0).getDate(); // último dia do mês
-  const d0 = Number(dueDay);
-  const d = clamp(Number.isFinite(d0) && d0 > 0 ? d0 : 10, 1, lastDay);
-  const mm = String(m).padStart(2, "0");
-  const dd = String(d).padStart(2, "0");
-  return `${y}-${mm}-${dd}`;
+function addMonthsYM(ym, add = 1) {
+  const [yy, mm] = String(ym || "").split("-").map(Number);
+  if (!Number.isFinite(yy) || !Number.isFinite(mm)) return "";
+  const base = yy * 12 + (mm - 1) + Number(add || 0);
+  const y2 = Math.floor(base / 12);
+  const m2 = (base % 12) + 1;
+  return `${y2}-${String(m2).padStart(2, "0")}`;
 }
+
+function normalizeDirectionFromTxn(t) {
+  const d = String(t?.direction || "").toLowerCase();
+  if (d === "income" || d === "receita" || d === "entrada") return "income";
+  if (d === "expense" || d === "despesa" || d === "saida" || d === "saída") return "expense";
+  return "expense";
+}
+
+function signedAmountNormalized(t) {
+  const v = Number(t?.amount ?? t?.value ?? 0);
+  const abs = Math.abs(v);
+  if (v < 0) return v;
+  return normalizeDirectionFromTxn(t) === "income" ? abs : -abs;
+}
+
+function resolvedDirection(t) {
+  const d = String(t?.direction || "").toLowerCase();
+  if (d === "income" || d === "expense") return d;
+  return signedAmountNormalized(t) < 0 ? "expense" : "income";
+}
+
+function isInstallment(t) {
+  const k = String(t?.kind || "").toLowerCase();
+  return k === "installment" || k === "parcelado" || k === "parcela";
+}
+
+function isLikelyInvoicePayment(t) {
+  const k = String(t?.kind || "").toLowerCase();
+  if (k.includes("bill_payment") || k.includes("invoice_payment") || k === "payment") return true;
+
+  const desc = String(t?.description || t?.memo || t?.title || "").toLowerCase();
+  if (desc.includes("pagamento de fatura") || desc.includes("pgto fatura") || desc.includes("fatura paga"))
+    return true;
+
+  return false;
+}
+
 function hashCode(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
@@ -156,48 +200,120 @@ function pickFallbackColor(theme, key) {
   return palette[hashCode(String(key)) % palette.length];
 }
 
-function addMonthsYM(ym, add = 1) {
-  const [yy, mm] = String(ym || "").split("-").map(Number);
-  if (!Number.isFinite(yy) || !Number.isFinite(mm)) return "";
-  const base = yy * 12 + (mm - 1) + Number(add || 0);
-  const y2 = Math.floor(base / 12);
-  const m2 = (base % 12) + 1;
-  return `${y2}-${String(m2).padStart(2, "0")}`;
+function getCutoffDayFromAccount(acc) {
+  const v =
+    acc?.statement?.cutoffDay ??
+    acc?.statement?.cutoff_day ??
+    acc?.cutoffDay ??
+    acc?.cutoff_day ??
+    acc?.statementDay ??
+    acc?.statement_day;
+
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function billingYMForCardPurchase(purchaseISO, cutoffDay) {
+  const iso = normalizeISODate(purchaseISO);
+  if (!iso) return "";
+  const ym = iso.slice(0, 7);
+  const day = Number(iso.slice(8, 10));
+  if (!Number.isFinite(day)) return "";
 
-function normalizeStatus(s) {
-  const v = String(s || "").toLowerCase();
-  if (v === "confirmado" || v === "confirmed") return "confirmed";
-  if (v === "previsto" || v === "planned") return "planned";
-  if (v === "pago" || v === "paid") return "paid";
-  if (v === "atrasado" || v === "overdue") return "overdue";
-  return v || "";
+  const cd = Number(cutoffDay);
+  if (!Number.isFinite(cd) || cd <= 0) return "";
+
+  return day <= cd ? ym : addMonthsYM(ym, 1);
 }
 
-function normalizeDirectionFromTxn(t) {
-  const d = String(t?.direction || "").toLowerCase();
-  if (d === "income" || d === "receita" || d === "entrada") return "income";
-  if (d === "expense" || d === "despesa" || d === "saida" || d === "saída") return "expense";
-
-  // legado: se não tem direction, assume despesa
-  // (se você quiser, podemos inferir por categoria depois)
-  return "expense";
+function dueDateISO(monthYM, dueDay) {
+  if (!monthYM) return "";
+  const [y, m] = String(monthYM).split("-").map(Number);
+  if (!y || !m) return "";
+  const lastDay = new Date(y, m, 0).getDate();
+  const d0 = Number(dueDay);
+  const d = clamp(Number.isFinite(d0) && d0 > 0 ? d0 : 10, 1, lastDay);
+  const mm = String(m).padStart(2, "0");
+  const dd = String(d).padStart(2, "0");
+  return `${y}-${mm}-${dd}`;
 }
 
-function signedAmountNormalized(t) {
-  const v = Number(t?.amount || 0);
-  const abs = Math.abs(v);
+// ✅ Dedupe Bills: planned + paid (mesmo billId) => fica só o mais forte
+function dedupeBillsForDashboard(list, { month, billingYMForTxn, isCardTxn }) {
+  const map = new Map();
+  const removed = [];
 
-  // respeita negativo legado
-  if (v < 0) return v;
+  for (const t of list || []) {
+    const billId = String(t?.billId || t?.bill_id || t?.bill || "").trim();
 
-  const dir = normalizeDirectionFromTxn(t);
-  return dir === "income" ? abs : -abs;
+    if (!billId) {
+      const k = `__no_bill__|${t?.id || Math.random()}`;
+      map.set(k, t);
+      continue;
+    }
+
+    if (isCardTxn(t)) {
+      const k = `__card_bill__|${t?.id || billId}`;
+      map.set(k, t);
+      continue;
+    }
+
+    const ym = billingYMForTxn(t) || String(t?.invoiceMonth || "");
+    const key = `${billId}|${ym}|${resolvedDirection(t)}`;
+
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, t);
+      continue;
+    }
+
+    const rPrev = statusRank(prev?.status);
+    const rNow = statusRank(t?.status);
+
+    if (rNow > rPrev) {
+      removed.push(prev);
+      map.set(key, t);
+      continue;
+    }
+
+    if (rNow === rPrev) {
+      const aPrev = Math.abs(Number(prev?.amount || 0));
+      const aNow = Math.abs(Number(t?.amount || 0));
+      if (aNow > aPrev) {
+        removed.push(prev);
+        map.set(key, t);
+      } else {
+        removed.push(t);
+      }
+      continue;
+    }
+
+    removed.push(t);
+  }
+
+  const out = Array.from(map.values());
+
+  if (DEBUG) {
+    dbgGroup(`[DASH DEBUG] BILL DEDUPE month=${month}`, () => {
+      dbg("before =", (list || []).length, "after =", out.length, "removed =", removed.length);
+      console.table(
+        removed.slice(0, 120).map((t) => ({
+          id: t?.id,
+          desc: String(t?.description || t?.memo || t?.title || ""),
+          amount: Math.abs(Number(t?.amount || 0)),
+          status: normalizeStatus(t?.status),
+          billId: String(t?.billId || t?.bill_id || ""),
+          accountId: t?.accountId || "",
+          billingYM: billingYMForTxn(t) || "",
+        }))
+      );
+    });
+  }
+
+  return out;
 }
 
-
-function KpiCard({ title, value, subtitle, icon: Icon, tone = "neutral" }) {
+function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
   return (
     <Card
       sx={(theme) => {
@@ -232,7 +348,6 @@ function KpiCard({ title, value, subtitle, icon: Icon, tone = "neutral" }) {
             <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
               {title}
             </Typography>
-
             <Typography
               variant="h5"
               sx={{
@@ -244,12 +359,6 @@ function KpiCard({ title, value, subtitle, icon: Icon, tone = "neutral" }) {
             >
               {value}
             </Typography>
-
-            {subtitle ? (
-              <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                {subtitle}
-              </Typography>
-            ) : null}
           </Stack>
 
           {Icon ? (
@@ -273,10 +382,9 @@ function KpiCard({ title, value, subtitle, icon: Icon, tone = "neutral" }) {
   );
 }
 
-function StackedDayTooltip({ active, label, payload, catMeta, theme }) {
+function StackedDayTooltip({ active, label, payload, catMeta, theme, money }) {
   if (!active || !payload?.length) return null;
 
-  // payload vem com cada stack + o "total" (se você renderizar)
   const rows = (payload || [])
     .filter((p) => p && p.dataKey && p.dataKey !== "total")
     .map((p) => {
@@ -297,10 +405,7 @@ function StackedDayTooltip({ active, label, payload, catMeta, theme }) {
         <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
           Dia {label}
         </Typography>
-
-        <Typography sx={{ fontWeight: 950, mb: 0.8 }}>
-          {formatBRL(total)}
-        </Typography>
+        <Typography sx={{ fontWeight: 950, mb: 0.8 }}>{money(total)}</Typography>
 
         <Stack spacing={0.55}>
           {rows.map((r) => (
@@ -312,7 +417,7 @@ function StackedDayTooltip({ active, label, payload, catMeta, theme }) {
                 </Typography>
               </Stack>
               <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                {formatBRL(r.value)}
+                {money(r.value)}
               </Typography>
             </Stack>
           ))}
@@ -322,6 +427,68 @@ function StackedDayTooltip({ active, label, payload, catMeta, theme }) {
   );
 }
 
+// -----------------------------
+// Card window helpers (MESMA lógica do Invoices.jsx)
+// -----------------------------
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function monthStartDate(ym) {
+  const [y, m] = String(ym).slice(0, 7).split("-");
+  return new Date(Number(y), Number(m) - 1, 1);
+}
+
+function addMonthsJS(d, n) {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+
+function clampDayJS(y, mIndex0, day) {
+  const last = new Date(y, mIndex0 + 1, 0).getDate();
+  return Math.max(1, Math.min(Number(day || 1), last));
+}
+
+// ISO "YYYY-MM-DD" sem risco de timezone
+function toISODateLocal(dt) {
+  const y = dt.getFullYear();
+  const m = pad2(dt.getMonth() + 1);
+  const d = pad2(dt.getDate());
+  return `${y}-${m}-${d}`;
+}
+
+// replica exatamente a lógica do backend (janela por cutoff)
+function computeInvoiceWindowISO(statementYM, cutoffDay) {
+  const sm = monthStartDate(statementYM);
+  const prev = addMonthsJS(sm, -1);
+
+  const endDay = clampDayJS(sm.getFullYear(), sm.getMonth(), cutoffDay);
+  const startDay = clampDayJS(prev.getFullYear(), prev.getMonth(), cutoffDay);
+
+  const periodEnd = new Date(sm.getFullYear(), sm.getMonth(), endDay);
+  const periodStart = new Date(prev.getFullYear(), prev.getMonth(), startDay + 1);
+
+  return { startISO: toISODateLocal(periodStart), endISO: toISODateLocal(periodEnd) };
+}
+
+function centsFromTxn(t) {
+  if (t?.amount_cents != null) return Math.abs(Number(t.amount_cents) || 0);
+  if (t?.amountCents != null) return Math.abs(Number(t.amountCents) || 0);
+
+  const raw = t?.amount ?? t?.value ?? 0;
+  const n = Number(String(raw).replace(",", "."));
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(Math.abs(n) * 100);
+}
+
+function hasInvoiceLink(t) {
+  return !!(t?.invoice || t?.invoiceId || t?.invoice_id);
+}
+
+function safeCardColor(theme, c) {
+  const v = String(c || "").trim();
+  if (v) return v;
+  return theme.palette.primary.main;
+}
 
 // -----------------------------
 // Dashboard
@@ -329,15 +496,43 @@ function StackedDayTooltip({ active, label, payload, catMeta, theme }) {
 export default function Dashboard() {
   const theme = useTheme();
   const dispatch = useDispatch();
-  const month = useSelector((s) => s.finance.month);
+
+  const month = useSelector((s) => s.finance.month); // "YYYY-MM"
   const txns = useSelector(selectTransactionsUi);
   const accounts = useSelector((s) => s.accounts.accounts);
   const extraFilters = useSelector((s) => s.finance.filters);
 
-
-
   const hideValues = useSelector(selectHideValues);
-  const categories = useSelector(selectCategories); // exemplo
+  const categories = useSelector(selectCategories);
+
+  const accountsStatus = useSelector((s) => s.accounts.status);
+  const txStatus = useSelector((s) => s.transactions.status);
+
+  useEffect(() => {
+    const alreadyLoaded = accountsStatus === "succeeded" && txStatus === "succeeded";
+    if (alreadyLoaded) return;
+    dispatch(bootstrapThunk());
+  }, [dispatch, accountsStatus, txStatus]);
+
+  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
+  const money = (n) => maskMoney(formatBRL(Number(n || 0)));
+
+  const accountsById = useMemo(() => {
+    const map = new Map();
+    for (const a of accounts || []) map.set(a.id, a);
+    return map;
+  }, [accounts]);
+
+  // DEBUG snapshot
+  useEffect(() => {
+    if (!DEBUG) return;
+    dbgGroup(`[DASH DEBUG] RAW store snapshot (month=${month})`, () => {
+      dbg("txns.length =", (txns || []).length);
+      dbg("accounts.length =", (accounts || []).length);
+      dbg("filters =", extraFilters);
+      dbg("txns sample[0..3] =", (txns || []).slice(0, 4));
+    });
+  }, [txns, accounts, extraFilters, month]);
 
   const categoriesById = useMemo(() => {
     const m = new Map();
@@ -351,46 +546,20 @@ export default function Dashboard() {
     return m;
   }, [categories]);
 
-  function resolveCategoryFromTxn(t) {
-    const raw = t?.categoryId ?? t?.category_id ?? t?.category ?? "";
-    const key = String(raw);
-    return categoriesById.get(key) || categoriesBySlug.get(key) || null;
-  }
+  const resolveCategoryFromTxn = useMemo(() => {
+    return (t) => {
+      const raw = t?.categoryId ?? t?.category_id ?? t?.category ?? "";
+      const key = String(raw);
+      return categoriesById.get(key) || categoriesBySlug.get(key) || null;
+    };
+  }, [categoriesById, categoriesBySlug]);
 
-
-
-  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
-  const maskNumber = (n) => (hideValues ? "••" : String(n));
-  console.log('hide values', hideValues)
-
-  const accountsById = useMemo(() => {
-    const map = new Map();
-    for (const a of accounts || []) map.set(a.id, a);
-    return map;
-  }, [accounts]);
-
-  // escolha um sinal de “já carregou”
-  const accountsStatus = useSelector((s) => s.accounts.status);
-  const txStatus = useSelector((s) => s.transactions.status);
-
-  useEffect(() => {
-    // se já carregou, não faz de novo
-    const alreadyLoaded = accountsStatus === "succeeded" && txStatus === "succeeded";
-    if (alreadyLoaded) return;
-
-    dispatch(bootstrapThunk());
-  }, [dispatch, accountsStatus, txStatus]);
-
-  // Resolve conta/cartão do lançamento (suporta legado `cardId`)
   const resolveAccountIdFromTxn = useMemo(() => {
     const norm = (s) =>
       String(s || "")
         .toLowerCase()
         .replace(/\s+/g, "")
         .replace(/[\W_]+/g, "");
-
-
-
 
     const creditCards = (accounts || []).filter((a) => a.type === "credit_card");
     const byName = new Map();
@@ -411,9 +580,50 @@ export default function Dashboard() {
     };
   }, [accounts, accountsById]);
 
+  const isCardTxn = useMemo(() => {
+    return (t) => {
+      const rid = resolveAccountIdFromTxn(t);
+      if (!rid) return false;
+      const acc = accountsById.get(rid);
+      return acc?.type === "credit_card";
+    };
+  }, [resolveAccountIdFromTxn, accountsById]);
 
+  const billingYMForTxn = useMemo(() => {
+    const ymField = (v) => {
+      const s = String(v || "").trim();
+      return s ? s.slice(0, 7) : "";
+    };
 
-  // aplica filtros do header (multi-select) — com suporte a cardId legado
+    return (t) => {
+      // 1) se vier do backend/store, usa SEMPRE
+      const invoiceYM = ymField(t?.invoiceMonth ?? t?.invoice_month);
+      const billingYM = ymField(t?.billingYM ?? t?.billing_ym);
+
+      const pd = normalizeISODate(t?.purchaseDate ?? t?.purchase_date);
+
+      // cartão: invoiceMonth > billingYM > cutoff calc
+      if (isCardTxn(t)) {
+        if (invoiceYM) return invoiceYM;
+        if (billingYM) return billingYM;
+
+        if (!pd) return "";
+        const rid = resolveAccountIdFromTxn(t);
+        const acc = rid ? accountsById.get(rid) : null;
+        const cutoff = getCutoffDayFromAccount(acc);
+        if (!cutoff) return ymFromISODate(pd);
+
+        return billingYMForCardPurchase(pd, cutoff);
+      }
+
+      // não-cartão: billingYM > purchase month
+      if (billingYM) return billingYM;
+      if (!pd) return "";
+      return ymFromISODate(pd);
+    };
+  }, [isCardTxn, resolveAccountIdFromTxn, accountsById]);
+
+  // filtros do header
   const filteredTxns = useMemo(() => {
     let out = txns || [];
     const f = extraFilters || {};
@@ -426,7 +636,7 @@ export default function Dashboard() {
     }
 
     if (f.categoryIds?.length) {
-      out = out.filter((t) => f.categoryIds.includes(String(t.categoryId)));
+      out = out.filter((t) => f.categoryIds.includes(String(t?.categoryId ?? t?.category_id ?? "")));
     }
 
     if (f.kinds?.length) {
@@ -440,93 +650,159 @@ export default function Dashboard() {
     return out;
   }, [txns, extraFilters, resolveAccountIdFromTxn]);
 
-  // ✅ REGRAS (como você definiu):
-  // Card 1 e Card 2 e Chart: mês por PURCHASE DATE
-
-  const monthTx = useMemo(() => {
-    if (!month) return filteredTxns || []; // se usar "" como Todos
-    return (filteredTxns || []).filter((t) => String(t?.invoiceMonth || "") === String(month));
+  useEffect(() => {
+    if (!DEBUG) return;
+    dbgGroup(`[DASH DEBUG] After header filters`, () => {
+      dbg("filteredTxns.length =", (filteredTxns || []).length);
+      dbg("invoicePayment-like count =", (filteredTxns || []).filter(isLikelyInvoicePayment).length);
+    });
   }, [filteredTxns, month]);
-
-  const monthTxPurchase = useMemo(() => {
-    if (!month) return filteredTxns || [];
-    return (filteredTxns || []).filter((t) => ymFromISODate(t?.purchaseDate) === month);
-  }, [filteredTxns, month]);
-
-  // Card 3 (Faturas): mês por INVOICE MONTH
-  const monthTxInvoice = useMemo(() => {
-    if (!month) return filteredTxns || [];
-    return (filteredTxns || []).filter((t) => String(t?.invoiceMonth || "") === String(month));
-  }, [filteredTxns, month]);
-
-  const isCardTxn = (t) => {
-    const rid = resolveAccountIdFromTxn(t);
-    if (!rid) return false;
-    const acc = accountsById.get(rid);
-    return acc?.type === "credit_card";
-  };
 
   // -----------------------------
-  // KPIs (purchaseDate)
+  // DEDUPE geral (evita duplicatas por refresh/storage)
   // -----------------------------
-  // Entradas no mês (invoiceMonth)
+  const txnsDeduped = useMemo(() => {
+    const normDesc = (t) =>
+      String(t?.merchant || t?.description || t?.title || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .slice(0, 32);
+
+    const centsKey = (n) => Math.round(Math.abs(Number(n || 0)) * 100);
+
+    const keyFor = (t) => {
+      const accId = resolveAccountIdFromTxn(t) || "";
+      const pd = normalizeISODate(t?.purchaseDate ?? t?.purchase_date) || "";
+      const amt = centsKey(signedAmountNormalized(t));
+      const desc = normDesc(t);
+      const cat = String(t?.categoryId ?? t?.category_id ?? t?.category ?? "");
+      return `${accId}|${pd}|${amt}|${cat}|${desc}`;
+    };
+
+    const best = new Map();
+    let collisions = 0;
+
+    for (const t of filteredTxns || []) {
+      if (isLikelyInvoicePayment(t)) continue;
+
+      const k = keyFor(t);
+      const prev = best.get(k);
+      if (!prev) {
+        best.set(k, t);
+        continue;
+      }
+
+      collisions += 1;
+
+      if (statusRank(t?.status) > statusRank(prev?.status)) {
+        best.set(k, t);
+        continue;
+      }
+
+      const prevHasId = !!(prev?.id || prev?.uuid);
+      const curHasId = !!(t?.id || t?.uuid);
+      if (!prevHasId && curHasId) best.set(k, t);
+    }
+
+    const out = Array.from(best.values());
+
+    if (DEBUG) {
+      dbgGroup("[DASH DEBUG] DEDUPE summary", () => {
+        dbg("input (filteredTxns) =", (filteredTxns || []).length);
+        dbg("deduped =", out.length);
+        dbg("collisions =", collisions);
+      });
+    }
+
+    return out;
+  }, [filteredTxns, resolveAccountIdFromTxn]);
+
+  useEffect(() => {
+    if (!DEBUG) return;
+
+    const inCount = (filteredTxns || []).length;
+    const deCount = (txnsDeduped || []).length;
+
+    const invoicedRaw = (filteredTxns || []).filter((t) => normalizeStatus(t?.status) === "invoiced").length;
+    const invoicedDed = (txnsDeduped || []).filter((t) => normalizeStatus(t?.status) === "invoiced").length;
+
+    console.groupCollapsed("[DASH DEBUG] filtered vs deduped");
+    console.log("filteredTxns =", inCount, "txnsDeduped =", deCount, "diff =", inCount - deCount);
+    console.log("invoiced filtered =", invoicedRaw, "invoiced deduped =", invoicedDed);
+    console.groupEnd();
+  }, [filteredTxns, txnsDeduped]);
+
+  // -----------------------------
+  // mês do dashboard (cutoff pra cartões; purchase month pros demais)
+  // + dedupe bills (planned vs paid/confirmed)
+  // -----------------------------
+  const monthTxDashboard = useMemo(() => {
+    if (!month) return txnsDeduped || [];
+
+    const base = (txnsDeduped || [])
+      .filter((t) => !isLikelyInvoicePayment(t))
+      .filter((t) => billingYMForTxn(t) === month);
+
+    return dedupeBillsForDashboard(base, { month, billingYMForTxn, isCardTxn, DEBUG });
+  }, [txnsDeduped, month, billingYMForTxn, isCardTxn]);
+
+  useEffect(() => {
+    if (!DEBUG) return;
+    dbgGroup(`[DASH DEBUG] After month billing filter (month=${month})`, () => {
+      dbg("monthTxDashboard.length =", (monthTxDashboard || []).length);
+
+      const byBill = new Map();
+      for (const t of monthTxDashboard || []) {
+        const billId = String(t?.billId || t?.bill_id || "").trim();
+        if (!billId || isCardTxn(t)) continue;
+        byBill.set(billId, (byBill.get(billId) || 0) + 1);
+      }
+      const duplicates = [...byBill.entries()].filter(([, c]) => c > 1);
+      dbg("non-card billId duplicates (should be empty) =", duplicates);
+    });
+  }, [monthTxDashboard, month, isCardTxn]);
+
+  // -----------------------------
+  // KPIs (não mexe nos outros; CARTÕES vem da mesma lógica do Invoices.jsx)
+  // -----------------------------
   const totalEntradaMes = useMemo(() => {
-    return sum((monthTx || []).map((t) => Math.max(0, signedAmountNormalized(t))));
-  }, [monthTx]);
+    return sum((monthTxDashboard || []).map((t) => Math.max(0, signedAmountNormalized(t))));
+  }, [monthTxDashboard]);
 
-  // Saídas no mês (invoiceMonth)
   const totalSaidaMes = useMemo(() => {
-    return Math.abs(sum((monthTx || []).map((t) => Math.min(0, signedAmountNormalized(t)))));
-  }, [monthTx]);
+    return Math.abs(sum((monthTxDashboard || []).map((t) => Math.min(0, signedAmountNormalized(t)))));
+  }, [monthTxDashboard]);
 
-  // Somente cartões (saídas + entradas se algum dia tiver estorno/receita em cartão)
-  const totalCartoesMes = useMemo(() => {
-    return sum(
-      (monthTx || [])
-        .filter((t) => isCardTxn(t)) // sua função que resolve accountId/cardId
-        .map((t) => Math.abs(signedAmountNormalized(t)))
-    );
-  }, [monthTx, isCardTxn]);
-
-  // Despesas mensais = saídas (mantém semântica simples)
-  // Despesas mensais = somente recorrentes (kind === "recurring")
   const totalDespesasMensais = useMemo(() => {
     return sum(
-      (monthTx || [])
+      (monthTxDashboard || [])
         .filter((t) => normalizeDirectionFromTxn(t) === "expense")
         .filter((t) => String(t?.kind || "").toLowerCase() === "recurring")
         .map((t) => Math.abs(signedAmountNormalized(t)))
     );
-  }, [monthTx]);
+  }, [monthTxDashboard]);
 
-
-  // Total parcelamento (somente despesas parceladas)
   const totalParcelamento = useMemo(() => {
     return sum(
-      (monthTx || [])
+      (monthTxDashboard || [])
         .filter((t) => isInstallment(t))
         .filter((t) => normalizeDirectionFromTxn(t) === "expense")
         .map((t) => Math.abs(signedAmountNormalized(t)))
     );
-  }, [monthTx]);
+  }, [monthTxDashboard]);
 
-  // Total avulso (somente despesas não parceladas)
   const totalAvulso = useMemo(() => {
     return sum(
-      (monthTx || [])
+      (monthTxDashboard || [])
         .filter((t) => normalizeDirectionFromTxn(t) === "expense")
         .filter((t) => String(t?.kind || "").toLowerCase() === "one_off")
         .map((t) => Math.abs(signedAmountNormalized(t)))
     );
-  }, [monthTx]);
-
-
-
-
+  }, [monthTxDashboard]);
 
   // -----------------------------
-  // Chart (purchaseDate) — somando TODAS as despesas do mês
-  // label = dia (1..31)
+  // Chart (stack) — continua usando monthTxDashboard (ok)
   // -----------------------------
   const chartStack = useMemo(() => {
     if (!month) return { data: [], catKeys: [], catMeta: new Map() };
@@ -536,21 +812,24 @@ export default function Dashboard() {
 
     const daysInMonth = new Date(y, m, 0).getDate();
 
-    // categoria -> meta (nome/cor)
-    const catMeta = new Map(); // key -> { name, color }
+    const catMeta = new Map();
     const catKeysSet = new Set();
 
-    // dia -> obj
-    const byDay = new Map();
-    for (let d = 1; d <= daysInMonth; d++) {
-      byDay.set(d, { day: d, label: String(d), total: 0 });
-    }
+    const byLabel = new Map();
+    byLabel.set("Prev", { label: "Prev", total: 0 });
+    for (let d = 1; d <= daysInMonth; d++) byLabel.set(String(d), { label: String(d), total: 0 });
 
-    for (const t of monthTx || []) {
+    for (const t of monthTxDashboard || []) {
       if (resolvedDirection(t) !== "expense") continue;
 
-      const dnum = dayFromISODate(t?.purchaseDate);
-      if (!dnum || !byDay.has(dnum)) continue;
+      const pd = normalizeISODate(t?.purchaseDate ?? t?.purchase_date);
+      if (!pd) continue;
+
+      const pdYM = ymFromISODate(pd);
+      let label = String(dayFromISODate(pd) || "");
+
+      if (isCardTxn(t) && pdYM !== month) label = "Prev";
+      if (!byLabel.has(label)) continue;
 
       const cat = resolveCategoryFromTxn(t);
       const key = String(cat?.id ?? cat?.slug ?? "outros");
@@ -561,15 +840,14 @@ export default function Dashboard() {
       if (!catMeta.has(key)) catMeta.set(key, { name, color });
 
       const v = Math.abs(signedAmountNormalized(t));
-      const row = byDay.get(dnum);
+      const row = byLabel.get(label);
 
       row[key] = (row[key] || 0) + v;
       row.total += v;
     }
 
-    // ordenar categorias por total (pra stacks ficarem “bonitos”)
     const totalsByCat = new Map();
-    for (const row of byDay.values()) {
+    for (const row of byLabel.values()) {
       for (const k of catKeysSet) {
         const v = Number(row[k] || 0);
         if (!v) continue;
@@ -581,33 +859,37 @@ export default function Dashboard() {
       (a, b) => (totalsByCat.get(b) || 0) - (totalsByCat.get(a) || 0)
     );
 
-    const data = Array.from(byDay.values()).map((r) => {
+    const data = Array.from(byLabel.values()).map((r) => {
       const out = { ...r };
-      // arredonda só no final
       out.total = Number(Number(out.total || 0).toFixed(2));
       for (const k of catKeys) out[k] = Number(Number(out[k] || 0).toFixed(2));
       return out;
     });
 
-    return { data, catKeys, catMeta };
-  }, [month, monthTx, resolveCategoryFromTxn]);
+    data.sort((a, b) => {
+      if (a.label === "Prev") return -1;
+      if (b.label === "Prev") return 1;
+      return Number(a.label) - Number(b.label);
+    });
 
+    return { data, catKeys, catMeta };
+  }, [month, monthTxDashboard, resolveCategoryFromTxn, isCardTxn]);
 
   const maxChartValue = useMemo(() => {
     return Math.max(0, ...(chartStack.data || []).map((d) => Number(d.total || 0)));
   }, [chartStack]);
 
   // -----------------------------
-  // Categorias (purchaseDate)
+  // Categorias rank
   // -----------------------------
   const categoriesRank = useMemo(() => {
-    const map = new Map(); // key (id/slug) -> totalAbs
+    const map = new Map();
 
-    for (const t of monthTx || []) {
+    for (const t of monthTxDashboard || []) {
       if (resolvedDirection(t) !== "expense") continue;
 
       const cat = resolveCategoryFromTxn(t);
-      const key = String(cat?.id ?? cat?.slug ?? "outros"); // só vira outros se realmente não tiver
+      const key = String(cat?.id ?? cat?.slug ?? "outros");
       map.set(key, (map.get(key) || 0) + Math.abs(signedAmountNormalized(t)));
     }
 
@@ -629,72 +911,137 @@ export default function Dashboard() {
       rows: rows.slice(0, 10),
       totalGastoMes: Number(totalGastoMes.toFixed(2)),
     };
-  }, [monthTx, resolveCategoryFromTxn, categoriesById, categoriesBySlug]);
-
+  }, [monthTxDashboard, resolveCategoryFromTxn, categoriesById, categoriesBySlug]);
 
   // -----------------------------
-  // Faturas por cartão (invoiceMonth)
+  // ✅ “Faturas por cartão” — MESMA regra do Invoices.jsx:
+  // - janela por cutoff (prev cutoff+1 .. cutoff atual)
+  // - se tiver INVOICED/PAID na janela => usa o MAIOR (evita “dobro”)
+  // - senão => usa CONFIRMED sem vínculo de invoice (aberto)
   // -----------------------------
   const invoicesByCard = useMemo(() => {
     const creditCards = (accounts || []).filter((a) => a.active && a.type === "credit_card");
 
-    const totals = new Map();
-    for (const a of creditCards) totals.set(a.id, 0);
-
-    for (const t of monthTxInvoice) {
-      const rid = resolveAccountIdFromTxn(t);
-      if (!rid) continue;
-
-      const acc = accountsById.get(rid);
-      if (!acc || acc.type !== "credit_card") continue;
-
-      if (resolvedDirection(t) !== "expense") continue;
-
-      const sa = signedAmount(t);
-      totals.set(acc.id, (totals.get(acc.id) || 0) + Math.abs(sa));
+    const metaById = new Map();
+    for (const c of creditCards) {
+      const cutoff = Number(c?.statement?.cutoffDay ?? c?.cutoffDay ?? c?.cutoff_day ?? 1);
+      const dueDay = Number(c?.statement?.dueDay ?? c?.dueDay ?? c?.due_day ?? 1);
+      metaById.set(String(c.id), { cutoff, dueDay, card: c });
     }
 
+    const sums = new Map();
+    for (const c of creditCards) {
+      sums.set(String(c.id), { confirmedOpen: 0, invoiced: 0, paid: 0 });
+    }
 
-    return creditCards
-      .map((a) => {
-        const dueDay = a?.statement?.dueDay ?? a?.due_day ?? a?.dueDay;
+    for (const t of txnsDeduped || []) {
+      const accId = resolveAccountIdFromTxn(t);
+      if (!accId || !sums.has(String(accId))) continue;
+      if (resolvedDirection(t) !== "expense") continue;
+
+      const st = normalizeStatus(t?.status);
+      if (st !== "confirmed" && st !== "invoiced" && st !== "paid") continue;
+
+      const purchase = normalizeISODate(t?.purchaseDate ?? t?.purchase_date);
+      if (!purchase) continue;
+
+      const cutoff = Number(metaById.get(String(accId))?.cutoff || 1);
+      const { startISO, endISO } = computeInvoiceWindowISO(month, cutoff);
+
+      if (purchase < startISO || purchase > endISO) continue;
+
+      const cts = centsFromTxn(t);
+      const cur = sums.get(String(accId));
+
+      if (st === "confirmed") {
+        if (hasInvoiceLink(t)) continue; // não contar confirmado já “virou invoice”
+        cur.confirmedOpen += cts;
+      } else if (st === "paid") {
+        cur.paid += cts;
+      } else if (st === "invoiced") {
+        cur.invoiced += cts;
+      }
+    }
+
+    const out = creditCards
+      .map((c) => {
+        const accId = String(c.id);
+        const { cutoff, dueDay } = metaById.get(accId) || { cutoff: 1, dueDay: 1 };
+
         const dueYM = addMonthsYM(month, 1);
         const dueISO = dueDateISO(dueYM, dueDay);
-        console.log('aaaa', a)
+
+        const s = sums.get(accId) || { confirmedOpen: 0, invoiced: 0, paid: 0 };
+        const billed = Math.max(Number(s.invoiced || 0), Number(s.paid || 0));
+        const displayCents = billed > 0 ? billed : Number(s.confirmedOpen || 0);
+
         return {
-          id: a.id,
-          name: a.name,
-          color: a.color || alpha(theme.palette.primary.main, 0.18),
+          id: c.id,
+          name: c.name,
+          color: safeCardColor(theme, c.color),
           dueISO,
           dueLabel: dueISO ? formatDateBR(dueISO) : "—",
-          total: Number((totals.get(a.id) || 0).toFixed(2)),
+          total: Number((displayCents / 100).toFixed(2)), // BRL
+          _debug: {
+            startEnd: computeInvoiceWindowISO(month, cutoff),
+            cutoff,
+            confirmedOpen: s.confirmedOpen,
+            invoiced: s.invoiced,
+            paid: s.paid,
+            displayCents,
+          },
         };
       })
       .sort((a, b) => b.total - a.total);
-  }, [accounts, accountsById, month, monthTxInvoice, resolveAccountIdFromTxn, theme]);
 
+    if (DEBUG) {
+      dbgGroup(`[DASH DEBUG] invoicesByCard (window/cutoff) month=${month}`, () => {
+        dbg("cards =", out.length);
+        console.table(
+          out.map((x) => ({
+            name: x.name,
+            total: x.total,
+            cutoff: x._debug?.cutoff,
+            start: x._debug?.startEnd?.startISO,
+            end: x._debug?.startEnd?.endISO,
+            confirmedOpen: (x._debug?.confirmedOpen || 0) / 100,
+            invoiced: (x._debug?.invoiced || 0) / 100,
+            paid: (x._debug?.paid || 0) / 100,
+          }))
+        );
+      });
+    }
+
+    return out;
+  }, [accounts, month, txnsDeduped, resolveAccountIdFromTxn, theme]);
 
   const totalInvoicesMonth = useMemo(() => {
     return (invoicesByCard || []).reduce((acc, c) => acc + Number(c.total || 0), 0);
   }, [invoicesByCard]);
 
+  // ✅ KPI de cartões = MESMA soma do card “Faturas (cartões)”
+  const totalCartoesMes = totalInvoicesMonth;
 
+  useEffect(() => {
+    if (!DEBUG) return;
+    dbgGroup(`[DASH DEBUG] Cards totals`, () => {
+      dbg("totalInvoicesMonth =", totalInvoicesMonth);
+      dbg("invoicesByCard =", invoicesByCard);
+    });
+  }, [totalInvoicesMonth, invoicesByCard]);
 
   // -----------------------------
-  // Layout
+  // Loading
   // -----------------------------
-
   const bootLoading = accountsStatus === "loading" || txStatus === "loading";
+  if (bootLoading) return <Spinner status={bootLoading} />;
 
-  if (bootLoading) {
-    return (
-      <Spinner status={bootLoading} />
-    );
-  }
-
+  // -----------------------------
+  // UI
+  // -----------------------------
   return (
     <Stack spacing={2.25} sx={{ width: "100%" }}>
-      {/* Linha 1: 6 KPIs */}
+      {/* KPIs */}
       <Box
         sx={{
           display: "grid",
@@ -708,82 +1055,29 @@ export default function Dashboard() {
           width: "100%",
         }}
       >
-        <KpiCard
-          title="Total de entradas"
-          value={maskMoney(formatBRL(totalEntradaMes))}
-          // subtitle="purchaseDate"
-          icon={TrendingUpRoundedIcon}
-          tone="good"
-        />
-        <KpiCard
-          title="Total de saídas"
-          value={maskMoney(formatBRL(totalSaidaMes))}
-          // subtitle="purchaseDate"
-          icon={TrendingDownRoundedIcon}
-          tone="bad"
-        />
-        <KpiCard
-          title="Total em cartões"
-          value={maskMoney(formatBRL(totalCartoesMes))}
-          // subtitle="purchaseDate"
-          icon={CreditCardRoundedIcon}
-          tone="info"
-        />
-        <KpiCard
-          title="Despesas mensais"
-          value={maskMoney(formatBRL(totalDespesasMensais))}
-          // subtitle="purchaseDate"
-          icon={CalendarMonthRoundedIcon}
-          tone="bad"
-        />
-        <KpiCard
-          title="Total avulso"
-          value={maskMoney(formatBRL(totalAvulso))}
-          // subtitle="purchaseDate"
-          icon={BoltRoundedIcon}
-          tone="neutral"
-        />
-        <KpiCard
-          title="Total parcelamento"
-          value={maskMoney(formatBRL(totalParcelamento))}
-          // subtitle="purchaseDate"
-          icon={ViewWeekRoundedIcon}
-          tone="info"
-        />
+        <KpiCard title="Total de entradas" value={money(totalEntradaMes)} icon={TrendingUpRoundedIcon} tone="good" />
+        <KpiCard title="Total de saídas" value={money(totalSaidaMes)} icon={TrendingDownRoundedIcon} tone="bad" />
+        <KpiCard title="Total em cartões" value={money(totalCartoesMes)} icon={CreditCardRoundedIcon} tone="info" />
+        <KpiCard title="Despesas mensais" value={money(totalDespesasMensais)} icon={CalendarMonthRoundedIcon} tone="bad" />
+        <KpiCard title="Total avulso" value={money(totalAvulso)} icon={BoltRoundedIcon} tone="neutral" />
+        <KpiCard title="Total parcelamento" value={money(totalParcelamento)} icon={ViewWeekRoundedIcon} tone="info" />
       </Box>
 
-      {/* Linha 2: 3 colunas */}
-      <Box
-        sx={{
-          width: "100%",
-          display: "grid",
-          gap: 2,
-          alignItems: "stretch",
-          gridTemplateColumns: {
-            xs: "1fr",
-            // md: "minmax(0, 1fr) 340px",
-          },
-        }}
-      >
-        {/* Col 1: Chart */}
+      {/* Chart */}
+      <Box sx={{ width: "100%", display: "grid", gap: 2, alignItems: "stretch", gridTemplateColumns: { xs: "1fr" } }}>
         <Card sx={(t) => cardBg(t, "primary")}>
-          <CardContent sx={{ p: 2.25, height: "100%" }}>
-            <Stack spacing={1.2} sx={{ height: "100%" }}>
+          <CardContent sx={{ p: 2.25 }}>
+            <Stack spacing={1.2}>
               <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-                <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
-                  Despesas por dia
-                </Typography>
+                <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>Despesas por dia</Typography>
                 <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  purchaseDate • {formatMonthBR(month)}
+                  mês de cobrança (cartões) • {formatMonthBR(month)}
                 </Typography>
               </Stack>
 
-              <Box sx={{ flex: 1, minHeight: 360 }}>
+              <Box sx={{ width: "100%", height: 360, minHeight: 360 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={chartStack.data}
-                    margin={{ top: 26, right: 18, left: 0, bottom: 0 }}
-                  >
+                  <BarChart data={chartStack.data} margin={{ top: 26, right: 18, left: 0, bottom: 0 }}>
                     <CartesianGrid
                       vertical={false}
                       stroke={alpha(theme.palette.divider, 0.55)}
@@ -799,19 +1093,15 @@ export default function Dashboard() {
                       tickLine={false}
                       width={60}
                       domain={[0, Math.max(10, maxChartValue * 1.15)]}
-                      tickFormatter={(v) => formatBRL(v)}
+                      tickFormatter={(v) => (hideValues ? "••••" : formatBRL(v))}
                     />
 
                     <Tooltip
-                      content={
-                        <StackedDayTooltip
-                          catMeta={chartStack.catMeta}
-                          theme={theme}
-                        />
-                      }
+                      content={(props) => (
+                        <StackedDayTooltip {...props} catMeta={chartStack.catMeta} theme={theme} money={money} />
+                      )}
                     />
 
-                    {/* ✅ stacks por categoria */}
                     {chartStack.catKeys.map((k) => {
                       const meta = chartStack.catMeta.get(String(k));
                       const fill = meta?.color || pickFallbackColor(theme, k);
@@ -830,7 +1120,6 @@ export default function Dashboard() {
                       );
                     })}
 
-                    {/* ✅ label do TOTAL em cima (bar “fantasma”) */}
                     <Bar dataKey="total" fill="transparent" stackId="__total_label__">
                       <LabelList
                         dataKey="total"
@@ -846,54 +1135,46 @@ export default function Dashboard() {
                               fontWeight={700}
                               fill={theme.palette.text.secondary}
                             >
-                              {formatBRL(value)}
+                              {money(value)}
                             </text>
                           );
                         }}
                       />
                     </Bar>
                   </BarChart>
-
                 </ResponsiveContainer>
               </Box>
 
               <Divider />
 
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Próximas visões: por cartão • parcelado vs avulso • múltiplas barras
+                Debug ativo: veja o console para DEDUPE, BILL DEDUPE e window/cutoff de cartões.
               </Typography>
             </Stack>
           </CardContent>
         </Card>
-
-        
-
-
       </Box>
+
+      {/* Categorias + Faturas */}
       <Box
         sx={{
           width: "100%",
           display: "grid",
           gap: 2,
-          minHeight: '350px',
+          minHeight: "350px",
           alignItems: "stretch",
-          gridTemplateColumns: {
-            xs: "1fr",
-            md: "1fr 1fr ",
-          },
+          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
         }}
       >
-        {/* Col 2: Categorias */}
+        {/* Categorias */}
         <Card sx={(t) => cardBg(t, "info")}>
           <CardContent sx={{ p: 2.25, height: "100%" }}>
             <Stack spacing={1} sx={{ height: "100%" }}>
               <Stack direction="row" justifyContent="space-between" alignItems="baseline">
                 <Stack spacing={0.2}>
-                  <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
-                    Categorias
-                  </Typography>
+                  <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>Categorias</Typography>
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    purchaseDate • {formatMonthBR(month)}
+                    mês de cobrança (cartões) • {formatMonthBR(month)}
                   </Typography>
                 </Stack>
 
@@ -901,9 +1182,7 @@ export default function Dashboard() {
                   <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
                     Total
                   </Typography>
-                  <Typography sx={{ fontWeight: 950 }}>
-                    {formatBRL(categoriesRank.totalGastoMes || 0)}
-                  </Typography>
+                  <Typography sx={{ fontWeight: 950 }}>{money(categoriesRank.totalGastoMes || 0)}</Typography>
                 </Stack>
               </Stack>
 
@@ -921,9 +1200,10 @@ export default function Dashboard() {
 
                       return (categoriesRank.rows || []).slice(0, 10).map((row, idx) => {
                         const pct = clamp((Number(row.total || 0) / Number(maxValue)) * 100, 0, 100);
+                        const base = row.color || pickFallbackColor(theme, row.key);
 
                         return (
-                          <React.Fragment key={row.categoryId}>
+                          <React.Fragment key={row.key}>
                             <Box
                               sx={(t) => ({
                                 py: 1,
@@ -933,9 +1213,7 @@ export default function Dashboard() {
                                 borderRadius: 1.5,
                                 px: 0.5,
                                 transition: "background 140ms ease",
-                                "&:hover": {
-                                  background: alpha(t.palette.action.hover, 0.7),
-                                },
+                                "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
                               })}
                             >
                               <Box
@@ -943,7 +1221,7 @@ export default function Dashboard() {
                                   width: 10,
                                   height: 10,
                                   borderRadius: 999,
-                                  background: row.tint,
+                                  background: base,
                                   flexShrink: 0,
                                 }}
                               />
@@ -957,21 +1235,21 @@ export default function Dashboard() {
                                   <LinearProgress
                                     variant="determinate"
                                     value={pct}
-                                    sx={(t) => ({
+                                    sx={{
                                       height: 4,
                                       borderRadius: 999,
-                                      background: alpha(row.color || t.palette.primary.main, 0.12),
+                                      background: alpha(base, 0.12),
                                       "& .MuiLinearProgress-bar": {
                                         borderRadius: 999,
-                                        backgroundColor: alpha(row.color || t.palette.primary.main, 0.95),
+                                        backgroundColor: alpha(base, 0.95),
                                       },
-                                    })}
+                                    }}
                                   />
                                 </Box>
                               </Box>
 
                               <Typography sx={{ fontWeight: 950, fontSize: 13, whiteSpace: "nowrap" }}>
-                                {formatBRL(row.total)}
+                                {money(row.total)}
                               </Typography>
                             </Box>
 
@@ -987,52 +1265,34 @@ export default function Dashboard() {
               </Box>
 
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Top 10 • 
+                Top 10
               </Typography>
             </Stack>
           </CardContent>
         </Card>
 
-        {/* Col 3: Faturas */}
+        {/* Faturas */}
         <Card sx={(t) => cardBg(t, "success")}>
           <CardContent sx={{ p: 2.25, height: "100%" }}>
             <Stack spacing={1} sx={{ height: "100%" }}>
               <Stack spacing={0.4}>
-                {/* Linha 1: título + total */}
                 <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-                  <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
-                    Faturas (cartões)
-                  </Typography>
-
-                  <Typography
-                    sx={{
-                      fontWeight: 950,
-                      fontSize: 15,
-                      letterSpacing: -0.2,
-                    }}
-                  >
-                    {formatBRL(totalInvoicesMonth)}
+                  <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>Faturas (cartões)</Typography>
+                  <Typography sx={{ fontWeight: 950, fontSize: 15, letterSpacing: -0.2 }}>
+                    {money(totalInvoicesMonth)}
                   </Typography>
                 </Stack>
 
-                {/* Linha 2: subtítulo + quantidade */}
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    fatura {formatMonthBR(month)} • venc. próximo mês
+                    janela real por cutoff • {formatMonthBR(month)}
                   </Typography>
 
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: "text.secondary",
-                      fontWeight: 800,
-                    }}
-                  >
+                  <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
                     {(invoicesByCard || []).length} cartões
                   </Typography>
                 </Stack>
               </Stack>
-
 
               <Divider />
 
@@ -1048,88 +1308,72 @@ export default function Dashboard() {
 
                       return (invoicesByCard || []).map((c, idx) => {
                         const pct = clamp((Number(c.total || 0) / Number(top || 1)) * 100, 0, 100);
+                        const base = c.color || pickFallbackColor(theme, c.id || c.name);
 
                         return (
                           <React.Fragment key={c.id}>
                             <Box
-                              sx={(t) => {
-                                const base = c.color || pickFallbackColor(theme, c.id || c.name); // ✅ fallback consistente
-                                return {
-                                  py: 1,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 1,
-                                  borderRadius: 1.5,
-                                  px: 0.5,
-                                  transition: "background 140ms ease",
-                                  "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
-                                };
-                              }}
+                              sx={(t) => ({
+                                py: 1,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1,
+                                borderRadius: 1.5,
+                                px: 0.5,
+                                transition: "background 140ms ease",
+                                "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
+                              })}
                             >
-                              {(() => {
-                                const base = c.color || pickFallbackColor(theme, c.id || c.name);
+                              <Box
+                                sx={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 999,
+                                  background: base,
+                                  flexShrink: 0,
+                                  boxShadow: `0 0 0 3px ${alpha(base, 0.12)}`,
+                                }}
+                              />
 
-                                return (
-                                  <>
-                                    {/* dot do cartão */}
-                                    <Box
-                                      sx={{
-                                        width: 10,
-                                        height: 10,
+                              <Box sx={{ minWidth: 0, flex: 1 }}>
+                                <Typography sx={{ fontWeight: 950, fontSize: 13 }} noWrap>
+                                  {c.name}
+                                </Typography>
+
+                                <Typography
+                                  sx={{
+                                    mt: 0.15,
+                                    fontSize: 9.6,
+                                    fontWeight: 850,
+                                    color: "text.secondary",
+                                    lineHeight: 1.1,
+                                  }}
+                                  noWrap
+                                >
+                                  Vence em {c.dueLabel}
+                                </Typography>
+
+                                <Box sx={{ mt: 0.75 }}>
+                                  <LinearProgress
+                                    variant="determinate"
+                                    value={pct}
+                                    sx={{
+                                      height: 4,
+                                      borderRadius: 999,
+                                      background: alpha(base, 0.14),
+                                      "& .MuiLinearProgress-bar": {
                                         borderRadius: 999,
-                                        background: base,
-                                        flexShrink: 0,
-                                        boxShadow: `0 0 0 3px ${alpha(base, 0.12)}`,
-                                      }}
-                                    />
+                                        backgroundColor: alpha(base, 0.92),
+                                      },
+                                    }}
+                                  />
+                                </Box>
+                              </Box>
 
-                                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                                      {/* Nome */}
-                                      <Typography sx={{ fontWeight: 950, fontSize: 13 }} noWrap>
-                                        {c.name}
-                                      </Typography>
-
-                                      {/* Vencimento abaixo do nome (pequeno, mas um pouco maior) */}
-                                      <Typography
-                                        sx={{
-                                          mt: 0.15,
-                                          fontSize: 9.6,
-                                          fontWeight: 850,
-                                          color: "text.secondary",
-                                          lineHeight: 1.1,
-                                        }}
-                                        noWrap
-                                      >
-                                        Vence em {c.dueLabel}
-                                      </Typography>
-
-                                      {/* Barra com cor do cartão */}
-                                      <Box sx={{ mt: 0.75 }}>
-                                        <LinearProgress
-                                          variant="determinate"
-                                          value={pct}
-                                          sx={{
-                                            height: 4,
-                                            borderRadius: 999,
-                                            background: alpha(base, 0.14),
-                                            "& .MuiLinearProgress-bar": {
-                                              borderRadius: 999,
-                                              backgroundColor: alpha(base, 0.92),
-                                            },
-                                          }}
-                                        />
-                                      </Box>
-                                    </Box>
-
-                                    {/* Total */}
-                                    <Typography sx={{ fontWeight: 950, fontSize: 13, whiteSpace: "nowrap" }}>
-                                      {formatBRL(c.total)}
-                                    </Typography>
-                                  </>
-                                );
-                              })()}
+                              <Typography sx={{ fontWeight: 950, fontSize: 13, whiteSpace: "nowrap" }}>
+                                {money(c.total)}
+                              </Typography>
                             </Box>
-
 
                             {idx < (invoicesByCard || []).length - 1 ? (
                               <Divider sx={{ opacity: 0.5 }} />
@@ -1143,12 +1387,12 @@ export default function Dashboard() {
               </Box>
 
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Depois: status (pago/previsto) por cartão e alertas.
+                Debug: console mostra janela (start/end), cutoff e somas por status (confirmed/invoiced/paid).
               </Typography>
             </Stack>
           </CardContent>
         </Card>
       </Box>
-    </Stack >
+    </Stack>
   );
 }

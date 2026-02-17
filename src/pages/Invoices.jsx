@@ -59,10 +59,55 @@ import {
 
 import { LabelList } from "recharts";
 
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
+import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
+import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
+
+
+
 
 // -----------------------------
 // Helpers
 // -----------------------------
+function paymentTypeLabel(type) {
+  const t = String(type || "").toLowerCase();
+  if (t === "credit_card") return "Cartão";
+  if (t === "checking") return "Conta";
+  if (t === "savings") return "Poupança";
+  return "Conta";
+}
+
+function paymentTypeIcon(type) {
+  const t = String(type || "").toLowerCase();
+  if (t === "credit_card") return CreditCardRoundedIcon;
+  if (t === "savings") return SavingsRoundedIcon;
+  return AccountBalanceRoundedIcon; // checking/default
+}
+
+function paymentTypeOrder(type) {
+  const t = String(type || "").toLowerCase();
+  // Conta primeiro, depois Poupança, depois Cartão
+  if (t === "checking") return 0;
+  if (t === "savings") return 1;
+  if (t === "credit_card") return 2;
+  return 9;
+}
+
+function getInvoiceTotalCents(inv) {
+  if (!inv) return 0;
+  const v =
+    inv?.total_cents ??
+    inv?.totalCents ??
+    inv?.total_amount_cents ??
+    inv?.totalAmountCents ??
+    inv?.amount_cents ??
+    inv?.amountCents ??
+    inv?.total ??
+    0;
+
+  return Number(v || 0);
+}
+
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
@@ -215,6 +260,27 @@ function getInvoiceStatementMonthISO(inv) {
   if (/^\d{4}-\d{2}$/.test(raw)) return `${raw}-01`;
   return raw;
 }
+function isInvoicePaymentTxn(t) {
+  const text = `${t?.description || ""} ${t?.merchant || ""} ${t?.title || ""}`.toLowerCase();
+
+  // heurísticas comuns
+  if (text.includes("pagamento") && text.includes("fatura")) return true;
+  if (text.includes("pagar") && text.includes("fatura")) return true;
+  if (text.includes("invoice") && text.includes("payment")) return true;
+
+  // flags/fields que costumam existir em backends
+  if (t?.is_invoice_payment) return true;
+  if (t?.invoice_payment) return true;
+  if (t?.invoicePayment) return true;
+  if (t?.invoice_payment_id || t?.invoicePaymentId) return true;
+
+  // alguns modelos marcam como transferência/ajuste interno
+  if (String(t?.kind || t?.type || "").toLowerCase().includes("invoice_payment")) return true;
+  if (String(t?.kind || t?.type || "").toLowerCase().includes("bill_payment")) return true;
+
+  return false;
+}
+
 
 
 function getPreviewPeriod(preview) {
@@ -248,6 +314,89 @@ function getPreviewDueDate(preview) {
   return String(d).slice(0, 10);
 }
 
+
+// --- Tooltip premium (nome real + total) ---
+function ChartTooltip({ active, payload, label, meta }) {
+  if (!active || !payload?.length) return null;
+
+  const lines = payload
+    .filter((p) => p && Number(p.value) > 0 && p.dataKey !== "total")
+    .map((p) => {
+      const m = meta.get(String(p.dataKey));
+      return {
+        key: p.dataKey,
+        name: m?.name || p.name || String(p.dataKey),
+        color: m?.color || p.fill || p.stroke,
+        value: Number(p.value) || 0,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+
+  const total = lines.reduce((acc, x) => acc + x.value, 0);
+
+  return (
+    <Box
+      sx={(t) => ({
+        px: 1.25,
+        py: 1,
+        borderRadius: 2,
+        border: `1px solid ${alpha(t.palette.divider, 0.65)}`,
+        background:
+          t.palette.mode === "dark"
+            ? alpha("#0b1220", 0.72)
+            : alpha("#ffffff", 0.92),
+        boxShadow:
+          t.palette.mode === "dark"
+            ? "0 18px 50px rgba(0,0,0,0.55)"
+            : "0 18px 40px rgba(0,0,0,0.18)",
+        backdropFilter: "blur(12px)",
+        minWidth: 240,
+      })}
+    >
+      <Typography sx={{ fontWeight: 950, fontSize: 12, mb: 0.75 }}>
+        {formatMonthBR(label)}
+      </Typography>
+
+      <Stack spacing={0.6}>
+        {lines.map((x) => (
+          <Stack key={x.key} direction="row" justifyContent="space-between" spacing={2}>
+            <Stack direction="row" spacing={0.8} alignItems="center" sx={{ minWidth: 0 }}>
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: x.color,
+                  flexShrink: 0,
+                }}
+              />
+              <Typography variant="caption" sx={{ fontWeight: 900 }} noWrap>
+                {x.name}
+              </Typography>
+            </Stack>
+
+            <Typography variant="caption" sx={{ fontWeight: 950 }}>
+              {formatBRL((x.value / 100) || 0)}
+            </Typography>
+          </Stack>
+        ))}
+
+        <Divider sx={{ opacity: 0.4, my: 0.4 }} />
+
+        <Stack direction="row" justifyContent="space-between" spacing={2}>
+          <Typography variant="caption" sx={{ fontWeight: 950, opacity: 0.85 }}>
+            Total
+          </Typography>
+          <Typography variant="caption" sx={{ fontWeight: 950 }}>
+            {formatBRL((total / 100) || 0)}
+          </Typography>
+        </Stack>
+      </Stack>
+    </Box>
+  );
+}
+
+
 // -----------------------------
 // Page
 // -----------------------------
@@ -258,6 +407,25 @@ export default function Invoices() {
   const accounts = useSelector(selectAccounts);
   const txns = useSelector(selectTransactionsUi);
   const invoices = useSelector(selectInvoices);
+
+  const txnsUnique = useMemo(() => {
+    const seen = new Set();
+
+    return (txns || []).filter((t) => {
+      const accId = resolveAccountIdFromTxn(t);
+      const id =
+        String(t?.id || t?.client_id || t?.clientId || t?.uuid || "").trim() ||
+        // fallback: chave composta (evita duplicar mesmo sem id)
+        `${accId}|${String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10)}|${centsFromTxn(t)}|${String(t?.merchant || t?.description || "")}`;
+
+      if (!id) return true;
+
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [txns]);
+
 
   // carrega invoices na entrada
   useEffect(() => {
@@ -342,7 +510,132 @@ export default function Invoices() {
   }, [invoices, ym]);
 
   // “Em aberto” por lançamentos (janela real cutoff): CONFIRMED + purchase_date dentro janela
-  const openSpendByCard = useMemo(() => {
+  // 1) SOMA DA JANELA (fallback / período completo): confirmed + invoiced + paid
+  const windowSpendByCard = useMemo(() => {
+    // accId -> { invoicedCents, paidCents }
+    const out = new Map();
+
+    const cardById = new Map();
+    for (const c of creditCards || []) {
+      const id = String(c.id);
+      out.set(id, { invoicedCents: 0, paidCents: 0 });
+      cardById.set(id, c);
+    }
+
+    for (const t of txnsUnique || []) {
+      const accId = resolveAccountIdFromTxn(t);
+      if (!accId || !out.has(accId)) continue;
+      if (resolveDirection(t) !== "expense") continue;
+
+
+      const st = resolveStatus(t);
+      if (st !== "invoiced" && st !== "paid") continue;
+      if (isInvoicePaymentTxn(t)) continue;
+
+      const card = cardById.get(accId);
+      const cutoff = Number(card?.statement?.cutoffDay ?? card?.cutoffDay ?? card?.cutoff_day ?? 1);
+      const { startISO, endISO } = computeInvoiceWindowISO(ym, cutoff);
+
+      const purchase = String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10);
+      if (!purchase || purchase < startISO || purchase > endISO) continue;
+
+      const cents = Math.abs(centsFromTxn(t));
+      const cur = out.get(accId);
+
+      if (st === "paid") cur.paidCents += cents;
+      else cur.invoicedCents += cents;
+    }
+
+    return out;
+  }, [creditCards, ym, txnsUnique]);
+
+
+  // 2) CONFIRMADO “PURO” (para o texto): só confirmed e sem vínculo com invoice
+  const monthValueByCard = useMemo(() => {
+    // monthKey = "YYYY-MM"
+    const monthKey = ym;
+
+    // index invoice por (accId|monthKey)
+    const invoiceByKey = new Map();
+    for (const inv of invoices || []) {
+      const invYM = getInvoiceStatementMonthISO(inv).slice(0, 7);
+      const accId = getInvoiceAccountId(inv);
+      if (!accId || !invYM) continue;
+      invoiceByKey.set(`${String(accId)}|${invYM}`, inv);
+    }
+
+    // meta cutoff por cartão
+    const meta = new Map();
+    for (const c of creditCards || []) {
+      meta.set(String(c.id), {
+        cutoff: Number(c.cutoff_day || c.cutoffDay || c?.statement?.cutoffDay || 1),
+      });
+    }
+
+    // tx por conta (1x)
+    const txByAcc = new Map();
+    for (const t of txns || []) {
+      const accId = resolveAccountIdFromTxn(t);
+      if (!accId) continue;
+      if (!txByAcc.has(accId)) txByAcc.set(accId, []);
+      txByAcc.get(accId).push(t);
+    }
+
+    const sumTxnsForWindow = (accId, monthKey, mode) => {
+      const cutoff = Number(meta.get(String(accId))?.cutoff || 1);
+      const { startISO, endISO } = computeInvoiceWindowISO(monthKey, cutoff);
+      const list = txByAcc.get(String(accId)) || [];
+      let sum = 0;
+
+      for (const t of list) {
+        if (resolveDirection(t) !== "expense") continue;
+
+        const st = resolveStatus(t);
+        const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
+
+        if (mode === "open") {
+          if (st !== "confirmed") continue;
+          if (hasInvoiceLink) continue;
+        } else {
+          if (st !== "invoiced" && st !== "paid") continue;
+
+          const invMonth = String(t?.invoiceMonth || t?.invoice_month || "").slice(0, 7);
+          if (invMonth && invMonth !== monthKey) continue;
+        }
+
+        const purchase = String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10);
+        if (!purchase || purchase < startISO || purchase > endISO) continue;
+
+        sum += Math.abs(centsFromTxn(t));
+      }
+
+      return sum;
+    };
+
+    const out = new Map();
+
+    for (const c of creditCards || []) {
+      const accId = String(c.id);
+      const key = `${accId}|${monthKey}`;
+      const inv = invoiceByKey.get(key);
+
+      let valueCents = 0;
+
+      if (inv) {
+        const invCents = getInvoiceTotalCents(inv);
+        valueCents = invCents > 0 ? invCents : sumTxnsForWindow(accId, monthKey, "invoiced");
+      } else {
+        valueCents = sumTxnsForWindow(accId, monthKey, "open");
+      }
+
+      out.set(accId, valueCents);
+    }
+
+    return out; // Map(accId -> cents)
+  }, [ym, invoices, txns, creditCards]);
+
+
+  const confirmedSpendByCard = useMemo(() => {
     const out = new Map();
 
     const cardById = new Map();
@@ -354,17 +647,18 @@ export default function Invoices() {
 
     for (const t of txns || []) {
       const accId = resolveAccountIdFromTxn(t);
-      if (!accId) continue;
-      if (!out.has(accId)) continue;
-
+      if (!accId || !out.has(accId)) continue;
       if (resolveDirection(t) !== "expense") continue;
 
       const st = resolveStatus(t);
       if (st !== "confirmed") continue;
 
+      // importante: não contar confirmado já vinculado a invoice
+      const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
+      if (hasInvoiceLink) continue;
+
       const card = cardById.get(accId);
       const cutoff = Number(card?.statement?.cutoffDay ?? card?.cutoffDay ?? card?.cutoff_day ?? 1);
-
       const { startISO, endISO } = computeInvoiceWindowISO(ym, cutoff);
 
       const purchase = String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10);
@@ -373,8 +667,9 @@ export default function Invoices() {
       out.set(accId, (out.get(accId) || 0) + Math.abs(centsFromTxn(t)));
     }
 
-    return out; // accountId -> cents
+    return out;
   }, [txns, creditCards, ym]);
+
 
   // DEBUG counters
   const debugByCard = useMemo(() => {
@@ -421,10 +716,20 @@ export default function Invoices() {
     return creditCards
       .map((c) => {
         const inv = monthInvoices.get(String(c.id)) || null;
-        const closedTotalCents = inv ? Number(inv.total_cents || 0) : 0;
-        const openCents = openSpendByCard.get(String(c.id)) || 0;
+        const w = windowSpendByCard.get(String(c.id)) || { invoicedCents: 0, paidCents: 0 };
+        const windowBilledCents = Math.max(Number(w.invoicedCents || 0), Number(w.paidCents || 0));
 
-        const displayCents = inv ? closedTotalCents : openCents;
+
+
+        // ✅ se existem os dois, pega o MAIOR (evita “dobro”)
+
+
+        const displayCents = Number(monthValueByCard.get(String(c.id)) || 0);
+        const confirmedCents = confirmedSpendByCard.get(String(c.id)) || 0; // só p/ texto “confirmado no período”
+        const closedTotalCents = inv ? getInvoiceTotalCents(inv) : 0;
+
+
+
 
         const cutoff = Number(c?.statement?.cutoffDay ?? c?.cutoffDay ?? c?.cutoff_day ?? 1);
         const { startISO, endISO } = computeInvoiceWindowISO(ym, cutoff);
@@ -444,14 +749,20 @@ export default function Invoices() {
           dueDate: inv?.due_date || "",
           dueLabel: inv?.due_date ? formatDateBR(inv.due_date) : "—",
 
-          openCents,
+          confirmedCents,
+
+          windowBilledCents,
           closedTotalCents,
           displayCents,
+
+
+
+
           dbg: debugByCard.get(String(c.id)) || null,
         };
       })
       .sort((a, b) => (b.displayCents || 0) - (a.displayCents || 0));
-  }, [creditCards, monthInvoices, openSpendByCard, theme, debugByCard, ym]);
+  }, [creditCards, monthInvoices, windowSpendByCard, confirmedSpendByCard, theme, debugByCard, ym]);
 
   const monthTotalCents = useMemo(
     () => rows.reduce((acc, r) => acc + (r.displayCents || 0), 0),
@@ -461,40 +772,43 @@ export default function Invoices() {
   // -----------------------------
   // Card 3: Anual por cartão (cada cartão uma "coluna" por mês)
   // -----------------------------
+  // ✅ 2) Soma transações CONFIRMED que ainda não viraram invoice (abertas)
+  // agrupamento simples pra não varrer tudo 12x por cartão
+  const txByAcc = new Map();
+  for (const t of txns || []) {
+    const accId = resolveAccountIdFromTxn(t);
+    if (!accId) continue;
+    if (!txByAcc.has(accId)) txByAcc.set(accId, []);
+    txByAcc.get(accId).push(t);
+  }
+
+
   const annualByCardChart = useMemo(() => {
     const y = Number(year);
     if (!y) return { data: [], keys: [], meta: new Map() };
 
-    const keys = creditCards.map((c) => String(c.id));
+    const keys = (creditCards || []).map((c) => String(c.id));
+
+    // meta: nome/cor/cutoff por cartão
     const meta = new Map();
-    for (const c of creditCards) {
-      meta.set(String(c.id), { name: c.name, color: safeCardColor(theme, c.color), cutoff: Number(c.cutoff_day || c.cutoffDay || c?.statement?.cutoffDay || 1) });
+    for (const c of creditCards || []) {
+      meta.set(String(c.id), {
+        name: c.name,
+        color: safeCardColor(theme, c.color),
+        cutoff: Number(c.cutoff_day || c.cutoffDay || c?.statement?.cutoffDay || 1),
+      });
     }
 
     // base meses
     const base = [];
     for (let m = 1; m <= 12; m++) {
-      const monthKey = `${y}-${pad2(m)}`;
+      const monthKey = `${y}-${pad2(m)}`; // "YYYY-MM"
       const row = { monthKey, label: monthKey };
       for (const k of keys) row[k] = 0;
       base.push(row);
     }
 
-    // ✅ 1) Soma invoices existentes (fechadas/pagas/abertas)
-    for (const inv of invoices || []) {
-      const invYM = getInvoiceStatementMonthISO(inv).slice(0, 7);
-      if (!invYM.startsWith(String(y))) continue;
-
-      const accId = getInvoiceAccountId(inv);
-      const idx = base.findIndex((r) => r.monthKey === invYM);
-      if (idx < 0) continue;
-
-      // invoice é o "valor fechado" daquele mês/cartão
-      base[idx][accId] += Number(inv.total_cents || 0);
-    }
-
-    // ✅ 2) Soma transações CONFIRMED que ainda não viraram invoice (abertas)
-    // agrupamento simples pra não varrer tudo 12x por cartão
+    // agrupa txns por conta (1x)
     const txByAcc = new Map();
     for (const t of txns || []) {
       const accId = resolveAccountIdFromTxn(t);
@@ -503,50 +817,90 @@ export default function Invoices() {
       txByAcc.get(accId).push(t);
     }
 
-    const hasInvoiceFor = (accId, monthKey) => {
-      // se já tem invoice pro cartão naquele mês, a gente NÃO mistura “aberto” (senão duplica)
-      return (invoices || []).some((inv) =>
-        getInvoiceAccountId(inv) === String(accId) &&
-        getInvoiceStatementMonthISO(inv).slice(0, 7) === monthKey
-      );
+    // index rápido de invoices por (accId|monthKey)
+    // monthKey aqui é "YYYY-MM"
+    const invoiceByKey = new Map();
+    for (const inv of invoices || []) {
+      const invYM = getInvoiceStatementMonthISO(inv).slice(0, 7); // "YYYY-MM"
+      if (!invYM.startsWith(String(y))) continue;
 
+      const accId = getInvoiceAccountId(inv);
+      if (!accId) continue;
+
+      invoiceByKey.set(`${String(accId)}|${invYM}`, inv);
+    }
+
+    const hasInvoiceFor = (accId, monthKey) => invoiceByKey.has(`${String(accId)}|${monthKey}`);
+
+    // soma transações na janela do cutoff para um mês/cartão
+    // modo "open" => SOMENTE confirmed (e sem invoice link)
+    // modo "invoiced" => SOMENTE invoiced/paid (idealmente com invoice link)
+    const sumTxnsForWindow = (accId, monthKey, mode) => {
+      const cardMeta = meta.get(String(accId));
+      const cutoff = Number(cardMeta?.cutoff || 1);
+
+      const { startISO, endISO } = computeInvoiceWindowISO(monthKey, cutoff);
+      const list = txByAcc.get(String(accId)) || [];
+
+      let sum = 0;
+      for (const t of list) {
+        if (resolveDirection(t) !== "expense") continue;
+
+        const st = resolveStatus(t);
+        const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
+
+        if (mode === "open") {
+          // aberto: só CONFIRMED e NÃO vinculada a invoice
+          if (st !== "confirmed") continue;
+          if (hasInvoiceLink) continue;
+        } else {
+          // faturado: aceita INVOICED/PAID
+          if (st !== "invoiced" && st !== "paid") continue;
+
+          // se o txn tem invoice_month, usa como “âncora” pra evitar pegar coisa errada
+          const invMonth = String(t?.invoiceMonth || t?.invoice_month || "").slice(0, 7);
+          if (invMonth && invMonth !== monthKey) continue;
+
+          // NÃO exige invoice_id porque no seu payload pode não vir
+        }
+
+        const purchase = String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10);
+        if (!purchase || purchase < startISO || purchase > endISO) continue;
+
+        sum += Math.abs(centsFromTxn(t));
+      }
+
+      return sum;
     };
 
+    // monta valores por mês/cartão (NUNCA usar += em dois lugares)
     for (let m = 1; m <= 12; m++) {
-      const monthKey = `${y}-${pad2(m)}`;
+      const monthKey = `${y}-${pad2(m)}`; // "YYYY-MM"
       const rowIdx = base.findIndex((r) => r.monthKey === monthKey);
       if (rowIdx < 0) continue;
 
       for (const accId of keys) {
-        // se existe invoice nesse mês/cartão, não soma as tx abertas (senão duplica)
-        if (hasInvoiceFor(accId, monthKey)) continue;
+        let valueCents = 0;
 
-        const cardMeta = meta.get(String(accId));
-        const cutoff = Number(cardMeta?.cutoff || 1);
+        if (hasInvoiceFor(accId, monthKey)) {
+          const inv = invoiceByKey.get(`${String(accId)}|${monthKey}`);
+          const invCents = Number(
+            inv?.total_cents ??
+            inv?.totalCents ??
+            inv?.total_amount_cents ??
+            inv?.amount_cents ??
+            0
+          );
 
-        // janela real do cartão para esse statement month
-        const { startISO, endISO } = computeInvoiceWindowISO(monthKey, cutoff);
-
-        const list = txByAcc.get(String(accId)) || [];
-        let sum = 0;
-
-        for (const t of list) {
-          if (resolveDirection(t) !== "expense") continue;
-
-          const st = resolveStatus(t);
-          if (st !== "confirmed") continue;
-
-          // opcional: evitar pegar transações já vinculadas (se seu adapter expuser isso)
-          const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
-          if (hasInvoiceLink) continue;
-
-          const purchase = String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10);
-          if (!purchase || purchase < startISO || purchase > endISO) continue;
-
-          sum += Math.abs(centsFromTxn(t));
+          // ✅ se invoice existir, usamos SOMENTE invoice.
+          // fallback só se vier 0 (ex: backend não gravou total corretamente)
+          valueCents = invCents > 0 ? invCents : sumTxnsForWindow(accId, monthKey, "invoiced");
+        } else {
+          // ✅ sem invoice: SOMENTE aberto (confirmed)
+          valueCents = sumTxnsForWindow(accId, monthKey, "open");
         }
 
-        base[rowIdx][accId] += sum; // aqui entra o “aberto” daquele mês/cartão
+        base[rowIdx][accId] = valueCents; // <- SET, não +=
       }
     }
 
@@ -650,12 +1004,13 @@ export default function Invoices() {
 
     setPayDate(dayISO(new Date().toISOString()));
     setPayAccountId("");
+
+    const cents = Number(row?.displayCents || 0);
     setPayAmountBRL(
-      row?.invoice
-        ? String((Number(row.invoice.total_cents || 0) / 100).toFixed(2)).replace(".", ",")
-        : ""
+      cents > 0 ? String((cents / 100).toFixed(2)).replace(".", ",") : ""
     );
   };
+
 
   const handlePay = async () => {
     setError("");
@@ -706,6 +1061,87 @@ export default function Invoices() {
 
   // contas disponíveis para pagar (todas ativas, incluindo checking)
   const paymentAccounts = useMemo(() => (accounts || []).filter((a) => a.active), [accounts]);
+
+
+  const DEBUG = false;
+
+  // log básico do mês + resumo dos invoices
+  useEffect(() => {
+    if (!DEBUG) return;
+    const sm = monthStartISO(ym);
+
+    console.log("=== [Invoices DEBUG] ym =", ym, "sm =", sm);
+    console.log("[invoices] count =", (invoices || []).length);
+
+    // Mostra os invoices que caem nesse mês (pra ver statement_month e account_id)
+    const inMonth = (invoices || [])
+      .map((inv) => ({
+        id: inv?.id,
+        accountId: getInvoiceAccountId(inv),
+        statement_month: getInvoiceStatementMonthISO(inv),
+        status: inv?.status,
+        total_cents: inv?.total_cents,
+      }))
+      .filter((x) => x.statement_month === sm);
+
+    console.table(inMonth);
+  }, [DEBUG, ym, invoices]);
+
+  useEffect(() => {
+    if (!DEBUG) return;
+
+    const sm = monthStartISO(ym);
+
+    for (const c of creditCards || []) {
+      const accId = String(c.id);
+
+      const inv = monthInvoices.get(accId) || null;
+
+      const cutoff = Number(c?.statement?.cutoffDay ?? c?.cutoffDay ?? c?.cutoff_day ?? 1);
+      const { startISO, endISO } = computeInvoiceWindowISO(ym, cutoff);
+
+      // filtra txns do cartão na janela
+      const list = (txnsUnique || []).filter((t) => {
+        const a = resolveAccountIdFromTxn(t);
+        if (String(a) !== accId) return false;
+        if (resolveDirection(t) !== "expense") return false;
+
+        const purchase = String(t?.purchaseDate || t?.purchase_date || "").slice(0, 10);
+        if (!purchase || purchase < startISO || purchase > endISO) return false;
+
+        return true;
+      });
+
+      const sums = { confirmed: 0, invoiced: 0, paid: 0, planned: 0, other: 0, total: 0 };
+      for (const t of list) {
+        const st = resolveStatus(t);
+        const cents = Math.abs(centsFromTxn(t));
+        sums.total += cents;
+
+        if (st === "confirmed") sums.confirmed += cents;
+        else if (st === "invoiced") sums.invoiced += cents;
+        else if (st === "paid") sums.paid += cents;
+        else if (st === "planned") sums.planned += cents;
+        else sums.other += cents;
+      }
+
+      console.log(`[CARD] ${c.name} (${accId}) sm=${sm}`);
+      console.log("  invoice:", inv ? {
+        id: inv?.id,
+        statement_month: getInvoiceStatementMonthISO(inv),
+        status: inv?.status,
+        total_cents: inv?.total_cents
+      } : null);
+      console.log("  window:", { startISO, endISO, cutoff });
+      console.log("  txnsInWindow:", list.length, "sums(cents):", sums);
+    }
+  }, [DEBUG, ym, creditCards, monthInvoices, txns, txnsUnique]);
+
+
+  useEffect(() => {
+    console.log("[Invoices] txns:", (txns || []).length, "txnsUnique:", (txnsUnique || []).length);
+  }, [txns, txnsUnique]);
+
 
   return (
     <Stack spacing={2.25} sx={{ width: "100%" }}>
@@ -780,7 +1216,7 @@ export default function Invoices() {
                 </Tooltip>
               </Stack>
 
-              <Button
+              {/* <Button
                 variant="contained"
                 startIcon={<LockRoundedIcon />}
                 onClick={handleCloseAllForMonth}
@@ -788,7 +1224,7 @@ export default function Invoices() {
                 disabled={!creditCards.length}
               >
                 Fechar faturas do mês
-              </Button>
+              </Button> */}
             </Stack>
 
             {notice ? <Alert severity="success">{notice}</Alert> : null}
@@ -819,12 +1255,48 @@ export default function Invoices() {
             ) : (
               <Stack spacing={0}>
                 {(() => {
-                  const top = rows[0]?.displayCents || 1;
 
                   return rows.map((r, idx) => {
-                    const pct = clamp((Number(r.displayCents || 0) / Number(top || 1)) * 100, 0, 100);
-                    const isClosed = r.invoice?.status === "closed";
-                    const isPaid = r.invoice?.status === "paid";
+                    const invoice = r.invoice || null;
+
+                    // ✅ fallback robusto (porque após pagar, alguns campos mudam/não vêm mais)
+                    const safeOpenCents = Number(r.confirmedCents ?? 0) || 0;
+
+                    const safeInvoiceTotalCents =
+                      Number(
+                        invoice?.total_cents ??
+                        invoice?.totalCents ??
+                        invoice?.amount_cents ??
+                        invoice?.amountCents ??
+                        invoice?.total_amount_cents ??
+                        invoice?.totalAmountCents ??
+                        r.closedTotalCents
+                      ) || 0;
+
+                    // Se você tiver algum campo "paid_total_cents" no retorno, aproveita:
+                    const safePaidCents =
+                      Number(
+                        invoice?.paid_total_cents ??
+                        invoice?.paidTotalCents ??
+                        invoice?.paid_cents ??
+                        invoice?.paidCents
+                      ) || safeInvoiceTotalCents;
+
+                    const isClosed = invoice?.status === "closed";
+                    const isPaid = invoice?.status === "paid";
+
+                    // ✅ valor principal mostrado à direita
+                    const safeDisplayCents =
+                      Number(r.displayCents) ||
+                      (invoice ? (isPaid ? safePaidCents : safeInvoiceTotalCents) : safeOpenCents);
+
+                    // ✅ para "Fechado:" lá embaixo (mesma ideia)
+                    const safeClosedTotalCents = invoice ? safeInvoiceTotalCents : 0;
+
+                    // ✅ top/pct não pode quebrar quando tudo vira 0
+                    const top = Number(rows?.[0]?.displayCents) || safeDisplayCents || 1;
+                    const pct = clamp((safeDisplayCents / (Number(top) || 1)) * 100, 0, 100);
+
 
                     const statusChip = isPaid ? (
                       <Chip size="small" label="Paga" color="success" />
@@ -846,10 +1318,17 @@ export default function Invoices() {
                             display: "flex",
                             alignItems: "center",
                             gap: 1.25,
-                            borderRadius: 1.5,
-                            px: 0.75,
-                            transition: "background 140ms ease",
-                            "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
+                            borderRadius: 1.6,
+                            px: 0.9,
+                            transition: "background 160ms ease, transform 160ms ease, box-shadow 160ms ease",
+                            background: "transparent",
+                            "&:hover": {
+                              background: alpha(t.palette.background.paper, t.palette.mode === "dark" ? 0.12 : 0.7),
+                              boxShadow: t.palette.mode === "dark"
+                                ? "0 10px 28px rgba(0,0,0,0.35)"
+                                : "0 10px 26px rgba(0,0,0,0.10)",
+                              transform: "translateY(-1px)",
+                            },
                           })}
                         >
                           <Box
@@ -882,7 +1361,7 @@ export default function Invoices() {
                               <Stack direction="row" spacing={1} alignItems="center">
                                 {statusChip}
                                 <Typography sx={{ fontWeight: 950, fontSize: 13, whiteSpace: "nowrap" }}>
-                                  {moneyBRLFromCents(r.displayCents)}
+                                  {moneyBRLFromCents(safeDisplayCents)}
                                 </Typography>
                               </Stack>
                             </Stack>
@@ -906,20 +1385,18 @@ export default function Invoices() {
                             </Stack>
 
                             <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.6, flexWrap: "wrap" }}>
-                              {!r.invoice ? (
+                              {!invoice ? (
                                 <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 900 }}>
-                                  Confirmado no período: {moneyBRLFromCents(r.openCents)}
+                                  Confirmado no período: {moneyBRLFromCents(r.confirmedCents)}
                                 </Typography>
                               ) : (
                                 <>
                                   <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 900 }}>
                                     Fechado: {moneyBRLFromCents(r.closedTotalCents)}
                                   </Typography>
-                                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                                    •
-                                  </Typography>
+
                                   <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 900 }}>
-                                    Confirmado no período: {moneyBRLFromCents(r.openCents)}
+                                    Confirmado no período: {moneyBRLFromCents(r.confirmedCents)}
                                   </Typography>
                                 </>
                               )}
@@ -1012,15 +1489,21 @@ export default function Invoices() {
                 Sem dados anuais (ainda não existem invoices para {year}).
               </Typography>
             ) : (
-              <Box sx={{ height: 320, width: "100%" }}>
+              <Box sx={{ height: 360, width: "100%" }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={annualByCardChart.data} margin={{ top: 18, right: 18, left: 0, bottom: 0 }}>
+                  <BarChart
+                    data={annualByCardChart.data}
+                    margin={{ top: 28, right: 18, left: 6, bottom: 0 }}
+                    barCategoryGap="28%"
+                    barGap={6}
+                  >
                     <CartesianGrid
                       vertical={false}
-                      stroke={alpha(theme.palette.divider, 0.55)}
+                      stroke={alpha(theme.palette.divider, 0.5)}
                       strokeDasharray="3 6"
-                      opacity={0.18}
+                      opacity={0.35}
                     />
+
                     <XAxis
                       dataKey="label"
                       tickFormatter={(v) => formatMonthBR(v)}
@@ -1028,60 +1511,71 @@ export default function Invoices() {
                       tickLine={false}
                       tick={{ fontSize: 12 }}
                     />
+
                     <YAxis
                       axisLine={false}
                       tickLine={false}
+                      width={72}
                       tick={{ fontSize: 12 }}
-                      width={70}
                       tickFormatter={(v) => formatBRL((Number(v || 0) / 100) || 0)}
                     />
+
                     <RechartsTooltip
-                      formatter={(value, name) => {
-                        const meta = annualByCardChart.meta.get(String(name));
-                        const label = meta?.name || name;
-                        return [moneyBRLFromCents(value), label];
+                      cursor={{
+                        fill: alpha(theme.palette.action.hover, theme.palette.mode === "dark" ? 0.18 : 0.3),
                       }}
-                      labelFormatter={(label) => formatMonthBR(label)}
-                    />
-                    <Legend
-                      formatter={(value) => {
-                        const meta = annualByCardChart.meta.get(String(value));
-                        return meta?.name || value;
-                      }}
+                      content={(props) => (
+                        <ChartTooltip {...props} meta={annualByCardChart.meta} />
+                      )}
                     />
 
-                    {annualByCardChart.keys.map((k) => {
-                      const meta = annualByCardChart.meta.get(String(k));
-                      return (
-                        <Bar
-                          key={k}
-                          dataKey={k}
-                          fillOpacity={1}
-                          name={k}
-                          stackId="cards"                 // ✅ empilha
-                          fill={meta?.color || theme.palette.primary.main}
-                          radius={[6, 6, 0, 0]}           // (só o topo fica arredondado, ok em stack)
-                          maxBarSize={26}                 // ✅ barra mais “cheia”
-                          isAnimationActive={false}
-                        />
-                      );
-                    })}
-                    <Bar dataKey="total" fill="transparent" isAnimationActive={false}>
+                    {/* 🔵 TOTAL DO MÊS (barra azul forte) */}
+                    <Bar
+                      dataKey="total"
+                      name="Total"
+                      fill={theme.palette.primary.main}
+                      fillOpacity={0.9}
+                      stroke={alpha(theme.palette.primary.dark, 0.9)}
+                      strokeWidth={1.5}
+                      radius={[10, 10, 0, 0]}
+                      maxBarSize={32}
+                      isAnimationActive={false}
+                    >
                       <LabelList
                         dataKey="total"
                         position="top"
-                        formatter={(v) =>
-                          v > 0 ? formatBRL((Number(v) / 100) || 0) : ""
-                        }
+                        formatter={(v) => (v > 0 ? formatBRL((Number(v) / 100) || 0) : "")}
                         style={{
-                          fontWeight: 900,
+                          fontWeight: 950,
                           fontSize: 12,
                           fill: theme.palette.text.primary,
                         }}
                       />
                     </Bar>
 
+                    {/* 🟢 CARTÕES (agrupados na frente) */}
+                    {annualByCardChart.keys.map((k) => {
+                      const meta = annualByCardChart.meta.get(String(k));
 
+                      return (
+                        <Bar
+                          key={k}
+                          dataKey={k}
+                          name={meta?.name || k}
+                          fill={meta?.color || theme.palette.secondary.main}
+                          fillOpacity={0.95}
+                          stroke={alpha(meta?.color || theme.palette.secondary.main, 1)}
+                          strokeWidth={1}
+                          radius={[6, 6, 0, 0]}
+                          maxBarSize={18}
+                          isAnimationActive={false}
+                          activeBar={{
+                            stroke: alpha(meta?.color || theme.palette.secondary.main, 1),
+                            strokeWidth: 2,
+                          }}
+                        />
+                      );
+                    })}
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -1234,7 +1728,7 @@ export default function Invoices() {
           <Stack spacing={1.2}>
             <Alert severity="info">
               {payTarget?.name} • {formatMonthBR(ym)} • Total{" "}
-              {payTarget?.invoice ? moneyBRLFromCents(payTarget.invoice.total_cents) : "—"}
+              {payTarget ? moneyBRLFromCents(payTarget.displayCents) : "—"}
             </Alert>
 
             <TextField
@@ -1253,11 +1747,34 @@ export default function Invoices() {
               onChange={(e) => setPayAccountId(e.target.value)}
               fullWidth
             >
-              {paymentAccounts.map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.name} ({a.type})
-                </MenuItem>
-              ))}
+              {[...(paymentAccounts || [])]
+                .sort((a, b) => {
+                  const da = paymentTypeOrder(a.type);
+                  const db = paymentTypeOrder(b.type);
+                  if (da !== db) return da - db;
+                  return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
+                })
+                .map((a) => {
+                  const Icon = paymentTypeIcon(a.type);
+                  const label = paymentTypeLabel(a.type);
+
+                  return (
+                    <MenuItem key={a.id} value={a.id}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                        <Icon sx={{ fontSize: 18, color: "text.secondary" }} />
+                        <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                          {label}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                          —
+                        </Typography>
+                        <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
+                          {a.name}
+                        </Typography>
+                      </Stack>
+                    </MenuItem>
+                  );
+                })}
             </TextField>
 
             <TextField
@@ -1419,6 +1936,6 @@ export default function Invoices() {
         </DialogActions>
       </Dialog>
 
-    </Stack>
+    </Stack >
   );
 }
