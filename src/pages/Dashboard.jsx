@@ -37,6 +37,7 @@ import { selectTransactionsUi } from "../store/transactionsSlice";
 import { bootstrapThunk } from "../store/bootstrapThunk";
 import { selectCategories } from "../store/categoriesSlice";
 import Spinner from "../components/ui/Spinner";
+import AccountsMatrix from "../components/AccountsMatrix";
 
 // =============================
 // DEBUG SWITCH (ÚNICO)
@@ -1392,6 +1393,18 @@ export default function Dashboard() {
             </Stack>
           </CardContent>
         </Card>
+      </Box>
+      <Box
+        sx={{
+          width: "100%",
+          display: "grid",
+          gap: 2,
+          minHeight: "350px",
+          alignItems: "stretch",
+          gridTemplateColumns: { xs: "1fr", md: "1fr" },
+        }}
+      >
+        <AccountsMatrix />
       </Box>
     </Stack>
   );
