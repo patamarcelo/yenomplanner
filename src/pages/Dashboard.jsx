@@ -349,7 +349,7 @@ function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
               {title}
             </Typography>
             <Typography
-              variant="h5"
+              variant="h6"
               sx={{
                 fontWeight: 950,
                 letterSpacing: -0.4,
