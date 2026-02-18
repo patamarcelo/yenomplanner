@@ -12,6 +12,15 @@ import { formatBRL } from "../utils/money";
 import { selectTransactionsUi } from "../store/transactionsSlice";
 import { selectBills } from "../store/billsSlice";
 
+import Accordion from "@mui/material/Accordion";
+import AccordionSummary from "@mui/material/AccordionSummary";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+
+
+
 // -----------------------------
 // Month helpers (pt-BR)
 // -----------------------------
@@ -228,7 +237,6 @@ function billGroupKey(b) {
 }
 
 function billLabelForRow(b) {
-    // pra UI, tenta manter o nome “limpo” (sem 1/12), mas sem perder sentido
     const raw = String(b?.name || "Bill").trim() || "Bill";
     const cleaned = normalizeBillNameForGroup(raw);
     return cleaned || raw;
@@ -274,11 +282,9 @@ export default function AccountsMatrix() {
     const focusBg = alpha(theme.palette.primary.main, 0.07);
 
     // -----------------------------
-    // 🔥 CARTÕES (mesma regra do Dashboard)
+    // ✅ Resolver de conta (reutilizável)
     // -----------------------------
-    const cardsData = useMemo(() => {
-        const creditCards = (accounts || []).filter((a) => a?.active && a?.type === "credit_card");
-
+    const accountResolver = useMemo(() => {
         const accountsById = new Map();
         for (const a of accounts || []) accountsById.set(a.id, a);
 
@@ -288,22 +294,38 @@ export default function AccountsMatrix() {
                 .replace(/\s+/g, "")
                 .replace(/[\W_]+/g, "");
 
-        const byName = new Map();
-        for (const a of creditCards) byName.set(norm(a.name), a.id);
+        const byNameAny = new Map();
+        for (const a of accounts || []) {
+            if (!a?.id) continue;
+            byNameAny.set(norm(a.name), a.id);
+        }
 
         const resolveAccountIdFromTxn = (t) => {
             if (t?.accountId && accountsById.get(t.accountId)) return t.accountId;
 
+            // legado: cardId (string)
             const cid = norm(t?.cardId);
-            if (!cid) return null;
+            if (cid && byNameAny.has(cid)) return byNameAny.get(cid);
 
-            if (byName.has(cid)) return byName.get(cid);
-
-            for (const [k, id] of byName.entries()) {
-                if (k.includes(cid) || cid.includes(k)) return id;
+            if (cid) {
+                for (const [k, id] of byNameAny.entries()) {
+                    if (k.includes(cid) || cid.includes(k)) return id;
+                }
             }
+
             return null;
         };
+
+        return { accountsById, resolveAccountIdFromTxn };
+    }, [accounts]);
+
+    // -----------------------------
+    // 🔥 CARTÕES (mesma regra do Dashboard)
+    // -----------------------------
+    const cardsData = useMemo(() => {
+        const creditCards = (accounts || []).filter((a) => a?.active && a?.type === "credit_card");
+        const accountsById = accountResolver.accountsById;
+        const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
 
         const isCardTxn = (t) => {
             const rid = resolveAccountIdFromTxn(t);
@@ -372,6 +394,7 @@ export default function AccountsMatrix() {
             if (billYM) yms.add(billYM);
         }
 
+        // sempre inclui ano atual
         for (let mi = 0; mi < 12; mi++) yms.add(ymKey(focusYear, mi));
 
         const ymSorted = Array.from(yms).sort();
@@ -456,13 +479,160 @@ export default function AccountsMatrix() {
         }
 
         return { months, years, cardRows, cardsTotalValues };
-    }, [accounts, txns, theme, focusYear]);
+    }, [accounts, txns, theme, focusYear, accountResolver]);
 
     // -----------------------------
-    // ✅ BILLS (consolidado por "grupo", não por id)
-    // - Se você tem “Seguro 1/12, 2/12...” vira UMA linha (“Seguro”) e soma por mês.
-    // - Se tem installmentGroupId, usa isso como chave estável.
-    // - Se não tem, faz fingerprint limpando o nome.
+    // ✅ RECEITAS (income) - baseado nas TransactionsGrid
+    // - pega direction = income/entrada/receita (ou amount > 0 sem direção)
+    // - usa o mês por data (purchaseDate -> chargeDate -> date -> createdAt)
+    // - consolida por CONTA (1 linha por conta) + total por mês
+    // -----------------------------
+    // -----------------------------
+    // ✅ RECEITAS (income) - baseado no TransactionsGrid
+    // - detecta entrada igual ao grid (in/entrada/income/credit)
+    // - resolve mês priorizando invoiceMonth (YYYY-MM), senão datas
+    // - consolida por CONTA (1 linha por conta) + total por mês
+    // -----------------------------
+    const everIncomeByAccId = useMemo(() => {
+        const accountsById = accountResolver.accountsById;
+        const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
+
+        const isIncomeLikeGrid = (t) => {
+            const d = String(t?.direction || t?.flow || t?.type || t?.movement || "")
+                .trim()
+                .toLowerCase();
+
+            if (["in", "entrada", "income", "receita", "credit"].includes(d)) return true;
+            if (["out", "saida", "saída", "expense", "despesa", "debit"].includes(d)) return false;
+
+            const amt = Number(t?.amount ?? t?.value ?? 0);
+            return Number.isFinite(amt) ? amt > 0 : false;
+        };
+
+        const map = new Map(); // accId -> true
+
+        for (const t of txns || []) {
+            if (!t) continue;
+            if (isLikelyInvoicePayment(t)) continue;
+            if (!isIncomeLikeGrid(t)) continue;
+
+            const accId = resolveAccountIdFromTxn(t) || t?.accountId || null;
+            if (!accId) continue;
+
+            // só marca se for conta válida (opcional, mas recomendo)
+            if (accountsById.has(accId)) map.set(String(accId), true);
+        }
+
+        return map;
+    }, [txns, accountResolver]);
+    const incomeData = useMemo(() => {
+        const months = (cardsData.months || []).map((m) => ymKey(m.year, m.monthIndex0));
+        const monthsSet = new Set(months);
+
+        const now = new Date();
+        const fallbackStart = `${now.getFullYear()}-01`;
+        const fallbackEnd = `${now.getFullYear()}-12`;
+
+        const monthMin = months[0] || fallbackStart;
+        const monthMax = months[months.length - 1] || fallbackEnd;
+
+        const accountsById = accountResolver.accountsById;
+        const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
+
+        const YM_RE = /^\d{4}-\d{2}$/;
+
+        const getTxnDirectionLikeGrid = (t) => {
+            const d = String(t?.direction || t?.flow || t?.type || t?.movement || "")
+                .trim()
+                .toLowerCase();
+
+            if (["in", "entrada", "income", "receita", "credit"].includes(d)) return "in";
+            if (["out", "saida", "saída", "expense", "despesa", "debit"].includes(d)) return "out";
+
+            const amt = Number(t?.amount ?? t?.value ?? 0);
+            if (Number.isFinite(amt) && amt < 0) return "out";
+            if (Number.isFinite(amt) && amt > 0) return "in";
+            return "out";
+        };
+
+        const resolveIncomeYM = (t) => {
+            const inv = String(t?.invoiceMonth || t?.billingYM || t?.billing_ym || t?.month || t?.competencia || "")
+                .trim()
+                .slice(0, 7);
+
+            if (YM_RE.test(inv)) return inv;
+
+            const d =
+                normalizeISODate(t?.purchaseDate ?? t?.purchase_date) ||
+                normalizeISODate(t?.chargeDate ?? t?.charge_date) ||
+                normalizeISODate(t?.date ?? t?.refDate ?? t?.reference_date) ||
+                normalizeISODate(t?.createdAt ?? t?.created_at);
+
+            return d ? d.slice(0, 7) : "";
+        };
+
+        // ✅ 1) Pré-cria linhas SÓ para contas/cartões que já tiveram receita algum dia
+        const byAcc = new Map(); // accId -> row
+        for (const a of accounts || []) {
+            if (!a?.id) continue;
+            if (a?.active === false) continue;
+
+            const accId = String(a.id);
+            if (!everIncomeByAccId.get(accId)) continue;
+
+            byAcc.set(accId, { id: accId, label: a.name || accId, values: {} });
+        }
+
+        // ✅ garante “unknown” se tiver receita sem conta resolvida (opcional)
+        const ensureRow = (accId, label) => {
+            const k = String(accId || "unknown");
+            let row = byAcc.get(k);
+            if (!row) {
+                row = { id: k, label: label || "Sem conta", values: {} };
+                byAcc.set(k, row);
+            }
+            return row;
+        };
+
+        const totalByMonth = {};
+        for (const ym of months) totalByMonth[ym] = 0;
+
+        // ✅ 2) Preenche valores só no range atual
+        for (const t of txns || []) {
+            if (!t) continue;
+            if (isLikelyInvoicePayment(t)) continue;
+            if (getTxnDirectionLikeGrid(t) !== "in") continue;
+
+            const ym = resolveIncomeYM(t);
+            if (!ym) continue;
+            if (ymCompare(ym, monthMin) < 0 || ymCompare(ym, monthMax) > 0) continue;
+            if (!monthsSet.has(ym)) continue;
+
+            const resolvedId = resolveAccountIdFromTxn(t) || t?.accountId || "unknown";
+            const acc = accountsById.get(resolvedId);
+
+            const accId = acc?.id ? String(acc.id) : String(resolvedId);
+
+            // ✅ só mostra se já teve receita algum dia (mas deixa "unknown" passar)
+            if (accId !== "unknown" && !everIncomeByAccId.get(accId)) continue;
+
+            const label = acc?.name || (accId === "unknown" ? "Sem conta" : accId);
+
+            const value = Math.abs((centsFromTxn(t) || 0) / 100);
+
+            const row = ensureRow(accId, label);
+            row.values[ym] = Number((safeNum(row.values[ym]) + value).toFixed(2));
+            totalByMonth[ym] = Number((safeNum(totalByMonth[ym]) + value).toFixed(2));
+        }
+
+        const rows = Array.from(byAcc.values()).sort((a, b) => a.label.localeCompare(b.label));
+        for (const k of Object.keys(totalByMonth)) totalByMonth[k] = Number(totalByMonth[k].toFixed(2));
+
+        return { rows, totalByMonth };
+    }, [txns, accounts, cardsData.months, accountResolver, everIncomeByAccId]);
+
+    // -----------------------------
+    // ✅ BILLS (consolidado por grupo)
     // -----------------------------
     const billsData = useMemo(() => {
         const list = (bills || [])
@@ -487,26 +657,20 @@ export default function AccountsMatrix() {
             const amount = moneyToNumber(b?.defaultAmount);
             if (!amount) continue;
 
-            // start/end (vêm do mapBillFromApi: startMonth/endMonth já são "YYYY-MM")
             const start = String(b?.startMonth || monthMin).slice(0, 7);
             const endRaw = String(b?.endMonth || "").slice(0, 7);
-
-            // se não tiver endMonth: limita ao range da matriz
             const end = endRaw ? endRaw : monthMax;
 
-            // garante linha do grupo
             const row =
                 byGroup.get(key) || {
                     id: key,
                     label: billLabelForRow(b),
-                    values: {}, // ym -> number
+                    values: {},
                 };
 
-            // label mais “bonito”
             const labelNow = billLabelForRow(b);
             if (labelNow && labelNow.length > String(row.label || "").length) row.label = labelNow;
 
-            // preenche meses dentro do range, mas SOMENTE se forem meses da matriz
             let cur = start;
             let guard = 0;
 
@@ -558,10 +722,15 @@ export default function AccountsMatrix() {
                     headerRow: {
                         id: "income_total",
                         label: "Receitas (TOTAL)",
-                        values: emptyValues,
+                        values: incomeData.totalByMonth || emptyValues,
                         tone: "income",
                     },
-                    rows: [],
+                    rows: (incomeData.rows || []).map((r) => ({
+                        id: `inc_${r.id}`,
+                        label: r.label,
+                        values: r.values,
+                        tone: "incomeItem",
+                    })),
                 },
                 {
                     id: "cards",
@@ -601,7 +770,7 @@ export default function AccountsMatrix() {
                 },
             ],
         };
-    }, [cardsData, billsData]);
+    }, [cardsData, billsData, incomeData]);
 
     const months = data.months;
 
@@ -621,9 +790,7 @@ export default function AccountsMatrix() {
     }, [years]);
 
     const focusColIndex = useMemo(() => {
-        return columns.findIndex(
-            (c) => c.kind === "month" && c.year === focusYear && c.monthIndex0 === focusMonthIndex0
-        );
+        return columns.findIndex((c) => c.kind === "month" && c.year === focusYear && c.monthIndex0 === focusMonthIndex0);
     }, [columns, focusYear, focusMonthIndex0]);
 
     useEffect(() => {
@@ -645,8 +812,10 @@ export default function AccountsMatrix() {
         return total;
     };
 
+    // ✅ Resultado = entradas - saídas
     const grandTotalByMonth = useMemo(() => {
         const out = {};
+
         const incomeValues = data.sections.find((s) => s.id === "income")?.headerRow?.values || {};
         const cardsValues = data.sections.find((s) => s.id === "cards")?.headerRow?.values || {};
         const billsValues = data.sections.find((s) => s.id === "bills")?.headerRow?.values || {};
@@ -756,11 +925,7 @@ export default function AccountsMatrix() {
                                 color: isNeg ? theme.palette.error.main : theme.palette.text.primary,
 
                                 ...(isFocusMonth
-                                    ? {
-                                        background: focusBg,
-                                        borderLeft: focusBorder,
-                                        borderRight: focusBorder,
-                                    }
+                                    ? { background: focusBg, borderLeft: focusBorder, borderRight: focusBorder }
                                     : null),
 
                                 ...(isYearTotal || isAllTotal ? { background: alpha(theme.palette.action.hover, 0.35) } : null),
@@ -785,7 +950,7 @@ export default function AccountsMatrix() {
                             Contas (matriz)
                         </Typography>
                         <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
-                            cartões (cutoff) + bills consolidadas por série/fingerprint
+                            receitas (income) + cartões (cutoff) + bills consolidadas
                         </Typography>
                     </Stack>
                 </Stack>
@@ -905,7 +1070,6 @@ export default function AccountsMatrix() {
                         {/* Sections */}
                         {data.sections.map((sec) => (
                             <Box key={sec.id}>
-                                {/* Section divider row */}
                                 <Box sx={{ display: "flex", background: strongBg }}>
                                     <Box
                                         sx={{

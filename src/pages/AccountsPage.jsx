@@ -185,6 +185,57 @@ function resolveTxnAccountId(tx, accounts) {
   return found?.id || "";
 }
 
+function isLikelyInvoicePayment(tx) {
+  const k = String(tx?.kind || "").toLowerCase();
+  if (k.includes("bill_payment") || k.includes("invoice_payment") || k === "payment") return true;
+
+  const desc = String(tx?.description || tx?.memo || tx?.title || "").toLowerCase();
+  if (desc.includes("pagamento de fatura") || desc.includes("pgto fatura") || desc.includes("fatura paga")) return true;
+
+  return false;
+}
+
+function isInvoiceLike(tx) {
+  // se em algum lugar você marca invoice/bill no txn, blinda aqui
+  if (tx?.invoice || tx?.invoiceId || tx?.invoice_id) return true;
+
+  const k = String(tx?.kind || "").toLowerCase();
+  if (k.includes("invoice") || k.includes("bill")) return true;
+
+  return false;
+}
+
+function calcCardOpenUsedForLimit(cardId, txns, accounts) {
+  let used = 0;
+
+  for (const t of txns || []) {
+    const accId = resolveTxnAccountId(t, accounts);
+    if (!accId || String(accId) !== String(cardId)) continue;
+
+    // ✅ só transações (não invoices/bills)
+    if (isInvoiceLike(t)) continue;
+
+    // ✅ pagamento de fatura nunca consome limite
+    if (isLikelyInvoicePayment(t)) continue;
+
+    // ✅ pago NÃO entra no em aberto
+    if (String(t?.status || "").toLowerCase() === "paid") continue;
+
+    // ✅ só despesa consome limite (income é estorno/credito)
+    const dir = String(t?.direction || "").toLowerCase();
+    const amt = Number(t?.amount || 0);
+    if (!Number.isFinite(amt) || amt === 0) continue;
+
+    if (dir === "income") {
+      used -= Math.abs(amt);
+    } else {
+      used += Math.abs(amt);
+    }
+  }
+
+  return Math.max(0, used);
+}
+
 function usedCreditAmount(tx) {
   const v = Number(tx?.amount || 0);
   if (!Number.isFinite(v)) return 0;
@@ -455,9 +506,9 @@ export default function AccountsPage() {
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
 
   useEffect(() => {
-  dispatch(fetchAccountsThunk());
-  dispatch(fetchAllTransactionsThunk());
-}, [dispatch]);
+    dispatch(fetchAccountsThunk());
+    dispatch(fetchAllTransactionsThunk());
+  }, [dispatch]);
 
 
   const [openNew, setOpenNew] = useState(false);
@@ -472,25 +523,20 @@ export default function AccountsPage() {
   // Totais cartões (ainda usando txns do front, mas sem quebrar)
   const { totalCardLimit, totalCardOpen, totalCardAvailable } = useMemo(() => {
     const activeCards = (cardsOnly || []).filter((a) => safeActive(a));
+
     const limitTotal = activeCards.reduce((acc, a) => acc + Number(a?.limit || 0), 0);
 
-    let usedOpen = 0;
-    for (const t of txns || []) {
-      const accId = resolveTxnAccountId(t, accounts);
-      if (!accId) continue;
-
-      const accObj = (accounts || []).find((a) => a?.id === accId);
-      if (!accObj || accObj.type !== "credit_card") continue;
-      if (accObj.active === false) continue;
-
-      if (t?.status === "paid") continue; // em aberto = não pago
-      usedOpen += usedCreditAmount(t);
+    let openTotal = 0;
+    for (const c of activeCards) {
+      openTotal += calcCardOpenUsedForLimit(c.id, txns, accounts);
     }
+
+    const available = limitTotal - openTotal;
 
     return {
       totalCardLimit: limitTotal,
-      totalCardOpen: usedOpen,
-      totalCardAvailable: limitTotal - usedOpen,
+      totalCardOpen: openTotal,
+      totalCardAvailable: available,
     };
   }, [accounts, cardsOnly, txns]);
 
@@ -558,94 +604,99 @@ export default function AccountsPage() {
 
           )
         }
-        <Stack spacing={1.2}>
+<Stack spacing={1.2}>
+  {cardsOnly.length === 0 ? (
+    <EmptyStateCard
+      icon={<CreditCardRoundedIcon sx={{ fontSize: 30, opacity: 0.9 }} />}
+      title="Nenhum cartão cadastrado ainda"
+      subtitle="Cadastre seus cartões para controlar limite, corte e vencimento por fatura."
+      ctaLabel="Cadastrar cartão"
+      onCta={() => {
+        setNewType("credit_card");
+        setOpenNew(true);
+      }}
+    />
+  ) : (
+    cardsOnly.map((a) => {
+      const openUsed = calcCardOpenUsedForLimit(a.id, txns, accounts);
+      const available = Number(a?.limit || 0) - openUsed;
 
-          {cardsOnly.length === 0 ? (
-            <EmptyStateCard
-              icon={<CreditCardRoundedIcon sx={{ fontSize: 30, opacity: 0.9 }} />}
-              title="Nenhum cartão cadastrado ainda"
-              subtitle="Cadastre seus cartões para controlar limite, corte e vencimento por fatura."
-              ctaLabel="Cadastrar cartão"
-              onCta={() => {
-                setNewType("credit_card");
-                setOpenNew(true);
-              }}
-            />
-          ) : (
-            cardsOnly.map((a) => (
-              <Card
-                key={a.id}
-                variant="outlined"
-                sx={{
-                  borderRadius: 2,
-                  borderColor: softBorder(a.color, 0.25),
-                  borderWidth: 1,
-                  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                  "&:hover": {
-                    borderColor: softBorder(a.color, 0.45),
-                    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
-                  },
-                }}
-              >
-                <CardContent>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                    <Stack direction="row" spacing={3.5} alignItems="center">
-                      <Typography sx={{ fontSize: 32, lineHeight: "32px" }}>💳</Typography>
+      return (
+        <Card
+          key={a.id}
+          variant="outlined"
+          sx={{
+            borderRadius: 2,
+            borderColor: softBorder(a.color, 0.25),
+            borderWidth: 1,
+            transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+            "&:hover": {
+              borderColor: softBorder(a.color, 0.45),
+              boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+            },
+          }}
+        >
+          <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+              <Stack direction="row" spacing={3.5} alignItems="center">
+                <Typography sx={{ fontSize: 32, lineHeight: "32px" }}>💳</Typography>
 
-                      <Stack spacing={0.6}>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography sx={{ fontWeight: 950 }}>{a.name}</Typography>
-                          <AccountTypePill type={a.type} />
-                          {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
-                        </Stack>
-
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                          Limite: <b>{maskMoney(moneyBRL(a.limit))}</b>
-                        </Typography>
-
-                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                          Corte: dia <b>{a?.statement?.cutoffDay ?? "—"}</b> • Vencimento: dia{" "}
-                          <b>{a?.statement?.dueDay ?? "—"}</b>
-                        </Typography>
-
-                        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                          external_id: <b>{a.externalId || a.external_id || "—"}</b>
-                        </Typography>
-                      </Stack>
-                    </Stack>
-
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() =>
-                          dispatch(updateAccountThunk({ id: a.id, patch: { ...a, active: !safeActive(a) } }))
-                        }
-                      >
-                        {safeActive(a) ? "Desativar" : "Ativar"}
-                      </Button>
-
-                      <Button size="small" variant="outlined" onClick={() => setEditAcc(a)}>
-                        Editar
-                      </Button>
-
-                      <Button
-                        size="small"
-                        color="error"
-                        variant="outlined"
-                        onClick={() => {
-                          const ok = window.confirm(`Remover "${a.name}"?`);
-                          if (ok) dispatch(deleteAccountThunk(a.id));
-                        }}
-                      >
-                        Remover
-                      </Button>
-                    </Stack>
+                <Stack spacing={0.6}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography sx={{ fontWeight: 950 }}>{a.name}</Typography>
+                    <AccountTypePill type={a.type} />
+                    {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
                   </Stack>
-                </CardContent>
-              </Card>
-            )))}
-        </Stack>
+
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Limite: <b>{maskMoney(moneyBRL(a.limit))}</b>
+                    {"  "}•{"  "}Em aberto: <b>{maskMoney(moneyBRL(openUsed))}</b>
+                    {"  "}•{"  "}Disponível: <b>{maskMoney(moneyBRL(available))}</b>
+                  </Typography>
+
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    Corte: dia <b>{a?.statement?.cutoffDay ?? "—"}</b> • Vencimento: dia{" "}
+                    <b>{a?.statement?.dueDay ?? "—"}</b>
+                  </Typography>
+
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    external_id: <b>{a.externalId || a.external_id || "—"}</b>
+                  </Typography>
+                </Stack>
+              </Stack>
+
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: "wrap" }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => dispatch(updateAccountThunk({ id: a.id, patch: { ...a, active: !safeActive(a) } }))}
+                >
+                  {safeActive(a) ? "Desativar" : "Ativar"}
+                </Button>
+
+                <Button size="small" variant="outlined" onClick={() => setEditAcc(a)}>
+                  Editar
+                </Button>
+
+                <Button
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                  onClick={() => {
+                    const ok = window.confirm(`Remover "${a.name}"?`);
+                    if (ok) dispatch(deleteAccountThunk(a.id));
+                  }}
+                >
+                  Remover
+                </Button>
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+      );
+    })
+  )}
+</Stack>
 
         <Divider sx={{ my: 1.5 }} />
 
