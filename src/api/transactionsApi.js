@@ -16,6 +16,30 @@ function mapTransactionToApiPayload(t = {}) {
     const chargeDate = t.chargeDate ?? t.charge_date ?? null;
     const invoiceMonth = t.invoiceMonth ?? t.invoice_month ?? null;
 
+    // ✅ suporta parcelas em flat OU dentro de t.installment
+    const inst = t.installment || {};
+
+    const installment_group_id =
+        t.installment_group_id ??
+        t.installmentGroupId ??
+        inst.groupId ??
+        inst.group_id ??
+        null;
+
+    const installment_current =
+        t.installment_current ??
+        t.installmentCurrent ??
+        inst.current ??
+        inst.installment_current ??
+        null;
+
+    const installment_total =
+        t.installment_total ??
+        t.installmentTotal ??
+        inst.total ??
+        inst.installment_total ??
+        null;
+
     return {
         client_id: t.clientId ?? t.client_id ?? null,
 
@@ -27,7 +51,6 @@ function mapTransactionToApiPayload(t = {}) {
 
         // ✅ serializer usa "account_id" (PrimaryKeyRelatedField source="account")
         account_id: t.accountId ?? t.account_id ?? null,
-
         bill_id: t.billId ?? t.bill_id ?? null,
 
         merchant: t.merchant ?? "",
@@ -35,13 +58,20 @@ function mapTransactionToApiPayload(t = {}) {
         category_id: t.categoryId ?? t.category_id ?? "outros",
 
         // ✅ seu serializer converte "amount" -> amount_cents no validate()
-        // então mande string, ex "1234,56" ou "1234.56"
         amount: t.amount ?? undefined,
 
         currency: t.currency ?? "BRL",
         status: t.status ?? "planned",
         direction: t.direction ?? "expense",
         kind: t.kind ?? "one_off",
+
+        // ✅ PARCELAS
+        installment_group_id,
+        installment_current,
+        installment_total,
+
+        // ✅ recorrência
+        recurring_rule: t.recurringRule ?? t.recurring_rule ?? null,
 
         notes: t.notes ?? "",
     };
