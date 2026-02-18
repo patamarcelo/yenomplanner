@@ -39,6 +39,11 @@ import useDebouncedValue from "../hooks/useDebouncedValue";
 import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
 import EditTxnDialog from "./transactions/EditTxnDialog";
 
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
+
+
 
 // =========================
 // Constantes (fora do componente)
@@ -385,6 +390,35 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
 
   const [dialogMode, setDialogMode] = useState("edit"); // "edit" | "duplicate"
 
+  function sumAgg(map, key, patch) {
+    const cur = map.get(key) || { income: 0, expense: 0, balance: 0, count: 0 };
+    const next = {
+      income: cur.income + (patch.income || 0),
+      expense: cur.expense + (patch.expense || 0),
+      balance: cur.balance + (patch.balance || 0),
+      count: cur.count + (patch.count || 0),
+    };
+    map.set(key, next);
+  }
+
+  function autoFitCols(jsonRows) {
+    // largura simples por conteúdo (bom o suficiente)
+    if (!jsonRows?.length) return [];
+    const keys = Object.keys(jsonRows[0] || {});
+    return keys.map((k) => {
+      let max = k.length;
+      for (const row of jsonRows) {
+        const v = row?.[k];
+        const s = v == null ? "" : String(v);
+        if (s.length > max) max = s.length;
+      }
+      return { wch: Math.min(Math.max(max + 2, 10), 45) };
+    });
+  }
+
+
+
+
 
 
   // ✅ maps memoizados (evita .find() por linha)
@@ -686,6 +720,166 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     return { income, expense, balance: income - expense };
   }, [filteredRows]);
 
+
+  const handleExportXlsx = useCallback(() => {
+    try {
+      const rowsBase = (filteredRows || []).map(getRowShape).filter(Boolean);
+
+      // ✅ para resumos: evita double counting, igual seu totals()
+      const rowsForAgg = rowsBase.filter((r) => !isInvoicePaymentTxn(r));
+
+      // =========================
+      // Aba 1: Lançamentos
+      // =========================
+      const lançamentos = rowsBase.map((r) => {
+        const ym = resolveInvoiceYM(r);
+        const accId = resolveAccountIdFast(r);
+        const acc = accId ? accountsIndex.accountsById?.[accId] : null;
+        const cat = resolveCategory(r?.categoryId, categoriesBySlug, categoriesById);
+
+        const amount = Number(r?.amount || 0);
+        const abs = Math.abs(amount);
+
+        return {
+          ID: r.id || "",
+          Data: r.purchaseDate || "",
+          MesFatura: ym || "",
+          Conta: acc?.name || "",
+          TipoConta: acc?.type || "",
+          Loja: r.merchant || "",
+          Descricao: r.description || "",
+          Categoria: cat?.name || "",
+          CategoriaSlug: cat?.slug || "",
+          Direcao: r.direction || "",
+          Status: r.status || "",
+          TipoLancamento: r.kind || "",
+          Parcela: r.installment ? `${r.installment.current ?? ""}/${r.installment.total ?? ""}` : "",
+          ValorAbs: abs,       // número (bom para Excel)
+          ValorOriginal: amount, // se quiser ver o sinal original
+          EhPagamentoFatura: isInvoicePaymentTxn(r) ? "SIM" : "NAO",
+        };
+      });
+
+      // =========================
+      // Aba 2: Resumo por Categoria
+      // =========================
+      const catAgg = new Map();
+      for (const r of rowsForAgg) {
+        const cat = resolveCategory(r?.categoryId, categoriesBySlug, categoriesById);
+        const key = cat?.name || "Sem categoria";
+
+        const value = Math.abs(Number(r?.amount || 0));
+        const dir = String(r?.direction || "").toLowerCase();
+
+        if (dir === "income") sumAgg(catAgg, key, { income: value, balance: value, count: 1 });
+        else if (dir === "expense") sumAgg(catAgg, key, { expense: value, balance: -value, count: 1 });
+        else sumAgg(catAgg, key, { count: 1 });
+      }
+
+      const resumoCategoria = Array.from(catAgg.entries())
+        .map(([Categoria, v]) => ({
+          Categoria,
+          Itens: v.count,
+          Entradas: v.income,
+          Saidas: v.expense,
+          Saldo: v.income - v.expense,
+        }))
+        .sort((a, b) => Math.abs(b.Saidas) - Math.abs(a.Saidas));
+
+      // =========================
+      // Aba 3: Resumo por Conta
+      // =========================
+      const accAgg = new Map();
+      for (const r of rowsForAgg) {
+        const accId = resolveAccountIdFast(r);
+        const acc = accId ? accountsIndex.accountsById?.[accId] : null;
+        const key = acc?.name || "Sem conta";
+
+        const value = Math.abs(Number(r?.amount || 0));
+        const dir = String(r?.direction || "").toLowerCase();
+
+        if (dir === "income") sumAgg(accAgg, key, { income: value, balance: value, count: 1 });
+        else if (dir === "expense") sumAgg(accAgg, key, { expense: value, balance: -value, count: 1 });
+        else sumAgg(accAgg, key, { count: 1 });
+      }
+
+      const resumoConta = Array.from(accAgg.entries())
+        .map(([Conta, v]) => ({
+          Conta,
+          Itens: v.count,
+          Entradas: v.income,
+          Saidas: v.expense,
+          Saldo: v.income - v.expense,
+        }))
+        .sort((a, b) => Math.abs(b.Saidas) - Math.abs(a.Saidas));
+
+      // =========================
+      // Aba 4: Fluxo Mensal (YYYY-MM)
+      // =========================
+      const monthAgg = new Map();
+      for (const r of rowsForAgg) {
+        const ym = resolveInvoiceYM(r) || "";
+        const key = ym || "Sem mês";
+
+        const value = Math.abs(Number(r?.amount || 0));
+        const dir = String(r?.direction || "").toLowerCase();
+
+        if (dir === "income") sumAgg(monthAgg, key, { income: value, balance: value, count: 1 });
+        else if (dir === "expense") sumAgg(monthAgg, key, { expense: value, balance: -value, count: 1 });
+        else sumAgg(monthAgg, key, { count: 1 });
+      }
+
+      const fluxoMensal = Array.from(monthAgg.entries())
+        .map(([Mes, v]) => ({
+          Mes,
+          Itens: v.count,
+          Entradas: v.income,
+          Saidas: v.expense,
+          Saldo: v.income - v.expense,
+        }))
+        .sort((a, b) => String(a.Mes).localeCompare(String(b.Mes)));
+
+      // =========================
+      // Monta Workbook
+      // =========================
+      const wb = XLSX.utils.book_new();
+
+      const ws1 = XLSX.utils.json_to_sheet(lançamentos);
+      ws1["!cols"] = autoFitCols(lançamentos);
+      XLSX.utils.book_append_sheet(wb, ws1, "Lancamentos");
+
+      const ws2 = XLSX.utils.json_to_sheet(resumoCategoria);
+      ws2["!cols"] = autoFitCols(resumoCategoria);
+      XLSX.utils.book_append_sheet(wb, ws2, "Resumo Categoria");
+
+      const ws3 = XLSX.utils.json_to_sheet(resumoConta);
+      ws3["!cols"] = autoFitCols(resumoConta);
+      XLSX.utils.book_append_sheet(wb, ws3, "Resumo Conta");
+
+      const ws4 = XLSX.utils.json_to_sheet(fluxoMensal);
+      ws4["!cols"] = autoFitCols(fluxoMensal);
+      XLSX.utils.book_append_sheet(wb, ws4, "Fluxo Mensal");
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      const filename = `yenom_export_${stamp}.xlsx`;
+
+      const arrayBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([arrayBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      saveAs(blob, filename);
+    } catch (e) {
+      console.error("[EXPORT_XLSX] erro", e);
+      alert("Não foi possível exportar o Excel. Veja o console para detalhes.");
+    }
+  }, [
+    filteredRows,
+    accountsIndex,
+    resolveAccountIdFast,
+    categoriesBySlug,
+    categoriesById,
+  ]);
 
   // ✅ columns memoizadas e SEM .find() por linha
   const columns = useMemo(
@@ -1224,6 +1418,23 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             Itens: <b>{filteredRows.length}</b>
           </Typography>
+          <Tooltip title="Exportar Excel (.xlsx) com abas (lançamentos e resumos)">
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<FileDownloadRoundedIcon />}
+              onClick={handleExportXlsx}
+              sx={{
+                fontWeight: 900,
+                borderRadius: 999,
+                textTransform: "none",
+                px: 1.2,
+                height: 30,
+              }}
+            >
+              Exportar
+            </Button>
+          </Tooltip>
 
           {/* MEIO */}
           <Stack
@@ -1244,6 +1455,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
               flexWrap: "wrap",
             }}
           >
+
+
             <Chip
               size="small"
               label={`Entradas: ${formatBRL(totals.income)}`}
