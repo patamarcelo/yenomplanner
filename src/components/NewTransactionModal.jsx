@@ -40,6 +40,33 @@ const MIN_DESC_CHARS = 0;
 
 
 // ---------- helpers ----------
+function addMonthsToISO(iso, idx) {
+  const s = String(iso || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+  const y = Number(s.slice(0, 4));
+  const m = Number(s.slice(5, 7));
+  const d = Number(s.slice(8, 10));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return "";
+
+  const base = new Date(y, m - 1, 1);
+  base.setMonth(base.getMonth() + Number(idx || 0));
+
+  const yy = base.getFullYear();
+  const mm0 = base.getMonth(); // 0-11
+  const safeDay = clampDayToMonth(yy, mm0, d);
+
+  const mm = String(mm0 + 1).padStart(2, "0");
+  const dd = String(safeDay).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function formatDateBRShort(iso) {
+  const s = String(iso || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—";
+  const [y, m, d] = s.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 function ymFromISODate(iso) {
   const s = String(iso || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
@@ -254,6 +281,30 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     if (kind !== "installment" || !Number.isFinite(v) || v <= 0 || n <= 1) return [];
     return splitInstallments(v, n);
   }, [amount, kind, nParts]);
+
+  const previewInstallments = useMemo(() => {
+    const n = Math.max(1, Number(nParts || 1));
+    const v = parseBrlToNumber(amount);
+    if (kind !== "installment" || !Number.isFinite(v) || v <= 0 || n <= 1) return [];
+
+    const parts = splitInstallments(v, n);
+
+    // usa a chargeDate como base das datas previstas
+    const baseCharge = chargeDate || todayISO();
+
+    return parts.map((val, idx) => {
+      const iso = addMonthsToISO(baseCharge, idx) || baseCharge;
+      return {
+        idx,
+        label: `${idx + 1}/${parts.length}`,
+        dateISO: iso,
+        dateLabel: formatDateBRShort(iso),
+        value: val,
+        valueLabel: formatBRL(val),
+      };
+    });
+  }, [amount, kind, nParts, chargeDate]);
+
 
   function reset() {
     const t = todayISO();
@@ -960,23 +1011,72 @@ export default function NewTransactionModal({ open, onClose, rows }) {
                 </Typography>
               </Stack>
 
-              {previewParts.length ? (
-                <Stack spacing={0.6} sx={{ mt: 1.2 }}>
+              {previewInstallments.length ? (
+                <Stack spacing={0.8} sx={{ mt: 1.2 }}>
                   <Typography variant="body2" sx={{ fontWeight: 900 }}>
                     Preview das parcelas
                   </Typography>
-                  <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap" }}>
-                    {previewParts.map((val, idx) => (
-                      <Chip
-                        key={idx}
-                        label={`${idx + 1}/${previewParts.length} — ${formatBRL(val)}`}
-                        variant="outlined"
-                        sx={{ mb: 0.6, fontWeight: 850 }}
-                      />
+
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: {
+                        xs: "1fr",        // mobile: 1 coluna
+                        sm: "1fr 1fr",    // >= sm: 2 colunas
+                      },
+                      gap: 0.8,
+                    }}
+                  >
+                    {previewInstallments.map((p) => (
+                      <Box
+                        key={p.idx}
+                        sx={{
+                          border: "1px solid rgba(2,6,23,0.12)",
+                          borderRadius: 1.5,
+                          px: 1.2,
+                          py: 0.9,
+                          background: "rgba(255,255,255,0.9)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        {/* ESQUERDA: data */}
+                        <Typography
+                          variant="body2"
+                          sx={{ color: "text.secondary", fontWeight: 600 }}
+                        >
+                          {p.dateLabel}
+                        </Typography>
+
+                        {/* CENTRO: parcela */}
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontWeight: 900,
+                            px: 0.8,
+                            py: 0.2,
+                            borderRadius: 1,
+                            backgroundColor: "rgba(2,6,23,0.06)",
+                          }}
+                        >
+                          {p.label}
+                        </Typography>
+
+                        {/* DIREITA: valor */}
+                        <Typography
+                          variant="body2"
+                          sx={{ fontWeight: 950 }}
+                        >
+                          {p.valueLabel}
+                        </Typography>
+                      </Box>
                     ))}
-                  </Stack>
+                  </Box>
                 </Stack>
               ) : null}
+
+
             </Box>
           ) : null}
         </Stack>
