@@ -33,9 +33,11 @@ function toAmountString(amount) {
 
 function mapUiToApiPayload(payload) {
     const p = payload || {};
+    const inst = p.installment || {};
 
     const apiPayload = {
         client_id: ensureClientId(p.client_id || p.clientId),
+
         purchase_date: p.purchase_date || p.purchaseDate || null,
         charge_date: p.charge_date || p.chargeDate || null,
         invoice_month: ymToInvoiceMonthDate(p.invoice_month || p.invoiceMonth),
@@ -47,17 +49,36 @@ function mapUiToApiPayload(payload) {
         description: (p.description || "").trim(),
         category_id: p.category_id || p.categoryId || "outros",
 
-        amount: toAmountString(p.amount), // ✅ isso vira amount_cents no serializer
+        amount: toAmountString(p.amount), // ✅ vira amount_cents no serializer
         currency: p.currency || "BRL",
 
         status: p.status ? uiStatusToApi(p.status) : "planned",
         direction: p.direction || "expense",
         kind: p.kind || "one_off",
 
-        // parcelas / recorrência (opcional)
-        installment_group_id: p.installment_group_id || p.installmentGroupId || null,
-        installment_current: p.installment_current ?? p.installmentCurrent ?? null,
-        installment_total: p.installment_total ?? p.installmentTotal ?? null,
+        // ✅ parcelas (suporta tanto fields flat quanto objeto aninhado)
+        installment_group_id:
+            p.installment_group_id ||
+            p.installmentGroupId ||
+            inst.groupId ||
+            inst.group_id ||
+            null,
+
+        installment_current:
+            (p.installment_current ??
+                p.installmentCurrent ??
+                inst.current ??
+                inst.installment_current ??
+                null),
+
+        installment_total:
+            (p.installment_total ??
+                p.installmentTotal ??
+                inst.total ??
+                inst.installment_total ??
+                null),
+
+        // recorrência (opcional)
         recurring_rule: p.recurring_rule || p.recurringRule || null,
 
         notes: p.notes || "",
@@ -68,6 +89,7 @@ function mapUiToApiPayload(payload) {
 
     return apiPayload;
 }
+
 
 export const createTransactionThunk = createAsyncThunk(
     "transactions/create",

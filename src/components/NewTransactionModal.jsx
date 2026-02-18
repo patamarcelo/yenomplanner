@@ -366,6 +366,86 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         return;
       }
 
+      // ✅ PARCELADO (garantido, com return)
+      if (kind === "installment") {
+        const n = Math.max(2, Number(nParts));
+        const vNum = parseBrlToNumber(base.amount);
+        const parts = splitInstallments(vNum, n);
+
+        const groupId = `inst_${Math.random().toString(16).slice(2, 9)}`;
+
+        const acc = selectedAccount; // pode ser null
+        const cutoffDay = acc?.statement?.cutoffDay;
+        const dueDay = acc?.statement?.dueDay ?? 10;
+
+        // dia desejado (mantém o dia original, mas clampa pro mês)
+        const basePurchaseDay = Number(String(base.purchaseDate || "").slice(8, 10)) || 1;
+        const baseChargeDay = Number(String(base.chargeDate || "").slice(8, 10)) || 1;
+
+        function addMonthsToISO(iso, idx, wantedDay) {
+          const s = String(iso || "");
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+          const y = Number(s.slice(0, 4));
+          const m = Number(s.slice(5, 7));
+          if (!Number.isFinite(y) || !Number.isFinite(m)) return "";
+
+          const d0 = new Date(y, m - 1, 1);
+          d0.setMonth(d0.getMonth() + idx);
+
+          const yy = d0.getFullYear();
+          const mm = d0.getMonth(); // 0-11
+          const safeDay = clampDayToMonth(yy, mm, wantedDay);
+          const m2 = String(mm + 1).padStart(2, "0");
+          const d2 = String(safeDay).padStart(2, "0");
+          return `${yy}-${m2}-${d2}`;
+        }
+
+        const creates = parts.map((partValue, idx) => {
+          // para cada parcela: gera uma "compra" mensal (purchaseDate)
+          const purchaseDateStr = addMonthsToISO(base.purchaseDate, idx, basePurchaseDay) || base.purchaseDate;
+
+          let chargeDateStr = "";
+          let invoiceYm = "";
+
+          if (acc?.type === "credit_card") {
+            // cartão: invoiceMonth vem do purchaseDate + cutoff
+            invoiceYm = computeInvoiceMonthFromPurchase(purchaseDateStr, cutoffDay);
+            // cartão: chargeDate segue vencimento do mês de fatura
+            chargeDateStr = makeChargeDateFromYM(invoiceYm, dueDay) || base.chargeDate;
+          } else {
+            // conta corrente: chargeDate acompanha mês a mês (mesmo “dia da cobrança”)
+            chargeDateStr = addMonthsToISO(base.chargeDate, idx, baseChargeDay) || base.chargeDate;
+            invoiceYm = ymFromISODate(chargeDateStr);
+          }
+
+          return dispatch(
+            createTransactionThunk({
+              ...base,
+              client_id: genClientId(),
+
+              kind: "installment",
+              installmentGroupId: groupId,
+              installmentCurrent: idx + 1,
+              installmentTotal: n,
+
+              purchaseDate: purchaseDateStr,
+              chargeDate: chargeDateStr,
+              invoiceMonth: invoiceYm,
+
+              amount: formatNumberToBrlInput(partValue),
+
+              // 1ª parcela mantém status escolhido, futuras planned
+              status: idx === 0 ? base.status : "planned",
+            })
+          ).unwrap();
+        });
+
+        await Promise.all(creates);
+        handleClose();
+        return;
+      }
+
+
       // MENSAL
       // MENSAL (materializa 1 por mês, igual Bills)
       if (kind === "recurring") {
