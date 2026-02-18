@@ -40,6 +40,37 @@ const MIN_DESC_CHARS = 0;
 
 
 // ---------- helpers ----------
+function ymFromISODate(iso) {
+  const s = String(iso || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
+  return s.slice(0, 7);
+}
+
+function clampDayToMonth(year, monthIndex0, day) {
+  // monthIndex0: 0-11
+  const d = Math.max(1, Math.min(31, Number(day || 1)));
+  const last = new Date(year, monthIndex0 + 1, 0).getDate(); // último dia do mês
+  return Math.min(d, last);
+}
+
+function addMonthsYM(ym, add) {
+  const [y0, m0] = String(ym || "").split("-");
+  const y = Number(y0);
+  const m = Number(m0);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return "";
+  const base = new Date(y, m - 1, 1);
+  base.setMonth(base.getMonth() + Number(add || 0));
+  const yy = base.getFullYear();
+  const mm = String(base.getMonth() + 1).padStart(2, "0");
+  return `${yy}-${mm}`;
+}
+
+function ymCompare(a, b) {
+  // retorna -1,0,1 comparando YYYY-MM
+  if (!a || !b) return 0;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -143,6 +174,14 @@ export default function NewTransactionModal({ open, onClose, rows }) {
   // expense | income
   const [direction, setDirection] = useState("expense");
 
+  // ✅ recorrência mensal: até (YYYY-MM)
+  const [recurringUntilYm, setRecurringUntilYm] = useState(() => {
+    const t = new Date();
+    const y = t.getFullYear();
+    return `${y}-12`; // padrão: dezembro do ano atual
+  });
+
+
   const selectedAccount = useMemo(() => {
     if (!accountId) return null;
     return accounts.find((a) => a.id === accountId) || null;
@@ -238,6 +277,10 @@ export default function NewTransactionModal({ open, onClose, rows }) {
 
     setErr("");
     setSaving(false);
+
+    const y = new Date().getFullYear();
+    setRecurringUntilYm(`${y}-12`);
+
   }
 
   function handleClose() {
@@ -324,18 +367,77 @@ export default function NewTransactionModal({ open, onClose, rows }) {
       }
 
       // MENSAL
+      // MENSAL (materializa 1 por mês, igual Bills)
       if (kind === "recurring") {
-        await dispatch(
-          createTransactionThunk({
-            ...base,
-            kind: "recurring",
-            recurringRule: "monthly",
-          })
-        ).unwrap();
+        const startYm = ymFromISODate(base.chargeDate);
+        const endYm = String(recurringUntilYm || "").trim();
 
+        if (!startYm) {
+          setErr("Data de cobrança inválida para recorrência.");
+          setSaving(false);
+          return;
+        }
+        if (!/^\d{4}-\d{2}$/.test(endYm)) {
+          setErr("Selecione um mês final válido (YYYY-MM).");
+          setSaving(false);
+          return;
+        }
+        if (ymCompare(endYm, startYm) < 0) {
+          setErr("O mês final não pode ser anterior ao mês da cobrança.");
+          setSaving(false);
+          return;
+        }
+
+        const acc = selectedAccount; // pode ser null
+        const dayWanted = Number(String(base.chargeDate).slice(8, 10)) || 1;
+
+        // conta quantos meses vamos gerar (inclusive)
+        let months = 0;
+        {
+          const [sy, sm] = startYm.split("-").map(Number);
+          const [ey, em] = endYm.split("-").map(Number);
+          months = (ey * 12 + (em - 1)) - (sy * 12 + (sm - 1)) + 1;
+          months = Math.max(1, Math.min(240, months)); // trava hard (20 anos)
+        }
+
+        const creates = Array.from({ length: months }).map((_, idx) => {
+          const ym = addMonthsYM(startYm, idx);
+          const [yy, mm] = ym.split("-").map(Number);
+          const safeDay = clampDayToMonth(yy, mm - 1, dayWanted);
+          const chargeDateStr = `${yy}-${String(mm).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
+
+          // ✅ regra do invoiceMonth por tipo de conta:
+          // - cartão: usa purchaseDate + cutoff (igual seu memo)
+          // - outros: usa o mês da cobrança
+          let nextInvoiceMonth = ym;
+          if (acc?.type === "credit_card") {
+            const cutoffDay = acc?.statement?.cutoffDay;
+            // compra mensal geralmente acompanha a cobrança (você pode mudar depois)
+            const purchaseLike = chargeDateStr;
+            nextInvoiceMonth = computeInvoiceMonthFromPurchase(purchaseLike, cutoffDay);
+          }
+
+          return dispatch(
+            createTransactionThunk({
+              ...base,
+              client_id: genClientId(),
+              kind: "recurring",
+              recurringRule: "monthly",
+              chargeDate: chargeDateStr,
+              // para “salário”, normalmente compra = cobrança
+              purchaseDate: acc?.type === "credit_card" ? base.purchaseDate : chargeDateStr,
+              invoiceMonth: nextInvoiceMonth,
+              // status: primeiro mantém, futuros ficam planned
+              status: idx === 0 ? base.status : "planned",
+            })
+          ).unwrap();
+        });
+
+        await Promise.all(creates);
         handleClose();
         return;
       }
+
 
       // PARCELADO
       const n = Math.max(2, Number(nParts));
@@ -738,6 +840,19 @@ export default function NewTransactionModal({ open, onClose, rows }) {
               sx={{ fontWeight: 900 }}
             />
           </Stack>
+          {kind === "recurring" ? (
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ mt: 0.5 }}>
+              <TextField
+                sx={inputSx}
+                label="Repetir até"
+                type="month"
+                value={recurringUntilYm}
+                onChange={(e) => setRecurringUntilYm(e.target.value)}
+                fullWidth
+                helperText="Será criado 1 lançamento por mês, do mês da cobrança até esse mês (inclusive)."
+              />
+            </Stack>
+          ) : null}
 
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             Mês de fatura: <b>{formatMonthBR(invoiceMonth) || "—"}</b>{" "}
