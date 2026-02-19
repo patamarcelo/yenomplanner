@@ -1533,6 +1533,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
             }
             sx={{
               border: "none",
+              zoom: 0.88,
               // Deixe as larguras/alturas a cargo do Box pai que tem flex: 1
               "& .MuiDataGrid-columnHeaders": { borderBottom: "1px solid rgba(0,0,0,0.08)" },
               "& .MuiDataGrid-cell": { borderBottom: "1px solid rgba(0,0,0,0.05)" },
