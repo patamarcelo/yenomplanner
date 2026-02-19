@@ -617,7 +617,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     const maxRemain = remainingMax !== "" ? Number(remainingMax) : null;
     const hasRemain = remainingMax !== "" && Number.isFinite(maxRemain);
 
-    return safeRows.filter((r) => {
+    const filtered = safeRows.filter((r) => {
       if (!r) return false;
 
       // ✅ FILTRO POR ANO/MÊS
@@ -650,13 +650,10 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       }
 
       if (kindFilter && r.kind !== kindFilter) return false;
+
       if (categoryFilter) {
-        if (!rowMatchesCategoryFilter(r, categoryFilter, categoriesBySlug, categoriesById)) {
-          return false;
-        }
+        if (!rowMatchesCategoryFilter(r, categoryFilter, categoriesBySlug, categoriesById)) return false;
       }
-
-
 
       if (statusFilter && r.status !== statusFilter) return false;
       if (tipoFilter && getTxnDirection(r) !== tipoFilter) return false;
@@ -670,6 +667,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       }
 
       return true;
+    });
+
+    // ✅ ORDENAÇÃO POR DATA (mais recente primeiro)
+    // Se purchaseDate estiver em ISO (YYYY-MM-DD) ou ISO datetime, Date() funciona bem.
+    return filtered.sort((a, b) => {
+      const ta = a?.purchaseDate ? new Date(a.purchaseDate).getTime() : 0;
+      const tb = b?.purchaseDate ? new Date(b.purchaseDate).getTime() : 0;
+      return tb - ta;
     });
   }, [
     safeRows,
@@ -688,7 +693,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     resolveAccountIdFast,
     categoriesBySlug,
     categoriesById,
-    accountsIndex
+    accountsIndex,
   ]);
 
   console.log('filteredRows', filteredRows)
@@ -935,7 +940,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         headerName: "Mês Fatura",
         width: 100,
         renderCell: (params) => {
-            const ym = resolveInvoiceYM(params?.row, accountsIndex.accountsById); // ✅ usa params.row
+          const ym = resolveInvoiceYM(params?.row, accountsIndex.accountsById); // ✅ usa params.row
           return formatMonthBR(ym || params?.row?.invoiceMonth);
         },
       },
