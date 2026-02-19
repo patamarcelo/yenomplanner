@@ -387,14 +387,14 @@ export default function AccountsMatrix() {
 
             // ✅ MESMA REGRA DO DASHBOARD:
             // coluna (mês de referência/consumo) = invoiceMonth - 1
-            const refYM = addMonthsYM(invYM, -1);
-            if (!refYM) continue;
+            const colYM = invYM;
+            if (!/^\d{4}-\d{2}$/.test(colYM)) continue;
 
-            yms.add(refYM);
+            yms.add(colYM);
 
             // ✅ soma direta (igual Dashboard): despesa positiva em cents
-            const cents = centsFromTxn(t); // presume que retorna ABS em cents
-            addBucket(String(rid), refYM, cents);
+            const cents = centsFromTxn(t); // presume ABS em cents
+            addBucket(String(rid), colYM, cents);
         }
 
         // sempre inclui ano atual (mantém layout estável)
