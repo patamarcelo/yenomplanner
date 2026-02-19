@@ -301,9 +301,16 @@ export default function AccountsMatrix() {
         }
 
         const resolveAccountIdFromTxn = (t) => {
-            if (t?.accountId && accountsById.get(t.accountId)) return t.accountId;
+            // ✅ 1) fontes diretas (UI + API)
+            const direct =
+                t?.accountId ??
+                t?.account_id ??
+                t?.account?.id ??
+                (typeof t?.account === "string" || typeof t?.account === "number" ? t.account : null);
 
-            // legado: cardId (string)
+            if (direct != null && accountsById.get(String(direct))) return String(direct);
+
+            // ✅ 2) fallback legado: cardId por nome
             const cid = norm(t?.cardId);
             if (cid && byNameAny.has(cid)) return byNameAny.get(cid);
 
@@ -313,8 +320,9 @@ export default function AccountsMatrix() {
                 }
             }
 
-            return null;
+            return direct != null ? String(direct) : null;
         };
+
 
         return { accountsById, resolveAccountIdFromTxn };
     }, [accounts]);
@@ -330,71 +338,66 @@ export default function AccountsMatrix() {
         const isCardTxn = (t) => {
             const rid = resolveAccountIdFromTxn(t);
             if (!rid) return false;
-            const acc = accountsById.get(rid);
+            const acc = accountsById.get(String(rid));
             return acc?.type === "credit_card";
         };
 
-        const normDesc = (t) =>
-            String(t?.merchant || t?.description || t?.title || "")
-                .trim()
-                .toLowerCase()
-                .replace(/\s+/g, " ")
-                .slice(0, 32);
-
-        const centsKey = (n) => Math.round(Math.abs(Number(n || 0)) * 100);
-
-        const keyFor = (t) => {
-            const accId = resolveAccountIdFromTxn(t) || "";
-            const pd = normalizeISODate(t?.purchaseDate ?? t?.purchase_date) || "";
-            const amt = centsKey(signedAmountNormalized(t));
-            const desc = normDesc(t);
-            const cat = String(t?.categoryId ?? t?.category_id ?? t?.category ?? "");
-            return `${accId}|${pd}|${amt}|${cat}|${desc}`;
-        };
-
-        const best = new Map();
-        const rank = (s) => {
-            const st = normalizeStatus(s);
-            if (st === "paid") return 3;
-            if (st === "invoiced") return 2;
-            if (st === "confirmed") return 1;
-            return 0;
-        };
+        // ✅ dedupe mínimo (igual Dashboard na prática): apenas por ID
+        const seenId = new Set();
+        const txnsDeduped = [];
 
         for (const t of txns || []) {
+            if (!t) continue;
             if (isLikelyInvoicePayment(t)) continue;
             if (!isCardTxn(t)) continue;
             if (resolvedDirection(t) !== "expense") continue;
 
-            const k = keyFor(t);
-            const prev = best.get(k);
-            if (!prev) {
-                best.set(k, t);
+            const id = String(t?.id || "");
+            if (!id) {
+                // sem id, não dedupa (mantém)
+                txnsDeduped.push(t);
                 continue;
             }
-
-            if (rank(t?.status) > rank(prev?.status)) best.set(k, t);
-            else {
-                const prevHasId = !!(prev?.id || prev?.uuid);
-                const curHasId = !!(t?.id || t?.uuid);
-                if (!prevHasId && curHasId) best.set(k, t);
-            }
+            if (seenId.has(id)) continue;
+            seenId.add(id);
+            txnsDeduped.push(t);
         }
 
-        const txnsDeduped = Array.from(best.values());
+        // cardId|YYYY-MM(ref) => totalCents
+        const bucketsByCardYM = new Map();
+        const addBucket = (cardId, ym, cents) => {
+            const k = `${String(cardId)}|${String(ym)}`;
+            bucketsByCardYM.set(k, (bucketsByCardYM.get(k) || 0) + (Number(cents) || 0));
+        };
 
+        // ✅ range de meses com base nos dados reais (refYM = invoiceYM - 1)
         const yms = new Set();
+
         for (const t of txnsDeduped) {
             const rid = resolveAccountIdFromTxn(t);
-            const acc = rid ? accountsById.get(rid) : null;
-            const cutoff = getCutoffDayFromAccount(acc) || 1;
-            const pd = normalizeISODate(t?.purchaseDate ?? t?.purchase_date);
-            if (!pd) continue;
-            const billYM = billingYMForCardPurchase(pd, cutoff);
-            if (billYM) yms.add(billYM);
+            if (!rid) continue;
+
+            const acc = accountsById.get(String(rid));
+            if (!acc || acc.type !== "credit_card") continue;
+
+            // invoiceMonth pode vir "YYYY-MM" (como no seu exemplo) ou "YYYY-MM-01"
+            const invRaw = String(t?.invoiceMonth ?? t?.invoice_month ?? "").trim();
+            const invYM = invRaw.slice(0, 7);
+            if (!/^\d{4}-\d{2}$/.test(invYM)) continue;
+
+            // ✅ MESMA REGRA DO DASHBOARD:
+            // coluna (mês de referência/consumo) = invoiceMonth - 1
+            const refYM = addMonthsYM(invYM, -1);
+            if (!refYM) continue;
+
+            yms.add(refYM);
+
+            // ✅ soma direta (igual Dashboard): despesa positiva em cents
+            const cents = centsFromTxn(t); // presume que retorna ABS em cents
+            addBucket(String(rid), refYM, cents);
         }
 
-        // sempre inclui ano atual
+        // sempre inclui ano atual (mantém layout estável)
         for (let mi = 0; mi < 12; mi++) yms.add(ymKey(focusYear, mi));
 
         const ymSorted = Array.from(yms).sort();
@@ -409,57 +412,15 @@ export default function AccountsMatrix() {
 
         const months = years.flatMap((y) => MONTHS.map((_, i) => ({ year: y, monthIndex0: i })));
 
-        const bucketsByCardYM = new Map(); // cardId|YYYY-MM => {confirmedOpen, invoiced, paid}
-
-        const ensure = (cardId, ym) => {
-            const k = `${cardId}|${ym}`;
-            let v = bucketsByCardYM.get(k);
-            if (!v) {
-                v = { confirmedOpen: 0, invoiced: 0, paid: 0 };
-                bucketsByCardYM.set(k, v);
-            }
-            return v;
-        };
-
-        for (const t of txnsDeduped) {
-            const rid = resolveAccountIdFromTxn(t);
-            if (!rid) continue;
-
-            const acc = accountsById.get(rid);
-            if (!acc || acc.type !== "credit_card") continue;
-
-            const st = normalizeStatus(t?.status);
-            if (st !== "confirmed" && st !== "invoiced" && st !== "paid") continue;
-
-            const pd = normalizeISODate(t?.purchaseDate ?? t?.purchase_date);
-            if (!pd) continue;
-
-            const cutoff = getCutoffDayFromAccount(acc) || 1;
-            const billYM = billingYMForCardPurchase(pd, cutoff);
-            if (!billYM) continue;
-
-            const cts = centsFromTxn(t);
-            const b = ensure(String(rid), billYM);
-
-            if (st === "confirmed") {
-                if (hasInvoiceLink(t)) continue;
-                b.confirmedOpen += cts;
-            } else if (st === "paid") b.paid += cts;
-            else if (st === "invoiced") b.invoiced += cts;
-        }
-
+        // linhas por cartão
         const cardRows = creditCards.map((c) => {
             const cardId = String(c.id);
             const values = {};
 
             for (const m of months) {
                 const ym = ymKey(m.year, m.monthIndex0);
-                const b = bucketsByCardYM.get(`${cardId}|${ym}`) || { confirmedOpen: 0, invoiced: 0, paid: 0 };
-
-                const billed = Math.max(Number(b.invoiced || 0), Number(b.paid || 0));
-                const displayCents = billed > 0 ? billed : Number(b.confirmedOpen || 0);
-
-                values[ym] = Number((displayCents / 100).toFixed(2));
+                const cents = bucketsByCardYM.get(`${cardId}|${ym}`) || 0;
+                values[ym] = Number((Number(cents) / 100).toFixed(2));
             }
 
             return {
@@ -470,6 +431,7 @@ export default function AccountsMatrix() {
             };
         });
 
+        // total por mês (linha TOTAL)
         const cardsTotalValues = {};
         for (const m of months) {
             const ym = ymKey(m.year, m.monthIndex0);
@@ -480,6 +442,7 @@ export default function AccountsMatrix() {
 
         return { months, years, cardRows, cardsTotalValues };
     }, [accounts, txns, theme, focusYear, accountResolver]);
+
 
     // -----------------------------
     // ✅ RECEITAS (income) - baseado nas TransactionsGrid
@@ -556,12 +519,6 @@ export default function AccountsMatrix() {
         };
 
         const resolveIncomeYM = (t) => {
-            const inv = String(t?.invoiceMonth || t?.billingYM || t?.billing_ym || t?.month || t?.competencia || "")
-                .trim()
-                .slice(0, 7);
-
-            if (YM_RE.test(inv)) return inv;
-
             const d =
                 normalizeISODate(t?.purchaseDate ?? t?.purchase_date) ||
                 normalizeISODate(t?.chargeDate ?? t?.charge_date) ||
@@ -570,6 +527,7 @@ export default function AccountsMatrix() {
 
             return d ? d.slice(0, 7) : "";
         };
+
 
         // ✅ 1) Pré-cria linhas SÓ para contas/cartões que já tiveram receita algum dia
         const byAcc = new Map(); // accId -> row

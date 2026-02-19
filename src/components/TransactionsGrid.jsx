@@ -230,19 +230,25 @@ function safeAccountActive(a) {
 }
 
 // ✅ resolve invoiceMonth mesmo quando não vem preenchido
-function resolveInvoiceYM(row) {
+function resolveInvoiceYM(row, accountsById) {
   const r = getRowShape(row) || {};
-  const inv = String(r.invoiceMonth || "").trim();
-  if (inv && inv.length >= 7) return inv.slice(0, 7);
 
+  const accId = r.accountId;
+  const acc = accId ? accountsById?.[accId] : null;
+
+  const isCreditCard = acc?.type === "credit_card";
+
+  // ✅ Se for cartão → usar mês da fatura obrigatoriamente
+  if (isCreditCard) {
+    const inv = String(r.invoiceMonth || "").trim();
+    return inv && inv.length >= 7 ? inv.slice(0, 7) : "";
+  }
+
+  // ✅ Se não for cartão → usar data da compra
   const p = String(r.purchaseDate || "").trim();
-  if (p && p.length >= 7) return p.slice(0, 7);
-
-  const c = String(r.chargeDate || "").trim();
-  if (c && c.length >= 7) return c.slice(0, 7);
-
-  return "";
+  return p && p.length >= 7 ? p.slice(0, 7) : "";
 }
+
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -536,12 +542,12 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const yearOptions = useMemo(() => {
     const set = new Set();
     for (const r of safeRows) {
-      const ym = resolveInvoiceYM(r);
+      const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
       if (ym) set.add(ym.slice(0, 4));
     }
     set.add(currentYear);
     return Array.from(set).sort().reverse();
-  }, [safeRows, currentYear]);
+  }, [safeRows, currentYear, accountsIndex]);
 
   // =========================
   // Filtros locais
@@ -615,7 +621,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       if (!r) return false;
 
       // ✅ FILTRO POR ANO/MÊS
-      const ym = resolveInvoiceYM(r); // YYYY-MM
+      const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
       if (yearFilter !== YEAR_ALL) {
         if (!ym) return false;
 
@@ -682,6 +688,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     resolveAccountIdFast,
     categoriesBySlug,
     categoriesById,
+    accountsIndex
   ]);
 
   console.log('filteredRows', filteredRows)
@@ -732,7 +739,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       // Aba 1: Lançamentos
       // =========================
       const lançamentos = rowsBase.map((r) => {
-        const ym = resolveInvoiceYM(r);
+        const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
         const accId = resolveAccountIdFast(r);
         const acc = accId ? accountsIndex.accountsById?.[accId] : null;
         const cat = resolveCategory(r?.categoryId, categoriesBySlug, categoriesById);
@@ -818,7 +825,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       // =========================
       const monthAgg = new Map();
       for (const r of rowsForAgg) {
-        const ym = resolveInvoiceYM(r) || "";
+        const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
         const key = ym || "Sem mês";
 
         const value = Math.abs(Number(r?.amount || 0));
@@ -928,7 +935,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         headerName: "Mês Fatura",
         width: 100,
         renderCell: (params) => {
-          const ym = resolveInvoiceYM(params?.row);
+            const ym = resolveInvoiceYM(params?.row, accountsIndex.accountsById); // ✅ usa params.row
           return formatMonthBR(ym || params?.row?.invoiceMonth);
         },
       },
