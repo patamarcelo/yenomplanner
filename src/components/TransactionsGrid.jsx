@@ -943,8 +943,9 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           return <AccountChip accountId={accId} accountsById={accountsIndex.accountsById} />;
         },
       },
-      { field: "merchant", headerName: "Loja", flex: 1, minWidth: 140 },
-      { field: "description", headerName: "Descrição", flex: 1, minWidth: 240 },
+
+      { field: "merchant", headerName: "Loja", flex: 1, minWidth: 180 },
+      { field: "description", headerName: "Descrição", flex: 2, minWidth: 260 },
       {
         field: "kind",
         headerName: "Tipo",
@@ -1514,7 +1515,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
             width: "100%",
             minHeight: 0,
             position: "relative",
-            zoom: 0.88,
+            // zoom: 0.88,
+            overflow: 'hidden'
           }}
         >
           <DataGrid
@@ -1531,7 +1533,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
             }
             sx={{
               border: "none",
-              alignItems: "center",
+              // Deixe as larguras/alturas a cargo do Box pai que tem flex: 1
               "& .MuiDataGrid-columnHeaders": { borderBottom: "1px solid rgba(0,0,0,0.08)" },
               "& .MuiDataGrid-cell": { borderBottom: "1px solid rgba(0,0,0,0.05)" },
               "& .row-even": { backgroundColor: "rgba(0,0,0,0.041)" },
