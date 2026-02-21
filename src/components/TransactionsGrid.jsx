@@ -233,19 +233,25 @@ function safeAccountActive(a) {
 }
 
 // ✅ resolve invoiceMonth mesmo quando não vem preenchido
-function resolveInvoiceYM(row) {
+function resolveInvoiceYM(row, accountsById) {
   const r = getRowShape(row) || {};
-  const inv = String(r.invoiceMonth || "").trim();
-  if (inv && inv.length >= 7) return inv.slice(0, 7);
 
+  const accId = r.accountId;
+  const acc = accId ? accountsById?.[accId] : null;
+
+  const isCreditCard = acc?.type === "credit_card";
+
+  // ✅ Se for cartão → usar mês da fatura obrigatoriamente
+  if (isCreditCard) {
+    const inv = String(r.invoiceMonth || "").trim();
+    return inv && inv.length >= 7 ? inv.slice(0, 7) : "";
+  }
+
+  // ✅ Se não for cartão → usar data da compra
   const p = String(r.purchaseDate || "").trim();
-  if (p && p.length >= 7) return p.slice(0, 7);
-
-  const c = String(r.chargeDate || "").trim();
-  if (c && c.length >= 7) return c.slice(0, 7);
-
-  return "";
+  return p && p.length >= 7 ? p.slice(0, 7) : "";
 }
+
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -544,12 +550,12 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const yearOptions = useMemo(() => {
     const set = new Set();
     for (const r of safeRows) {
-      const ym = resolveInvoiceYM(r);
+      const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
       if (ym) set.add(ym.slice(0, 4));
     }
     set.add(currentYear);
     return Array.from(set).sort().reverse();
-  }, [safeRows, currentYear]);
+  }, [safeRows, currentYear, accountsIndex]);
 
   // =========================
   // Filtros locais
@@ -645,11 +651,11 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     const maxRemain = remainingMax !== "" ? Number(remainingMax) : null;
     const hasRemain = remainingMax !== "" && Number.isFinite(maxRemain);
 
-    return safeRows.filter((r) => {
+    const filtered = safeRows.filter((r) => {
       if (!r) return false;
 
       // ✅ FILTRO POR ANO/MÊS
-      const ym = resolveInvoiceYM(r); // YYYY-MM
+      const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
       if (yearFilter !== YEAR_ALL) {
         if (!ym) return false;
 
@@ -678,13 +684,10 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       }
 
       if (kindFilter && r.kind !== kindFilter) return false;
+
       if (categoryFilter) {
-        if (!rowMatchesCategoryFilter(r, categoryFilter, categoriesBySlug, categoriesById)) {
-          return false;
-        }
+        if (!rowMatchesCategoryFilter(r, categoryFilter, categoriesBySlug, categoriesById)) return false;
       }
-
-
 
       if (statusFilter && r.status !== statusFilter) return false;
       if (tipoFilter && getTxnDirection(r) !== tipoFilter) return false;
@@ -698,6 +701,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       }
 
       return true;
+    });
+
+    // ✅ ORDENAÇÃO POR DATA (mais recente primeiro)
+    // Se purchaseDate estiver em ISO (YYYY-MM-DD) ou ISO datetime, Date() funciona bem.
+    return filtered.sort((a, b) => {
+      const ta = a?.purchaseDate ? new Date(a.purchaseDate).getTime() : 0;
+      const tb = b?.purchaseDate ? new Date(b.purchaseDate).getTime() : 0;
+      return tb - ta;
     });
   }, [
     safeRows,
@@ -716,6 +727,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     resolveAccountIdFast,
     categoriesBySlug,
     categoriesById,
+    accountsIndex,
   ]);
 
   console.log('filteredRows', filteredRows)
@@ -786,7 +798,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       // Aba 1: Lançamentos
       // =========================
       const lançamentos = rowsBase.map((r) => {
-        const ym = resolveInvoiceYM(r);
+        const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
         const accId = resolveAccountIdFast(r);
         const acc = accId ? accountsIndex.accountsById?.[accId] : null;
         const cat = resolveCategory(r?.categoryId, categoriesBySlug, categoriesById);
@@ -872,7 +884,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
       // =========================
       const monthAgg = new Map();
       for (const r of rowsForAgg) {
-        const ym = resolveInvoiceYM(r) || "";
+        const ym = resolveInvoiceYM(r, accountsIndex.accountsById);
         const key = ym || "Sem mês";
 
         const value = Math.abs(Number(r?.amount || 0));
@@ -982,7 +994,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         headerName: "Mês Fatura",
         width: 100,
         renderCell: (params) => {
-          const ym = resolveInvoiceYM(params?.row);
+          const ym = resolveInvoiceYM(params?.row, accountsIndex.accountsById); // ✅ usa params.row
           return formatMonthBR(ym || params?.row?.invoiceMonth);
         },
       },
@@ -997,8 +1009,9 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           return <AccountChip accountId={accId} accountsById={accountsIndex.accountsById} />;
         },
       },
-      { field: "merchant", headerName: "Loja", flex: 1, minWidth: 140 },
-      { field: "description", headerName: "Descrição", flex: 1, minWidth: 240 },
+
+      { field: "merchant", headerName: "Loja", flex: 1, minWidth: 180 },
+      { field: "description", headerName: "Descrição", flex: 2, minWidth: 260 },
       {
         field: "kind",
         headerName: "Tipo",
@@ -1672,7 +1685,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
             width: "100%",
             minHeight: 0,
             position: "relative",
-            zoom: 0.88,
+            // zoom: 0.88,
+            overflow: 'hidden'
           }}
         >
           <DataGrid
@@ -1689,7 +1703,8 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
             }
             sx={{
               border: "none",
-              alignItems: "center",
+              zoom: 0.88,
+              // Deixe as larguras/alturas a cargo do Box pai que tem flex: 1
               "& .MuiDataGrid-columnHeaders": { borderBottom: "1px solid rgba(0,0,0,0.08)" },
               "& .MuiDataGrid-cell": { borderBottom: "1px solid rgba(0,0,0,0.05)" },
               "& .row-even": { backgroundColor: "rgba(0,0,0,0.041)" },

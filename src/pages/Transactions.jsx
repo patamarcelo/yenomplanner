@@ -39,7 +39,15 @@ export default function Transactions() {
   }, [rows]);
 
   return (
-    <Stack spacing={1.6}>
+    <Stack
+      spacing={1.6}
+      sx={{
+        width: "100%",     // ✅ garante ocupar toda a largura disponível
+        flex: 1,           // ✅ ajuda quando a página está em layout flex
+        minWidth: 0,       // ✅ evita overflow estranho em grids/tabelas
+        minHeight: 0,      // ✅ permite o DataGrid “crescer” verticalmente se o pai permitir
+      }}
+    >
       {error ? (
         <Typography variant="body2" sx={{ color: "error.main" }}>
           {String(error)}
