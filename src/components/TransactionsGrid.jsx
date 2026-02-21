@@ -43,6 +43,9 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
 
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import FilterAltOffRoundedIcon from "@mui/icons-material/FilterAltOffRounded";
 
 
 // =========================
@@ -246,6 +249,13 @@ function resolveInvoiceYM(row) {
 
 function pad2(n) {
   return String(n).padStart(2, "0");
+}
+function isoDateLocal(d) {
+  // YYYY-MM-DD no fuso local (evita bug de UTC do toISOString)
+  const y = d.getFullYear();
+  const m = pad2(d.getMonth() + 1);
+  const day = pad2(d.getDate());
+  return `${y}-${m}-${day}`;
 }
 
 function isNumericId(v) {
@@ -505,16 +515,14 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   const propYear = YM_RE.test(ymFromProp) ? ymFromProp.slice(0, 4) : "";
   const propMonth = YM_RE.test(ymFromProp) ? ymFromProp.slice(5, 7) : "";
 
-  const [yearFilter, setYearFilter] = useState(() => propYear || currentYear);
-  const [monthFilter, setMonthFilter] = useState(() => propMonth || currentMonth);
+  // ✅ novo default: não filtra por mês/ano (vamos usar range ontem->amanhã)
+  const [yearFilter, setYearFilter] = useState(() => YEAR_ALL);
+  const [monthFilter, setMonthFilter] = useState(() => MONTH_ALL);
 
-  // ✅ se o pai passar month="" (ou inválido), começa em Todos/Todos
   React.useEffect(() => {
-    if (!YM_RE.test(ymFromProp)) {
-      setYearFilter(YEAR_ALL);
-      setMonthFilter(MONTH_ALL);
-    }
-    // só roda na montagem
+    setYearFilter(YEAR_ALL);
+    setMonthFilter(MONTH_ALL);
+    emitMonthToParent(YEAR_ALL, MONTH_ALL);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -546,8 +554,21 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
   // =========================
   // Filtros locais
   // =========================
-  const [purchaseFrom, setPurchaseFrom] = useState("");
-  const [purchaseTo, setPurchaseTo] = useState("");
+  // ✅ default: ontem -> amanhã
+  const defaultRange = useMemo(() => {
+    const base = new Date();
+    base.setHours(12, 0, 0, 0); // meio-dia reduz chance de edge-case DST
+    const from = new Date(base);
+    from.setDate(from.getDate() - 1);
+    const to = new Date(base);
+    to.setDate(to.getDate() + 1);
+    return { from: isoDateLocal(from), to: isoDateLocal(to) };
+  }, []);
+
+  const [purchaseFrom, setPurchaseFrom] = useState(() => defaultRange.from);
+  const [purchaseTo, setPurchaseTo] = useState(() => defaultRange.to);
+
+
   const [accountFilter, setAccountFilter] = useState("");
   const [merchantQuery, setMerchantQuery] = useState("");
   const [descriptionQuery, setDescriptionQuery] = useState("");
@@ -573,6 +594,19 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     setDialogMode("edit");
     setSelectedTxn(txn);
     setEditOpen(true);
+  }, []);
+
+
+  function addDaysISO(iso, days) {
+    if (!iso) return "";
+    const d = new Date(iso + "T12:00:00"); // evita problema de UTC
+    d.setDate(d.getDate() + days);
+    return isoDateLocal(d);
+  }
+
+  const shiftRange = useCallback((days) => {
+    setPurchaseFrom((prev) => addDaysISO(prev, days));
+    setPurchaseTo((prev) => addDaysISO(prev, days));
   }, []);
 
   const handleDuplicate = useCallback((row) => {
@@ -720,6 +754,26 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     return { income, expense, balance: income - expense };
   }, [filteredRows]);
 
+  const handleClearFilters = useCallback(() => {
+    // período default: ontem -> amanhã
+    setPurchaseFrom("");
+    setPurchaseTo("");
+
+    // mês/ano: sem filtro
+    setYearFilter(YEAR_ALL);
+    setMonthFilter(MONTH_ALL);
+    emitMonthToParent(YEAR_ALL, MONTH_ALL);
+
+    // filtros restantes
+    setAccountFilter("");
+    setMerchantQuery("");
+    setDescriptionQuery("");
+    setKindFilter("");
+    setCategoryFilter("");
+    setRemainingMax("");
+    setStatusFilter("");
+    setTipoFilter("");
+  }, [defaultRange, emitMonthToParent]);
 
   const handleExportXlsx = useCallback(() => {
     try {
@@ -1168,6 +1222,41 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
     "& .material-symbols-rounded": { fontSize: 15 },
   };
 
+  const hasAnyFilter = useMemo(() => {
+    const hasText =
+      Boolean(merchantQuery.trim()) ||
+      Boolean(descriptionQuery.trim());
+
+    const hasSelects =
+      Boolean(kindFilter) ||
+      Boolean(categoryFilter) ||
+      Boolean(statusFilter) ||
+      Boolean(remainingMax) ||
+      Boolean(tipoFilter) ||
+      Boolean(accountFilter);
+
+    const hasDates = Boolean(purchaseFrom) || Boolean(purchaseTo);
+
+    const hasMonthYear =
+      yearFilter !== YEAR_ALL ||
+      monthFilter !== MONTH_ALL;
+
+    return hasText || hasSelects || hasDates || hasMonthYear;
+  }, [
+    merchantQuery,
+    descriptionQuery,
+    kindFilter,
+    categoryFilter,
+    statusFilter,
+    remainingMax,
+    tipoFilter,
+    accountFilter,
+    purchaseFrom,
+    purchaseTo,
+    yearFilter,
+    monthFilter,
+  ]);
+
   return (
     <Box
       sx={{
@@ -1255,7 +1344,27 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
               value={purchaseFrom}
               onChange={(e) => setPurchaseFrom(isoFromInput(e.target.value))}
               InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 132, width: { xs: "49%", sm: 145 } }}
+              sx={{ minWidth: 145 }}
+              InputProps={{
+                startAdornment: (
+                  <IconButton
+                    size="small"
+                    onClick={() => setPurchaseFrom((v) => addDaysISO(v, -1))}
+                    sx={{ mr: 0.5 }}
+                  >
+                    <ChevronLeftRoundedIcon fontSize="small" />
+                  </IconButton>
+                ),
+                endAdornment: (
+                  <IconButton
+                    size="small"
+                    onClick={() => setPurchaseFrom((v) => addDaysISO(v, 1))}
+                    sx={{ ml: 0.5 }}
+                  >
+                    <ChevronRightRoundedIcon fontSize="small" />
+                  </IconButton>
+                ),
+              }}
             />
 
             <TextField
@@ -1265,7 +1374,27 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
               value={purchaseTo}
               onChange={(e) => setPurchaseTo(isoFromInput(e.target.value))}
               InputLabelProps={{ shrink: true }}
-              sx={{ minWidth: 132, width: { xs: "49%", sm: 145 } }}
+              sx={{ minWidth: 145 }}
+              InputProps={{
+                startAdornment: (
+                  <IconButton
+                    size="small"
+                    onClick={() => setPurchaseTo((v) => addDaysISO(v, -1))}
+                    sx={{ mr: 0.5 }}
+                  >
+                    <ChevronLeftRoundedIcon fontSize="small" />
+                  </IconButton>
+                ),
+                endAdornment: (
+                  <IconButton
+                    size="small"
+                    onClick={() => setPurchaseTo((v) => addDaysISO(v, 1))}
+                    sx={{ ml: 0.5 }}
+                  >
+                    <ChevronRightRoundedIcon fontSize="small" />
+                  </IconButton>
+                ),
+              }}
             />
 
             <TextField
@@ -1406,6 +1535,35 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
                 </MenuItem>
               ))}
             </TextField>
+            <Box sx={{ flexGrow: 1 }} />
+            {hasAnyFilter ? (
+              <Tooltip title="Limpar filtros">
+                <IconButton
+                  size="small"
+                  onClick={handleClearFilters}
+                  sx={{
+                    borderRadius: 2,
+                    height: 30,
+                    width: 30,
+
+                    // ✅ já vermelho quando ativo
+                    color: "error.main",
+                    bgcolor: (theme) => theme.palette.error.main + "12",
+                    border: "1px solid",
+                    borderColor: "error.main",
+
+                    transition: "all .15s ease",
+                    "&:hover": {
+                      bgcolor: (theme) => theme.palette.error.main + "22",
+                      transform: "scale(1.08)",
+                    },
+                  }}
+                >
+                  <FilterAltOffRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
+
           </Stack>
         </Stack>
 
