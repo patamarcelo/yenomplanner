@@ -487,7 +487,7 @@ export default function Dashboard() {
   // -----------------------------
   const [vizRef, setVizRef] = useState("purchase"); // "purchase" | "competence"
   // parts = parcela (competência real), consolidate_purchase = consolidado na compra, hide = oculta parcelados
-  const [vizInstallments, setVizInstallments] = useState("parts"); // "parts" | "consolidate_purchase" | "hide"
+  const [vizInstallments, setVizInstallments] = useState("consolidate_purchase"); // "parts" | "consolidate_purchase" | "hide"
 
   useEffect(() => {
     const alreadyLoaded = accountsStatus === "succeeded" && txStatus === "succeeded";
