@@ -33,6 +33,10 @@ import AccountsMatrix from "../components/AccountsMatrix";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
+import { Button, Collapse } from "@mui/material";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
+
 // =============================
 // DEBUG
 // =============================
@@ -484,6 +488,10 @@ export default function Dashboard() {
   const txStatus = useSelector((s) => s.transactions.status);
   const bootstrapStatus = useSelector((s) => s.bootstrap.status);
   const isBootLoading = bootstrapStatus === "loading";
+
+
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [showAllCards, setShowAllCards] = useState(false);
 
   // “tem dados?” (define o que é “dado suficiente” no seu caso)
   const hasAnyData =
@@ -1196,10 +1204,16 @@ export default function Dashboard() {
                 ) : (
                   <Stack spacing={0}>
                     {(() => {
-                      const maxValue = (categoriesRank.rows || [])[0]?.total || 1;
-                      return (categoriesRank.rows || []).map((row, idx) => {
+                      const rows = categoriesRank.rows || [];
+                      const maxValue = rows[0]?.total || 1;
+
+                      const first = rows.slice(0, 6);
+                      const rest = rows.slice(6);
+
+                      const renderRow = (row, idx, isLast) => {
                         const pct = clamp((Number(row.total || 0) / Number(maxValue)) * 100, 0, 100);
                         const base = row.color || pickFallbackColor(theme, row.key);
+
                         return (
                           <React.Fragment key={row.key}>
                             <Box
@@ -1237,10 +1251,45 @@ export default function Dashboard() {
                                 {money(row.total)}
                               </Typography>
                             </Box>
-                            {idx < (categoriesRank.rows || []).length - 1 && <Divider sx={{ opacity: 0.5 }} />}
+
+                            {!isLast && <Divider sx={{ opacity: 0.5 }} />}
                           </React.Fragment>
                         );
-                      });
+                      };
+
+                      return (
+                        <>
+                          {/* top 6 sempre */}
+                          {first.map((row, i) => renderRow(row, i, i === first.length - 1 && rest.length === 0 && !showAllCategories))}
+
+                          {/* botão / accordion */}
+                          {rest.length > 0 ? (
+                            <>
+                              <Box sx={{ py: 0.75, display: "flex", justifyContent: "center" }}>
+                                <Button
+                                  size="small"
+                                  onClick={() => setShowAllCategories((v) => !v)}
+                                  endIcon={showAllCategories ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+                                  sx={{ fontWeight: 900, textTransform: "none" }}
+                                >
+                                  {showAllCategories ? "Mostrar menos" : `Ver todas (${rows.length})`}
+                                </Button>
+                              </Box>
+
+                              <Collapse in={showAllCategories} timeout={180} unmountOnExit>
+                                <Stack spacing={0}>
+                                  {/* divisor “limpo” pra separar top/resto */}
+                                  <Divider sx={{ opacity: 0.5, mb: 0.5 }} />
+
+                                  {rest.map((row, i) =>
+                                    renderRow(row, i, i === rest.length - 1)
+                                  )}
+                                </Stack>
+                              </Collapse>
+                            </>
+                          ) : null}
+                        </>
+                      );
                     })()}
                   </Stack>
                 )}
@@ -1277,11 +1326,16 @@ export default function Dashboard() {
                 ) : (
                   <Stack spacing={0}>
                     {(() => {
-                      const top = (invoicesByCard || [])[0]?.total || 1;
-                      return (invoicesByCard || []).map((c, idx) => {
+                      const rows = invoicesByCard || [];
+                      const top = rows[0]?.total || 1;
+
+                      const first = rows.slice(0, 6);
+                      const rest = rows.slice(6);
+
+                      const renderRow = (c, isLast) => {
                         const pct = clamp((Number(c.total || 0) / Number(top || 1)) * 100, 0, 100);
                         const base = c.color || pickFallbackColor(theme, c.id || c.name);
-                        console.log('invoicesByCard', invoicesByCard)
+
                         return (
                           <React.Fragment key={c.id}>
                             <Box
@@ -1340,10 +1394,39 @@ export default function Dashboard() {
                                 {money(c.total)}
                               </Typography>
                             </Box>
-                            {idx < (invoicesByCard || []).length - 1 && <Divider sx={{ opacity: 0.5 }} />}
+
+                            {!isLast && <Divider sx={{ opacity: 0.5 }} />}
                           </React.Fragment>
                         );
-                      });
+                      };
+
+                      return (
+                        <>
+                          {first.map((c, i) => renderRow(c, i === first.length - 1 && rest.length === 0 && !showAllCards))}
+
+                          {rest.length > 0 ? (
+                            <>
+                              <Box sx={{ py: 0.75, display: "flex", justifyContent: "center" }}>
+                                <Button
+                                  size="small"
+                                  onClick={() => setShowAllCards((v) => !v)}
+                                  endIcon={showAllCards ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+                                  sx={{ fontWeight: 900, textTransform: "none" }}
+                                >
+                                  {showAllCards ? "Mostrar menos" : `Ver todos (${rows.length})`}
+                                </Button>
+                              </Box>
+
+                              <Collapse in={showAllCards} timeout={180} unmountOnExit>
+                                <Stack spacing={0}>
+                                  <Divider sx={{ opacity: 0.5, mb: 0.5 }} />
+                                  {rest.map((c, i) => renderRow(c, i === rest.length - 1))}
+                                </Stack>
+                              </Collapse>
+                            </>
+                          ) : null}
+                        </>
+                      );
                     })()}
                   </Stack>
                 )}
