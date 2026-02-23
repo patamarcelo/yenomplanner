@@ -151,6 +151,87 @@ function pickFallbackColor(theme, key) {
     return palette[hashCode(String(key)) % palette.length];
 }
 
+function clamp01(x) {
+    if (!Number.isFinite(x)) return 0;
+    return Math.max(0, Math.min(1, x));
+}
+
+function parseColorToRgb(color) {
+    const s = String(color || "").trim();
+
+    // #RGB / #RRGGBB
+    if (s.startsWith("#")) {
+        const hex = s.slice(1);
+        if (hex.length === 3) {
+            const r = parseInt(hex[0] + hex[0], 16);
+            const g = parseInt(hex[1] + hex[1], 16);
+            const b = parseInt(hex[2] + hex[2], 16);
+            return { r, g, b };
+        }
+        if (hex.length === 6) {
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            return { r, g, b };
+        }
+    }
+
+    // rgb(...) / rgba(...)
+    const m = s.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (m) {
+        return { r: Number(m[1]) || 0, g: Number(m[2]) || 0, b: Number(m[3]) || 0 };
+    }
+
+    // fallback: preto
+    return { r: 0, g: 0, b: 0 };
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function lerpRgb(c1, c2, t) {
+    const a = parseColorToRgb(c1);
+    const b = parseColorToRgb(c2);
+    const tt = clamp01(t);
+    const r = Math.round(lerp(a.r, b.r, tt));
+    const g = Math.round(lerp(a.g, b.g, tt));
+    const b2 = Math.round(lerp(a.b, b.b, tt));
+    return `rgb(${r},${g},${b2})`;
+}
+
+// 3 cores: verde (baixo) -> amarelo (meio) -> vermelho (alto)
+function heatColor3(theme, t01) {
+    const t = clamp01(t01);
+
+    const green = theme.palette.success.main;
+    const yellow = theme.palette.warning.main;
+    const red = theme.palette.error.main;
+
+    if (t <= 0.5) {
+        return lerpRgb(green, yellow, t / 0.5);
+    }
+    return lerpRgb(yellow, red, (t - 0.5) / 0.5);
+}
+
+function computeHeatMeta(values, last12MonthKeys) {
+    let min = null;
+    let max = null;
+
+    for (const k of last12MonthKeys || []) {
+        const v = Number(values?.[k]);
+        if (!Number.isFinite(v)) continue;
+        if (min === null || v < min) min = v;
+        if (max === null || v > max) max = v;
+    }
+
+    // se não tem range (tudo igual / vazio), não aplica heat
+    if (min === null || max === null) return null;
+    if (min === max) return null;
+
+    return { min, max };
+}
+
 // -----------------------------
 // Bills helpers (consolidar)
 // -----------------------------
@@ -856,6 +937,13 @@ export default function AccountsMatrix() {
         return columns.findIndex((c) => c.kind === "month" && c.year === focusYear && c.monthIndex0 === focusMonthIndex0);
     }, [columns, focusYear, focusMonthIndex0]);
 
+    const last12MonthKeys = useMemo(() => {
+        const monthCols = (columns || []).filter((c) => c.kind === "month");
+        const last = monthCols.slice(-12);
+        return last.map((c) => ymKey(c.year, c.monthIndex0));
+    }, [columns]);
+
+    const last12MonthSet = useMemo(() => new Set(last12MonthKeys), [last12MonthKeys]);
     useEffect(() => {
         if (!scrollRef.current) return;
         if (focusColIndex < 0) return;
@@ -957,6 +1045,7 @@ export default function AccountsMatrix() {
         onClickLabel,
     }) => {
         const toneBg = getToneBg(tone);
+        const heatMeta = computeHeatMeta(values, last12MonthKeys);
 
         return (
             <Box
@@ -997,7 +1086,17 @@ export default function AccountsMatrix() {
                     const isAllTotal = c.kind === "allTotal";
 
                     const w = colWidth(c);
-                    const v = safeNum(colValue(values, c));
+                    const rawValue =
+                        c.kind === "month"
+                            ? values?.[ymKey(c.year, c.monthIndex0)]
+                            : colValue(values, c);
+
+                    const hasValue =
+                        rawValue !== null &&
+                        rawValue !== undefined &&
+                        rawValue !== "";
+
+                    const v = hasValue ? safeNum(rawValue) : null;
                     const isNeg = allowNegative && v < 0;
 
                     const cellKey = `${rowKey || label}|${c.kind}|${c.year ?? ""}|${c.monthIndex0 ?? ""}`;
@@ -1005,6 +1104,24 @@ export default function AccountsMatrix() {
 
                     // clique só faz sentido se tiver valor != 0
                     const clickable = !!v;
+
+                    const ym = c.kind === "month" ? ymKey(c.year, c.monthIndex0) : "";
+                    const shouldHeat =
+                        c.kind === "month" &&
+                        last12MonthSet.has(ym) &&
+                        !!heatMeta &&
+                        hasValue &&
+                        v !== 0;
+
+                    let heatBg = null;
+                    if (shouldHeat) {
+                        const t01 = (v - heatMeta.min) / (heatMeta.max - heatMeta.min);
+                        const base = heatColor3(theme, t01);
+
+                        // 👇 intensidade suave (ajuste fino aqui)
+                        const a = theme.palette.mode === "dark" ? 0.22 : 0.14;
+                        heatBg = alpha(base, a);
+                    }
 
                     return (
                         <Box
@@ -1029,7 +1146,16 @@ export default function AccountsMatrix() {
                                 cursor: clickable ? "pointer" : "default",
                                 userSelect: "none",
 
-                                ...(isFocusMonth ? { background: focusBg, borderLeft: focusBorder, borderRight: focusBorder } : null),
+                                // ✅ heatmap base (somente últimos 12 meses)
+                                ...(heatBg ? { background: heatBg } : null),
+
+                                ...(isFocusMonth
+                                    ? {
+                                        background: heatBg ? heatBg : focusBg,
+                                        borderLeft: focusBorder,
+                                        borderRight: focusBorder,
+                                    }
+                                    : null),
                                 ...(isYearTotal || isAllTotal ? { background: alpha(theme.palette.action.hover, 0.35) } : null),
 
                                 ...(selected
