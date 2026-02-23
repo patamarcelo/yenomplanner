@@ -1,7 +1,7 @@
 // src/api/bootstrapApi.js
-import { api } from "./client";
+import http from "./http";
 
 export async function fetchBootstrap() {
-    const { data } = await api.get("/bootstrap/");
+    const { data } = await http.get("yenomplanner/bootstrap/");
     return data;
 }

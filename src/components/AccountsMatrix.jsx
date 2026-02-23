@@ -1,23 +1,37 @@
 // src/components/AccountsMatrix.jsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSelector } from "react-redux";
-import { Box, Card, CardContent, Divider, Stack, Typography, useTheme } from "@mui/material";
+import {
+    Box,
+    Card,
+    CardContent,
+    Divider,
+    Stack,
+    Typography,
+    useTheme,
+    IconButton,
+    Collapse,
+    Button,
+    Tooltip,
+} from "@mui/material";
 import { alpha } from "@mui/material/styles";
 
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import UnfoldMoreRoundedIcon from "@mui/icons-material/UnfoldMoreRounded";
+import UnfoldLessRoundedIcon from "@mui/icons-material/UnfoldLessRounded";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 
 import { formatBRL } from "../utils/money";
 import { selectTransactionsUi } from "../store/transactionsSlice";
 import { selectBills } from "../store/billsSlice";
+import { selectHideValues } from "../store/uiSlice";
 
-import Accordion from "@mui/material/Accordion";
-import AccordionSummary from "@mui/material/AccordionSummary";
-import AccordionDetails from "@mui/material/AccordionDetails";
-import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+
+
 
 
 
@@ -47,16 +61,6 @@ function ymKey(year, monthIndex0) {
 function safeNum(v) {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
-}
-
-function normalizeStatus(s) {
-    const v = String(s || "").toLowerCase().trim();
-    if (v === "confirmado" || v === "confirmed") return "confirmed";
-    if (v === "previsto" || v === "planned") return "planned";
-    if (v === "pago" || v === "paid") return "paid";
-    if (v === "faturado" || v === "invoiced") return "invoiced";
-    if (v === "atrasado" || v === "overdue") return "overdue";
-    return v || "";
 }
 
 function normalizeISODate(d) {
@@ -99,23 +103,6 @@ function centsFromTxn(t) {
     return Math.round(Math.abs(n) * 100);
 }
 
-function hasInvoiceLink(t) {
-    return !!(t?.invoice || t?.invoiceId || t?.invoice_id);
-}
-
-function getCutoffDayFromAccount(acc) {
-    const v =
-        acc?.statement?.cutoffDay ??
-        acc?.statement?.cutoff_day ??
-        acc?.cutoffDay ??
-        acc?.cutoff_day ??
-        acc?.statementDay ??
-        acc?.statement_day;
-
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : null;
-}
-
 function normalizeDirectionFromTxn(t) {
     const d = String(t?.direction || "").toLowerCase();
     if (d === "income" || d === "receita" || d === "entrada") return "income";
@@ -144,20 +131,6 @@ function isLikelyInvoicePayment(t) {
     if (desc.includes("pagamento de fatura") || desc.includes("pgto fatura") || desc.includes("fatura paga")) return true;
 
     return false;
-}
-
-// cutoff rule: day<=cutoff => same ym, else next ym
-function billingYMForCardPurchase(purchaseISO, cutoffDay) {
-    const iso = normalizeISODate(purchaseISO);
-    if (!iso) return "";
-    const ym = iso.slice(0, 7);
-    const day = Number(iso.slice(8, 10));
-    if (!Number.isFinite(day)) return "";
-
-    const cd = Number(cutoffDay);
-    if (!Number.isFinite(cd) || cd <= 0) return "";
-
-    return day <= cd ? ym : addMonthsYM(ym, 1);
 }
 
 function hashCode(str) {
@@ -205,7 +178,6 @@ function normalizeTextKey(s) {
         .replace(/[^\p{L}\p{N}\s./-]+/gu, "");
 }
 
-// remove marcações tipo "1/12", "(01/12)", "parcela 3 de 12", "#3", " - 03/12"
 function normalizeBillNameForGroup(name) {
     let s = normalizeTextKey(name);
 
@@ -220,27 +192,39 @@ function normalizeBillNameForGroup(name) {
     return s;
 }
 
-function billGroupKey(b) {
-    // ✅ prioridade: série real (parcelas)
-    const gid = String(b?.installmentGroupId || b?.installment_group_id || "").trim();
-    if (gid) return `series:${gid}`;
+function resolveBillPayeeRaw(b) {
+    return (
+        b?.payee ??
+        b?.payeeName ??
+        b?.favorecido ??
+        b?.merchant ??
+        b?.merchantName ??
+        b?.counterparty ??
+        b?.counterpartyName ??
+        b?.vendor ??
+        ""
+    );
+}
 
-    // ✅ fallback: fingerprint estável (sem o "1/12" etc)
-    const name = normalizeBillNameForGroup(b?.name);
-    const payee = normalizeTextKey(b?.payee);
-    const cat = String(b?.categoryId || b?.category_id || "outros").trim();
-    const kind = String(b?.kind || "").trim().toLowerCase();
-    const amt = Number(b?.defaultAmount || 0).toFixed(2);
-    const day = String(b?.dayOfMonth ?? b?.day_of_month ?? "");
-
-    return `fp:${name}|${payee}|${cat}|${kind}|${amt}|${day}`;
+function normalizePayeeForGroup(b) {
+    const raw = String(resolveBillPayeeRaw(b) || "").trim();
+    return normalizeTextKey(raw);
 }
 
 function billLabelForRow(b) {
+    const payeeRaw = String(resolveBillPayeeRaw(b) || "").trim();
+    if (payeeRaw) return payeeRaw;
+
     const raw = String(b?.name || "Bill").trim() || "Bill";
     const cleaned = normalizeBillNameForGroup(raw);
     return cleaned || raw;
 }
+
+// -----------------------------
+// localStorage keys (UI prefs)
+// -----------------------------
+const LS_BILLS_OPEN = "ym_openBillsCats_v1"; // map catId -> boolean (true=open)
+const LS_BILLS_MODE = "ym_openBillsMode_v1"; // "open" | "closed"
 
 // -----------------------------
 // Main component
@@ -253,6 +237,70 @@ export default function AccountsMatrix() {
     const txns = useSelector(selectTransactionsUi) || [];
     const accounts = useSelector((s) => s.accounts.accounts) || [];
     const bills = useSelector(selectBills) || [];
+    const hideValues = useSelector(selectHideValues);
+
+
+    // ✅ UI: expand/collapse de categorias (bills) + persistência
+    const [openBillCats, setOpenBillCats] = useState(() => {
+        try {
+            const raw = localStorage.getItem(LS_BILLS_OPEN);
+            const obj = raw ? JSON.parse(raw) : {};
+            return obj && typeof obj === "object" ? obj : {};
+        } catch {
+            return {};
+        }
+    });
+
+    const [billsMode, setBillsMode] = useState(() => {
+        try {
+            const raw = localStorage.getItem(LS_BILLS_MODE);
+            return raw === "open" || raw === "closed" ? raw : "open";
+        } catch {
+            return "open";
+        }
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(LS_BILLS_OPEN, JSON.stringify(openBillCats || {}));
+        } catch { }
+    }, [openBillCats]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(LS_BILLS_MODE, billsMode);
+        } catch { }
+    }, [billsMode]);
+
+    const toggleBillCat = useCallback((catId) => {
+        const k = String(catId || "outros");
+        setOpenBillCats((prev) => ({ ...(prev || {}), [k]: !prev?.[k] }));
+    }, []);
+
+    // ✅ Soma por clique: seleção de células
+    // - guarda valores (numéricos) escolhidos
+    // - destaca célula selecionada
+    const [selectedCells, setSelectedCells] = useState(() => new Map()); // key -> { value, label }
+    const selectedSum = useMemo(() => {
+        let s = 0;
+        for (const it of selectedCells.values()) s += safeNum(it?.value);
+        return Number(s.toFixed(2));
+    }, [selectedCells]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedCells(new Map());
+    }, []);
+
+    const toggleSelectCell = useCallback((cellKey, value, labelForHover) => {
+        setSelectedCells((prev) => {
+            const next = new Map(prev);
+            if (next.has(cellKey)) next.delete(cellKey);
+            else next.set(cellKey, { value: safeNum(value), label: labelForHover || "" });
+            return next;
+        });
+    }, []);
+
+    const isSelectedCell = useCallback((cellKey) => selectedCells.has(cellKey), [selectedCells]);
 
     // focus sempre no mês/ano atual
     const now = new Date();
@@ -264,15 +312,15 @@ export default function AccountsMatrix() {
     const COL_YEAR_TOTAL_W = 130;
     const COL_TOTAL_W = 140;
 
-    const COL_LABEL_MIN = 160;
-    const COL_LABEL_MAX_VW = "10vw";
+    const COL_LABEL_MIN = 150; // 👈 um pouco maior, mas com ellipsis não estoura
+    const COL_LABEL_MAX = 120; // 👈 limite real para não “quebrar” o quadro
 
     const ROW_H = 36;
     const ROW_H_SECTION = Math.round(ROW_H * 0.82);
 
     // cor estrutural (mais forte)
     const strongLine = theme.palette.primary.main;
-    const strongBg = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.30 : 0.20);
+    const strongBg = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.3 : 0.2);
     const strongBgSoft = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.24 : 0.16);
 
     const borderC = alpha(theme.palette.divider, 0.9);
@@ -281,12 +329,15 @@ export default function AccountsMatrix() {
     const focusBorder = `2px solid ${alpha(theme.palette.primary.main, 0.95)}`;
     const focusBg = alpha(theme.palette.primary.main, 0.07);
 
+    const selectedBg = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.25 : 0.16);
+    const selectedBorder = `1px solid ${alpha(theme.palette.primary.main, 0.7)}`;
+
     // -----------------------------
     // ✅ Resolver de conta (reutilizável)
     // -----------------------------
     const accountResolver = useMemo(() => {
         const accountsById = new Map();
-        for (const a of accounts || []) accountsById.set(a.id, a);
+        for (const a of accounts || []) accountsById.set(String(a.id), a);
 
         const norm = (s) =>
             String(s || "")
@@ -297,11 +348,10 @@ export default function AccountsMatrix() {
         const byNameAny = new Map();
         for (const a of accounts || []) {
             if (!a?.id) continue;
-            byNameAny.set(norm(a.name), a.id);
+            byNameAny.set(norm(a.name), String(a.id));
         }
 
         const resolveAccountIdFromTxn = (t) => {
-            // ✅ 1) fontes diretas (UI + API)
             const direct =
                 t?.accountId ??
                 t?.account_id ??
@@ -310,7 +360,6 @@ export default function AccountsMatrix() {
 
             if (direct != null && accountsById.get(String(direct))) return String(direct);
 
-            // ✅ 2) fallback legado: cardId por nome
             const cid = norm(t?.cardId);
             if (cid && byNameAny.has(cid)) return byNameAny.get(cid);
 
@@ -323,12 +372,11 @@ export default function AccountsMatrix() {
             return direct != null ? String(direct) : null;
         };
 
-
         return { accountsById, resolveAccountIdFromTxn };
     }, [accounts]);
 
     // -----------------------------
-    // 🔥 CARTÕES (mesma regra do Dashboard)
+    // 🔥 CARTÕES
     // -----------------------------
     const cardsData = useMemo(() => {
         const creditCards = (accounts || []).filter((a) => a?.active && a?.type === "credit_card");
@@ -342,7 +390,6 @@ export default function AccountsMatrix() {
             return acc?.type === "credit_card";
         };
 
-        // ✅ dedupe mínimo (igual Dashboard na prática): apenas por ID
         const seenId = new Set();
         const txnsDeduped = [];
 
@@ -354,7 +401,6 @@ export default function AccountsMatrix() {
 
             const id = String(t?.id || "");
             if (!id) {
-                // sem id, não dedupa (mantém)
                 txnsDeduped.push(t);
                 continue;
             }
@@ -363,14 +409,12 @@ export default function AccountsMatrix() {
             txnsDeduped.push(t);
         }
 
-        // cardId|YYYY-MM(ref) => totalCents
         const bucketsByCardYM = new Map();
         const addBucket = (cardId, ym, cents) => {
             const k = `${String(cardId)}|${String(ym)}`;
             bucketsByCardYM.set(k, (bucketsByCardYM.get(k) || 0) + (Number(cents) || 0));
         };
 
-        // ✅ range de meses com base nos dados reais (refYM = invoiceYM - 1)
         const yms = new Set();
 
         for (const t of txnsDeduped) {
@@ -380,24 +424,17 @@ export default function AccountsMatrix() {
             const acc = accountsById.get(String(rid));
             if (!acc || acc.type !== "credit_card") continue;
 
-            // invoiceMonth pode vir "YYYY-MM" (como no seu exemplo) ou "YYYY-MM-01"
             const invRaw = String(t?.invoiceMonth ?? t?.invoice_month ?? "").trim();
             const invYM = invRaw.slice(0, 7);
             if (!/^\d{4}-\d{2}$/.test(invYM)) continue;
 
-            // ✅ MESMA REGRA DO DASHBOARD:
-            // coluna (mês de referência/consumo) = invoiceMonth - 1
             const colYM = invYM;
             if (!/^\d{4}-\d{2}$/.test(colYM)) continue;
 
             yms.add(colYM);
-
-            // ✅ soma direta (igual Dashboard): despesa positiva em cents
-            const cents = centsFromTxn(t); // presume ABS em cents
-            addBucket(String(rid), colYM, cents);
+            addBucket(String(rid), colYM, centsFromTxn(t));
         }
 
-        // sempre inclui ano atual (mantém layout estável)
         for (let mi = 0; mi < 12; mi++) yms.add(ymKey(focusYear, mi));
 
         const ymSorted = Array.from(yms).sort();
@@ -412,7 +449,6 @@ export default function AccountsMatrix() {
 
         const months = years.flatMap((y) => MONTHS.map((_, i) => ({ year: y, monthIndex0: i })));
 
-        // linhas por cartão
         const cardRows = creditCards.map((c) => {
             const cardId = String(c.id);
             const values = {};
@@ -431,7 +467,6 @@ export default function AccountsMatrix() {
             };
         });
 
-        // total por mês (linha TOTAL)
         const cardsTotalValues = {};
         for (const m of months) {
             const ym = ymKey(m.year, m.monthIndex0);
@@ -443,27 +478,15 @@ export default function AccountsMatrix() {
         return { months, years, cardRows, cardsTotalValues };
     }, [accounts, txns, theme, focusYear, accountResolver]);
 
-
     // -----------------------------
-    // ✅ RECEITAS (income) - baseado nas TransactionsGrid
-    // - pega direction = income/entrada/receita (ou amount > 0 sem direção)
-    // - usa o mês por data (purchaseDate -> chargeDate -> date -> createdAt)
-    // - consolida por CONTA (1 linha por conta) + total por mês
-    // -----------------------------
-    // -----------------------------
-    // ✅ RECEITAS (income) - baseado no TransactionsGrid
-    // - detecta entrada igual ao grid (in/entrada/income/credit)
-    // - resolve mês priorizando invoiceMonth (YYYY-MM), senão datas
-    // - consolida por CONTA (1 linha por conta) + total por mês
+    // ✅ RECEITAS (income)
     // -----------------------------
     const everIncomeByAccId = useMemo(() => {
         const accountsById = accountResolver.accountsById;
         const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
 
         const isIncomeLikeGrid = (t) => {
-            const d = String(t?.direction || t?.flow || t?.type || t?.movement || "")
-                .trim()
-                .toLowerCase();
+            const d = String(t?.direction || t?.flow || t?.type || t?.movement || "").trim().toLowerCase();
 
             if (["in", "entrada", "income", "receita", "credit"].includes(d)) return true;
             if (["out", "saida", "saída", "expense", "despesa", "debit"].includes(d)) return false;
@@ -472,7 +495,7 @@ export default function AccountsMatrix() {
             return Number.isFinite(amt) ? amt > 0 : false;
         };
 
-        const map = new Map(); // accId -> true
+        const map = new Map();
 
         for (const t of txns || []) {
             if (!t) continue;
@@ -482,12 +505,12 @@ export default function AccountsMatrix() {
             const accId = resolveAccountIdFromTxn(t) || t?.accountId || null;
             if (!accId) continue;
 
-            // só marca se for conta válida (opcional, mas recomendo)
-            if (accountsById.has(accId)) map.set(String(accId), true);
+            if (accountsById.has(String(accId))) map.set(String(accId), true);
         }
 
         return map;
     }, [txns, accountResolver]);
+
     const incomeData = useMemo(() => {
         const months = (cardsData.months || []).map((m) => ymKey(m.year, m.monthIndex0));
         const monthsSet = new Set(months);
@@ -502,12 +525,8 @@ export default function AccountsMatrix() {
         const accountsById = accountResolver.accountsById;
         const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
 
-        const YM_RE = /^\d{4}-\d{2}$/;
-
         const getTxnDirectionLikeGrid = (t) => {
-            const d = String(t?.direction || t?.flow || t?.type || t?.movement || "")
-                .trim()
-                .toLowerCase();
+            const d = String(t?.direction || t?.flow || t?.type || t?.movement || "").trim().toLowerCase();
 
             if (["in", "entrada", "income", "receita", "credit"].includes(d)) return "in";
             if (["out", "saida", "saída", "expense", "despesa", "debit"].includes(d)) return "out";
@@ -528,9 +547,7 @@ export default function AccountsMatrix() {
             return d ? d.slice(0, 7) : "";
         };
 
-
-        // ✅ 1) Pré-cria linhas SÓ para contas/cartões que já tiveram receita algum dia
-        const byAcc = new Map(); // accId -> row
+        const byAcc = new Map();
         for (const a of accounts || []) {
             if (!a?.id) continue;
             if (a?.active === false) continue;
@@ -541,7 +558,6 @@ export default function AccountsMatrix() {
             byAcc.set(accId, { id: accId, label: a.name || accId, values: {} });
         }
 
-        // ✅ garante “unknown” se tiver receita sem conta resolvida (opcional)
         const ensureRow = (accId, label) => {
             const k = String(accId || "unknown");
             let row = byAcc.get(k);
@@ -555,7 +571,6 @@ export default function AccountsMatrix() {
         const totalByMonth = {};
         for (const ym of months) totalByMonth[ym] = 0;
 
-        // ✅ 2) Preenche valores só no range atual
         for (const t of txns || []) {
             if (!t) continue;
             if (isLikelyInvoicePayment(t)) continue;
@@ -567,15 +582,12 @@ export default function AccountsMatrix() {
             if (!monthsSet.has(ym)) continue;
 
             const resolvedId = resolveAccountIdFromTxn(t) || t?.accountId || "unknown";
-            const acc = accountsById.get(resolvedId);
-
+            const acc = accountsById.get(String(resolvedId));
             const accId = acc?.id ? String(acc.id) : String(resolvedId);
 
-            // ✅ só mostra se já teve receita algum dia (mas deixa "unknown" passar)
             if (accId !== "unknown" && !everIncomeByAccId.get(accId)) continue;
 
             const label = acc?.name || (accId === "unknown" ? "Sem conta" : accId);
-
             const value = Math.abs((centsFromTxn(t) || 0) / 100);
 
             const row = ensureRow(accId, label);
@@ -590,12 +602,15 @@ export default function AccountsMatrix() {
     }, [txns, accounts, cardsData.months, accountResolver, everIncomeByAccId]);
 
     // -----------------------------
-    // ✅ BILLS (consolidado por grupo)
+    // ✅ BILLS
+    // Regras:
+    // 1) Linha principal: SUBTOTAL por categoria
+    // 2) Clique na categoria: expande e mostra os fornecedores (consolidados por favorecido)
+    // 3) Dentro do favorecido: consolida mesmo favorecido
+    // 4) Botões “Abrir tudo / Fechar tudo” + persistência no navegador
     // -----------------------------
     const billsData = useMemo(() => {
-        const list = (bills || [])
-            .filter((b) => b?.active !== false)
-            .filter((b) => !billIsInvoice(b));
+        const list = (bills || []).filter((b) => b?.active !== false).filter((b) => !billIsInvoice(b));
 
         const months = (cardsData.months || []).map((m) => ymKey(m.year, m.monthIndex0));
         const monthsSet = new Set(months);
@@ -607,11 +622,39 @@ export default function AccountsMatrix() {
         const monthMin = months[0] || fallbackStart;
         const monthMax = months[months.length - 1] || fallbackEnd;
 
-        const byGroup = new Map();
+        const byCat = new Map(); // catId -> { id, catId, label, values, __children: Map(payeeKey->child) }
+
+        const ensureCatRow = (catId, label) => {
+            const k = String(catId || "outros");
+            let row = byCat.get(k);
+            if (!row) {
+                row = {
+                    id: `cat_${k}`,
+                    catId: k,
+                    label: label || (k === "outros" ? "Outros" : k),
+                    values: {},
+                    __children: new Map(),
+                };
+                byCat.set(k, row);
+            } else {
+                if (label && label.length > String(row.label || "").length) row.label = label;
+            }
+            return row;
+        };
+
+        const ensureChild = (catRow, payeeKey, label) => {
+            const k = String(payeeKey || "sem_favorecido");
+            let child = catRow.__children.get(k);
+            if (!child) {
+                child = { id: `payee_${catRow.catId}_${k}`, payeeKey: k, label: label || "Sem favorecido", values: {} };
+                catRow.__children.set(k, child);
+            } else {
+                if (label && label.length > String(child.label || "").length) child.label = label;
+            }
+            return child;
+        };
 
         for (const b of list) {
-            const key = billGroupKey(b);
-
             const amount = moneyToNumber(b?.defaultAmount);
             if (!amount) continue;
 
@@ -619,47 +662,107 @@ export default function AccountsMatrix() {
             const endRaw = String(b?.endMonth || "").slice(0, 7);
             const end = endRaw ? endRaw : monthMax;
 
-            const row =
-                byGroup.get(key) || {
-                    id: key,
-                    label: billLabelForRow(b),
-                    values: {},
-                };
+            const catId = String(b?.categoryId || b?.category_id || "outros").trim() || "outros";
+            const catLabel = String(b?.categoryName || b?.category_name || "").trim() || (catId === "outros" ? "Outros" : catId);
 
-            const labelNow = billLabelForRow(b);
-            if (labelNow && labelNow.length > String(row.label || "").length) row.label = labelNow;
+            const payeeKey = normalizePayeeForGroup(b) || "sem_favorecido";
+            const payeeLabel = billLabelForRow(b) || "Sem favorecido";
+
+            const catRow = ensureCatRow(catId, catLabel);
+            const child = ensureChild(catRow, payeeKey, payeeLabel);
 
             let cur = start;
             let guard = 0;
 
             while (cur && ymCompare(cur, end) <= 0) {
                 if (monthsSet.has(cur)) {
-                    row.values[cur] = Number((safeNum(row.values[cur]) + amount).toFixed(2));
+                    catRow.values[cur] = Number((safeNum(catRow.values[cur]) + amount).toFixed(2));
+                    child.values[cur] = Number((safeNum(child.values[cur]) + amount).toFixed(2));
                 }
 
                 cur = addMonthsYM(cur, 1);
                 guard += 1;
                 if (guard > 240) break;
             }
-
-            byGroup.set(key, row);
         }
 
-        const rows = Array.from(byGroup.values()).sort((a, b) => a.label.localeCompare(b.label));
+        const catRows = Array.from(byCat.values())
+            .map((r) => {
+                let total = 0;
+                for (const ym of months) total += safeNum(r.values[ym]);
+                return { ...r, __total: Number(total.toFixed(2)) };
+            })
+            .sort((a, b) => safeNum(b.__total) - safeNum(a.__total));
+
+        const childrenByCatId = new Map();
+        for (const cat of catRows) {
+            const children = Array.from(cat.__children.values())
+                .map((c) => {
+                    let total = 0;
+                    for (const ym of months) total += safeNum(c.values[ym]);
+                    return { ...c, __total: Number(total.toFixed(2)) };
+                })
+                .sort((a, b) => safeNum(b.__total) - safeNum(a.__total))
+                .map(({ __total, ...rest }) => rest);
+
+            childrenByCatId.set(String(cat.catId), children);
+        }
 
         const totalByMonth = {};
         for (const ym of months) totalByMonth[ym] = 0;
 
-        for (const r of rows) {
-            for (const [ym, v] of Object.entries(r.values || {})) {
-                totalByMonth[ym] = safeNum(totalByMonth[ym]) + safeNum(v);
-            }
+        for (const r of catRows) {
+            for (const ym of months) totalByMonth[ym] = Number((safeNum(totalByMonth[ym]) + safeNum(r.values[ym])).toFixed(2));
         }
 
-        for (const k of Object.keys(totalByMonth)) totalByMonth[k] = Number(totalByMonth[k].toFixed(2));
+        const cleanCatRows = catRows.map(({ __children, __total, ...rest }) => rest);
 
-        return { rows, totalByMonth };
+        return { months, catRows: cleanCatRows, childrenByCatId, totalByMonth };
     }, [bills, cardsData.months]);
+
+    // ✅ auto-preenche “openBillCats” com base no modo salvo (open/closed) quando categorias mudam
+    useEffect(() => {
+        const cats = (billsData?.catRows || []).map((c) => String(c?.catId || "outros"));
+        if (!cats.length) return;
+
+        setOpenBillCats((prev) => {
+            const next = { ...(prev || {}) };
+            let changed = false;
+
+            for (const catId of cats) {
+                if (typeof next[catId] !== "boolean") {
+                    next[catId] = billsMode === "open"; // default pelo modo salvo
+                    changed = true;
+                }
+            }
+
+            // remove cats que não existem mais
+            for (const k of Object.keys(next)) {
+                if (!cats.includes(k)) {
+                    delete next[k];
+                    changed = true;
+                }
+            }
+
+            return changed ? next : prev;
+        });
+    }, [billsData?.catRows, billsMode]);
+
+    const openAllBills = useCallback(() => {
+        const cats = (billsData?.catRows || []).map((c) => String(c?.catId || "outros"));
+        const next = {};
+        for (const id of cats) next[id] = true;
+        setBillsMode("open");
+        setOpenBillCats(next);
+    }, [billsData?.catRows]);
+
+    const closeAllBills = useCallback(() => {
+        const cats = (billsData?.catRows || []).map((c) => String(c?.catId || "outros"));
+        const next = {};
+        for (const id of cats) next[id] = false;
+        setBillsMode("closed");
+        setOpenBillCats(next);
+    }, [billsData?.catRows]);
 
     // -----------------------------
     // data
@@ -719,11 +822,13 @@ export default function AccountsMatrix() {
                         values: billsData.totalByMonth || emptyValues,
                         tone: "bills",
                     },
-                    rows: (billsData.rows || []).map((b) => ({
-                        id: `bill_${b.id}`,
-                        label: b.label,
-                        values: b.values,
-                        tone: "billItem",
+                    rows: (billsData.catRows || []).map((c) => ({
+                        id: `bill_cat_${c.catId}`,
+                        catId: c.catId,
+                        label: c.label,
+                        values: c.values,
+                        tone: "billCat",
+                        isCat: true,
                     })),
                 },
             ],
@@ -770,7 +875,6 @@ export default function AccountsMatrix() {
         return total;
     };
 
-    // ✅ Resultado = entradas - saídas
     const grandTotalByMonth = useMemo(() => {
         const out = {};
 
@@ -798,12 +902,19 @@ export default function AccountsMatrix() {
         whiteSpace: "nowrap",
     };
 
-    const formatMoneySigned = (value) => {
+    const maskMoney = (str) => (hideValues ? "••••" : str);
+
+    const formatMoneyCell = (value, allowNegative) => {
         const v = safeNum(value);
         if (!v) return "-";
-        const abs = Math.abs(v);
-        const str = formatBRL(abs);
-        return v < 0 ? `- ${str}` : str;
+
+        if (allowNegative) {
+            const abs = Math.abs(v);
+            const str = formatBRL(abs);
+            return maskMoney(v < 0 ? `- ${str}` : str);
+        }
+
+        return maskMoney(formatBRL(Math.abs(v)));
     };
 
     const colWidth = (c) => {
@@ -829,15 +940,27 @@ export default function AccountsMatrix() {
         if (tone === "income") return alpha(theme.palette.success.light, 0.12);
         if (tone === "cards") return alpha(theme.palette.info.light, 0.12);
         if (tone === "bills") return alpha(theme.palette.warning.light, 0.12);
+        if (tone === "billCat") return alpha(theme.palette.warning.main, 0.08);
+        if (tone === "billPayee") return alpha(theme.palette.warning.main, 0.04);
         return "transparent";
     };
 
-    const renderRow = ({ label, values, tone, isHeaderRow, allowNegative }) => {
+    const renderRow = ({
+        rowKey,
+        label,
+        values,
+        tone,
+        isHeaderRow,
+        allowNegative,
+        isSubtotal,
+        prefixIcon,
+        onClickLabel,
+    }) => {
         const toneBg = getToneBg(tone);
 
         return (
             <Box
-                key={label}
+                key={rowKey || label}
                 sx={{
                     display: "flex",
                     minWidth: "max-content",
@@ -848,18 +971,24 @@ export default function AccountsMatrix() {
                     sx={{
                         ...cellBase,
                         minWidth: COL_LABEL_MIN,
-                        width: `minmax(${COL_LABEL_MIN}px, ${COL_LABEL_MAX_VW})`,
-                        maxWidth: COL_LABEL_MAX_VW,
+                        width: COL_LABEL_MAX,
+                        maxWidth: COL_LABEL_MAX,
                         position: "sticky",
                         left: 0,
                         zIndex: 3,
                         background: bgSticky,
-                        fontWeight: isHeaderRow ? 800 : 600,
+                        fontWeight: isHeaderRow ? 800 : isSubtotal ? 800 : 600,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
+                        cursor: onClickLabel ? "pointer" : "default",
+                        userSelect: "none",
+                        gap: 0.5,
                     }}
+                    onClick={onClickLabel || undefined}
+                    title={label}
                 >
-                    {label}
+                    {prefixIcon ? <span style={{ display: "inline-flex", alignItems: "center" }}>{prefixIcon}</span> : null}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
                 </Box>
 
                 {columns.map((c, idx) => {
@@ -871,25 +1000,49 @@ export default function AccountsMatrix() {
                     const v = safeNum(colValue(values, c));
                     const isNeg = allowNegative && v < 0;
 
+                    const cellKey = `${rowKey || label}|${c.kind}|${c.year ?? ""}|${c.monthIndex0 ?? ""}`;
+                    const selected = isSelectedCell(cellKey);
+
+                    // clique só faz sentido se tiver valor != 0
+                    const clickable = !!v;
+
                     return (
                         <Box
-                            key={`${label}_${c.kind}_${c.year ?? ""}_${c.monthIndex0 ?? ""}`}
+                            key={cellKey}
+                            onClick={
+                                clickable
+                                    ? (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const display = `${label} • ${c.kind === "month" ? ymKey(c.year, c.monthIndex0) : c.kind === "yearTotal" ? `Ano ${c.year}` : "Total"}`;
+                                        toggleSelectCell(cellKey, v, display);
+                                    }
+                                    : undefined
+                            }
                             sx={{
                                 ...cellBase,
                                 width: w,
                                 minWidth: w,
                                 justifyContent: "flex-end",
-                                fontWeight: isHeaderRow || isYearTotal || isAllTotal ? 800 : 500,
+                                fontWeight: isHeaderRow || isSubtotal || isYearTotal || isAllTotal ? 800 : 500,
                                 color: isNeg ? theme.palette.error.main : theme.palette.text.primary,
+                                cursor: clickable ? "pointer" : "default",
+                                userSelect: "none",
 
-                                ...(isFocusMonth
-                                    ? { background: focusBg, borderLeft: focusBorder, borderRight: focusBorder }
-                                    : null),
-
+                                ...(isFocusMonth ? { background: focusBg, borderLeft: focusBorder, borderRight: focusBorder } : null),
                                 ...(isYearTotal || isAllTotal ? { background: alpha(theme.palette.action.hover, 0.35) } : null),
+
+                                ...(selected
+                                    ? {
+                                        background: selectedBg,
+                                        outline: selectedBorder,
+                                        outlineOffset: "-1px",
+                                    }
+                                    : null),
                             }}
+                            title={clickable ? "Clique para somar/subtrair" : undefined}
                         >
-                            {allowNegative ? formatMoneySigned(v) : v ? formatBRL(Math.abs(v)) : "-"}
+                            {formatMoneyCell(v, allowNegative)}
                         </Box>
                     );
                 })}
@@ -898,6 +1051,27 @@ export default function AccountsMatrix() {
     };
 
     const totalMatrixWidth = "max-content";
+
+    const showSumBar = selectedCells.size > 0;
+
+    const allBillsOpen = (billsData?.catRows || []).every((c) => {
+        const catId = String(c.catId || "outros");
+        return openBillCats[catId] === false; // false = aberto (pela sua lógica atual)
+    });
+
+    const toggleAllBills = () => {
+        const cats = (billsData?.catRows || []).map((c) => String(c.catId || "outros"));
+
+        setOpenBillCats((prev) => {
+            const next = { ...prev };
+            for (const catId of cats) {
+                next[catId] = allBillsOpen ? true : false;
+                // se tudo aberto → fecha (true)
+                // se não → abre tudo (false)
+            }
+            return next;
+        });
+    };
 
     return (
         <Card variant="outlined" sx={{ overflow: "hidden" }}>
@@ -911,6 +1085,31 @@ export default function AccountsMatrix() {
                             receitas (income) + cartões (cutoff) + bills consolidadas
                         </Typography>
                     </Stack>
+
+                    {/* Soma rápida (aparece só quando há seleção) */}
+                    {showSumBar ? (
+                        <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography
+                                variant="body2"
+                                sx={{
+                                    fontWeight: 900,
+                                    px: 1.1,
+                                    py: 0.4,
+                                    borderRadius: 999,
+                                    background: alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.22 : 0.12),
+                                }}
+                                title={`${selectedCells.size} valores selecionados`}
+                            >
+                                Soma: {maskMoney(formatBRL(Math.abs(selectedSum)))}
+                            </Typography>
+
+                            <Tooltip title="Limpar seleção">
+                                <IconButton size="small" onClick={clearSelection}>
+                                    <CloseRoundedIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Stack>
+                    ) : null}
                 </Stack>
 
                 <Divider sx={{ mb: 1.2 }} />
@@ -931,12 +1130,15 @@ export default function AccountsMatrix() {
                                 sx={{
                                     ...cellBase,
                                     minWidth: COL_LABEL_MIN,
-                                    maxWidth: COL_LABEL_MAX_VW,
+                                    width: COL_LABEL_MAX,
+                                    maxWidth: COL_LABEL_MAX,
                                     position: "sticky",
                                     left: 0,
                                     zIndex: 6,
                                     background: bgSticky,
                                     fontWeight: 900,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
                                 }}
                             >
                                 Referência
@@ -985,7 +1187,8 @@ export default function AccountsMatrix() {
                                 sx={{
                                     ...cellBase,
                                     minWidth: COL_LABEL_MIN,
-                                    maxWidth: COL_LABEL_MAX_VW,
+                                    width: COL_LABEL_MAX,
+                                    maxWidth: COL_LABEL_MAX,
                                     position: "sticky",
                                     left: 0,
                                     zIndex: 6,
@@ -1028,46 +1231,146 @@ export default function AccountsMatrix() {
                         {/* Sections */}
                         {data.sections.map((sec) => (
                             <Box key={sec.id}>
+                                {/* section header row */}
                                 <Box sx={{ display: "flex", background: strongBg }}>
                                     <Box
                                         sx={{
                                             ...cellBase,
                                             height: ROW_H_SECTION,
                                             minWidth: COL_LABEL_MIN,
-                                            maxWidth: COL_LABEL_MAX_VW,
+                                            width: COL_LABEL_MAX,
+                                            maxWidth: COL_LABEL_MAX,
                                             position: "sticky",
                                             left: 0,
                                             zIndex: 3,
                                             background: bgSticky,
                                             fontWeight: 900,
                                             borderBottom: `3px solid ${strongLine}`,
+                                            overflow: "hidden",
                                         }}
                                     >
-                                        <Stack direction="row" spacing={1} alignItems="center" sx={{ opacity: 0.95 }}>
+                                        <Stack direction="row" spacing={1} alignItems="center" sx={{ opacity: 0.95, minWidth: 0 }}>
                                             {sec.icon}
-                                            <span style={{ fontSize: 12 }}>{sec.label}</span>
+                                            <span
+                                                style={{
+                                                    fontSize: 12,
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                }}
+                                            >
+                                                {sec.label}
+                                            </span>
                                         </Stack>
                                     </Box>
 
                                     <Box sx={{ height: ROW_H_SECTION, width: "100%", borderBottom: `3px solid ${strongLine}` }} />
                                 </Box>
 
+
+
+                                {/* total row */}
                                 {renderRow({
+                                    rowKey: sec.headerRow.id,
                                     label: sec.headerRow.label,
                                     values: sec.headerRow.values,
                                     tone: sec.headerRow.tone,
                                     isHeaderRow: true,
                                     allowNegative: false,
+                                    isSubtotal: false,
+                                    prefixIcon:
+                                        sec.id === "bills" ? (
+                                            <Tooltip title={allBillsOpen ? "Fechar todas as categorias" : "Abrir todas as categorias"}>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        toggleAllBills();
+                                                    }}
+                                                    sx={{
+                                                        p: 0.3,
+                                                        mr: 0.5,
+                                                        color: allBillsOpen ? theme.palette.primary.main : theme.palette.text.secondary,
+                                                    }}
+                                                >
+                                                    {allBillsOpen ? (
+                                                        <UnfoldLessRoundedIcon sx={{ fontSize: 18 }} />
+                                                    ) : (
+                                                        <UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />
+                                                    )}
+                                                </IconButton>
+                                            </Tooltip>
+                                        ) : null,
                                 })}
 
-                                {sec.rows.map((r) =>
-                                    renderRow({
-                                        label: r.label,
-                                        values: r.values,
-                                        tone: r.tone,
-                                        isHeaderRow: false,
-                                        allowNegative: false,
-                                    })
+                                {/* Bills special */}
+                                {sec.id === "bills" ? (
+                                    <>
+                                        {(sec.rows || []).map((cat) => {
+                                            const catId = String(cat.catId || "outros");
+                                            const isOpen = !!openBillCats[catId];
+                                            const children = billsData.childrenByCatId?.get(catId) || [];
+
+                                            const prefixIcon = (
+                                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            toggleBillCat(catId);
+                                                        }}
+                                                        sx={{ p: 0.2, mr: 0.2 }}
+                                                        aria-label={isOpen ? "recolher" : "expandir"}
+                                                    >
+                                                        {isOpen ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} /> : <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />}
+                                                    </IconButton>
+                                                </span>
+                                            );
+
+                                            return (
+                                                <Box key={cat.id}>
+                                                    {renderRow({
+                                                        rowKey: cat.id,
+                                                        label: `↳ ${cat.label} (sub)`,
+                                                        values: cat.values,
+                                                        tone: "billCat",
+                                                        isHeaderRow: false,
+                                                        allowNegative: false,
+                                                        isSubtotal: true,
+                                                        prefixIcon,
+                                                        onClickLabel: () => toggleBillCat(catId),
+                                                    })}
+
+                                                    <Collapse in={isOpen} timeout={180} unmountOnExit>
+                                                        {children.map((p) =>
+                                                            renderRow({
+                                                                rowKey: p.id,
+                                                                label: `   • ${p.label}`,
+                                                                values: p.values,
+                                                                tone: "billPayee",
+                                                                isHeaderRow: false,
+                                                                allowNegative: false,
+                                                                isSubtotal: false,
+                                                            })
+                                                        )}
+                                                    </Collapse>
+                                                </Box>
+                                            );
+                                        })}
+                                    </>
+                                ) : (
+                                    (sec.rows || []).map((r) =>
+                                        renderRow({
+                                            rowKey: r.id,
+                                            label: r.label,
+                                            values: r.values,
+                                            tone: r.tone,
+                                            isHeaderRow: false,
+                                            allowNegative: false,
+                                            isSubtotal: false,
+                                        })
+                                    )
                                 )}
                             </Box>
                         ))}
@@ -1075,11 +1378,13 @@ export default function AccountsMatrix() {
                         {/* RESULTADO */}
                         <Box sx={{ mt: 0.3 }}>
                             {renderRow({
+                                rowKey: "grand_total",
                                 label: "RESULTADO",
                                 values: grandTotalByMonth,
                                 tone: "totals",
                                 isHeaderRow: true,
                                 allowNegative: true,
+                                isSubtotal: false,
                             })}
                         </Box>
                     </Box>

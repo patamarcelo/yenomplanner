@@ -8,6 +8,7 @@ import transactionsReducer from './transactionsSlice.js'
 import billsReducer from "./billsSlice";
 import categoriesReducer from './categoriesSlice.js'
 import invoiceReducer from './invoicesSlice.js'
+import bootstrapreducer from './bootstrapSlice.js'
 
 
 const preloadedState = loadState();
@@ -21,7 +22,8 @@ export const store = configureStore({
     transactions: transactionsReducer,
     bills: billsReducer,
     categories: categoriesReducer,
-    invoices: invoiceReducer
+    invoices: invoiceReducer,
+    bootstrap: bootstrapreducer
   },
   preloadedState, // <-- traz do localStorage se existir
 });

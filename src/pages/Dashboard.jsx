@@ -53,6 +53,7 @@ const dbgGroup = (title, fn) => {
 // =============================
 // Helpers minimalistas
 // =============================
+
 function normalizeISODate(d) {
   if (!d) return "";
   if (d instanceof Date && !isNaN(d.getTime())) {
@@ -481,6 +482,14 @@ export default function Dashboard() {
 
   const accountsStatus = useSelector((s) => s.accounts.status);
   const txStatus = useSelector((s) => s.transactions.status);
+  const bootstrapStatus = useSelector((s) => s.bootstrap.status);
+  const isBootLoading = bootstrapStatus === "loading";
+
+  // “tem dados?” (define o que é “dado suficiente” no seu caso)
+  const hasAnyData =
+    (accounts?.length || 0) > 0 ||
+    (txns?.length || 0) > 0 ||
+    (categories?.length || 0) > 0;
 
   // -----------------------------
   // ✅ Filtros da visualização (Gráfico + Categorias)
@@ -495,7 +504,6 @@ export default function Dashboard() {
     dispatch(bootstrapThunk());
   }, [dispatch, accountsStatus, txStatus]);
 
-  const bootLoading = accountsStatus === "loading" || txStatus === "loading";
 
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
@@ -519,6 +527,13 @@ export default function Dashboard() {
     if (!v) return;
     setVizInstallments(v);
   };
+
+
+  useEffect(() => {
+    console.log('chamadno bootstrapThunk')
+    dispatch(bootstrapThunk());
+  }, []);
+
 
   // -----------------------------
   // Índices mínimos
@@ -544,6 +559,33 @@ export default function Dashboard() {
       return t?.accountId ? String(t.accountId) : null;
     };
   }, []);
+
+  // -----------------------------
+  // ✅ Somente transações de CARTÃO (pra gráfico + categorias)
+  // Regra:
+  // - Se tiver invoiceMonth => é cartão
+  // - Senão: olha o account.type === "credit_card"
+  // -----------------------------
+  const isCardTxn = useMemo(() => {
+    return (t) => {
+      if (!t) return false;
+
+      // ✅ REGRA NOVA: se veio de bill, remove sempre
+      const billId = (t?.billId ?? t?.bill_id ?? "").toString().trim();
+      if (billId) return false;
+
+      // ✅ invoiceMonth => cartão
+      const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
+      if (invYM) return true;
+
+      // ✅ fallback: pelo tipo da conta
+      const accId = resolveAccountIdFromTxn(t);
+      if (!accId) return false;
+
+      const acc = accountsById?.[String(accId)];
+      return String(acc?.type || "").toLowerCase() === "credit_card";
+    };
+  }, [resolveAccountIdFromTxn, accountsById]);
 
   // -----------------------------
   // ✅ Regra ÚNICA do mês do Dashboard (KPI)
@@ -632,7 +674,7 @@ export default function Dashboard() {
     return (bills || [])
       .filter((b) => {
         if (!b?.active) return false;
-        if (String(b?.kind || "").toLowerCase() !== "recurring") return false;
+        // if (String(b?.kind || "").toLowerCase() !== "recurring") return false;
 
         const start = String(b?.startMonth || "").slice(0, 7);
         const end = String(b?.endMonth || "").slice(0, 7) || start;
@@ -709,6 +751,7 @@ export default function Dashboard() {
 
     for (const t of txns || []) {
       if (!t) continue;
+      if (!isCardTxn(t)) continue; // ✅ só cartão (remove bills/conta corrente)
       if (normalizeDirectionFromTxn(t) !== "expense") continue;
 
       const refYMD = resolveVizDateYMD(t);
@@ -747,7 +790,7 @@ export default function Dashboard() {
     }
 
     return out;
-  }, [txns, month, vizInstallments, resolveVizDateYMD, resolveVizAmountExpense]);
+  }, [txns, month, vizInstallments, resolveVizDateYMD, resolveVizAmountExpense, isCardTxn]);
 
   const chartStack = useMemo(() => {
     if (!month) return { data: [], catKeys: [], catMeta: new Map() };
@@ -868,7 +911,35 @@ export default function Dashboard() {
   // Faturas por cartão (mantém sua base KPI monthTx)
   // -----------------------------
   const invoicesByCard = useMemo(() => {
-    const sums = new Map();
+    const sums = new Map();        // accId -> total
+    const invYMByAcc = new Map();  // accId -> invYM (YYYY-MM)
+
+    const pad2 = (n) => String(n).padStart(2, "0");
+
+    const brFromYMAndDay = (ym, day) => {
+      if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return "—";
+      const [yy, mm] = ym.split("-").map(Number);
+      if (!Number.isFinite(yy) || !Number.isFinite(mm)) return "—";
+
+      const dueDay = Number(day);
+      if (!Number.isFinite(dueDay) || dueDay < 1) return "—";
+
+      // garante último dia do mês (ex: vencimento 31 em fevereiro)
+      const lastDay = new Date(yy, mm, 0).getDate(); // mm é 1..12 aqui
+      const dd = Math.min(dueDay, lastDay);
+
+      return `${pad2(dd)}/${pad2(mm)}/${yy}`;
+    };
+
+    const getDueDayFromAccount = (a) => {
+      const v =
+        a?.statement?.dueDay ??
+        a?.statement?.due_day ??
+        a?.dueDay ??
+        a?.due_day;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
 
     for (const t of monthTx || []) {
       const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
@@ -887,18 +958,32 @@ export default function Dashboard() {
       const v = Math.abs(Math.min(0, signedAmountNormalized(t)));
       if (!v) continue;
 
-      sums.set(String(accId), (sums.get(String(accId)) || 0) + v);
+      const k = String(accId);
+
+      sums.set(k, (sums.get(k) || 0) + v);
+
+      // guarda o invoiceMonth daquele cartão (normalmente será único no monthTx)
+      // se por algum motivo vier mais de um, pegamos o maior (mais recente)
+      const prev = invYMByAcc.get(k);
+      if (!prev || String(invYM).localeCompare(String(prev)) > 0) {
+        invYMByAcc.set(k, invYM);
+      }
     }
 
     return Array.from(sums.entries())
       .map(([accId, total]) => {
         const a = accountsById?.[String(accId)] || {};
+
+        const invYM = invYMByAcc.get(String(accId)) || "";
+        const dueDay = getDueDayFromAccount(a);
+        const dueLabel = dueDay ? brFromYMAndDay(invYM, dueDay) : "—";
+
         return {
           id: String(accId),
           name: a?.name || "Cartão",
           color: a?.color || null,
           total: Number((total || 0).toFixed(2)),
-          dueLabel: "—",
+          dueLabel, // ✅ agora calcula de verdade
         };
       })
       .sort((a, b) => (b.total || 0) - (a.total || 0));
@@ -908,7 +993,9 @@ export default function Dashboard() {
     return Number((invoicesByCard || []).reduce((acc, r) => acc + Number(r.total || 0), 0).toFixed(2));
   }, [invoicesByCard]);
 
-  if (bootLoading) return <Spinner status={bootLoading} />;
+  if (isBootLoading && !hasAnyData) {
+    return <Spinner status="loading" />;
+  }
 
   const installmentsLabel =
     vizInstallments === "parts"
@@ -920,6 +1007,11 @@ export default function Dashboard() {
   return (
     <Stack spacing={2.25} sx={{ width: "100%" }}>
       {/* KPIs */}
+      {isBootLoading && hasAnyData ? (
+        <Box sx={{ width: "100%" }}>
+          <LinearProgress />
+        </Box>
+      ) : null}
       <Box
         sx={{
           display: "grid",
@@ -1189,6 +1281,7 @@ export default function Dashboard() {
                       return (invoicesByCard || []).map((c, idx) => {
                         const pct = clamp((Number(c.total || 0) / Number(top || 1)) * 100, 0, 100);
                         const base = c.color || pickFallbackColor(theme, c.id || c.name);
+                        console.log('invoicesByCard', invoicesByCard)
                         return (
                           <React.Fragment key={c.id}>
                             <Box
