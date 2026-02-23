@@ -20,6 +20,7 @@ import {
     CircularProgress,
     IconButton,
     Tooltip,
+    Autocomplete
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 
@@ -280,7 +281,7 @@ function formatBRLFromCents(cents) {
     return formatBRNumber(c / 100);
 }
 
-function BillsFormDialog({ open, onClose, initial }) {
+function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
     const dispatch = useDispatch();
     const isEdit = !!initial?.id;
     const categories = useSelector(selectActiveCategories);
@@ -314,6 +315,7 @@ function BillsFormDialog({ open, onClose, initial }) {
 
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
+
 
     useEffect(() => {
         const x = initial || {};
@@ -523,13 +525,63 @@ function BillsFormDialog({ open, onClose, initial }) {
 
                     <TextField sx={fieldSx} label="Descrição *" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth />
 
-                    <TextField
-                        sx={fieldSx}
-                        label="Favorecido"
-                        value={payee}
-                        onChange={(e) => setPayee(e.target.value)}
-                        fullWidth
-                        helperText="Depois a gente troca por Autocomplete com histórico do usuário."
+                    <Autocomplete
+                        freeSolo
+                        options={payeeOptions}
+                        value={
+                            // quando for digitado livre (string), mantém string
+                            // quando selecionar opção, mantém objeto (vamos traduzir abaixo)
+                            payee ? payee : ""
+                        }
+                        inputValue={payee}
+                        onInputChange={(_, newInputValue) => {
+                            setPayee(newInputValue);
+                        }}
+                        onChange={(_, newValue) => {
+                            // newValue pode ser: string (freeSolo) ou {label,count} (option)
+                            if (typeof newValue === "string") setPayee(newValue);
+                            else if (newValue && typeof newValue === "object") setPayee(newValue.label || "");
+                            else setPayee("");
+                        }}
+                        getOptionLabel={(opt) => {
+                            if (typeof opt === "string") return opt;
+                            return opt?.label || "";
+                        }}
+                        isOptionEqualToValue={(opt, val) => {
+                            const o = typeof opt === "string" ? opt : opt?.label;
+                            const v = typeof val === "string" ? val : val?.label;
+                            return String(o || "").toLowerCase() === String(v || "").toLowerCase();
+                        }}
+                        renderOption={(props, option) => {
+                            const label = typeof option === "string" ? option : option?.label;
+                            const count = typeof option === "object" ? option?.count : null;
+
+                            return (
+                                <li {...props}>
+                                    <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ width: "100%" }}>
+                                        <span style={{ fontWeight: 800 }}>{label}</span>
+                                        {count ? (
+                                            <Chip
+                                                size="small"
+                                                label={`${count}x`}
+                                                variant="outlined"
+                                                sx={{ ml: 1, opacity: 0.85, fontWeight: 900 }}
+                                            />
+                                        ) : null}
+                                    </Stack>
+                                </li>
+                            );
+                        }}
+                        renderInput={(params) => (
+                            <TextField
+                                {...params}
+                                sx={fieldSx}
+                                label="Favorecido"
+                                fullWidth
+                                placeholder="Ex: Supermercado, Uber, Claro..."
+                                helperText="Sugestões baseadas no histórico."
+                            />
+                        )}
                     />
 
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
@@ -916,7 +968,7 @@ export default function BillsPage() {
     // ✅ data atual (usada pra defaults)
     const now = new Date();
     const currentYear = String(now.getFullYear());
-    const currentMonth = String(now.getMonth() + 1).padStart(2, "0"); 
+    const currentMonth = String(now.getMonth() + 1).padStart(2, "0");
 
     // mês: "all" = Todos (mas o default ao abrir é o mês corrente)
     const [filterMonth, setFilterMonth] = useState(currentMonth);
@@ -971,6 +1023,43 @@ export default function BillsPage() {
         (categories || []).forEach((c) => m.set(String(c.slug), c));
         return m;
     }, [categories]);
+
+
+    // === sugestões de Favorecido (histórico) ===
+    // pega de txns (merchant/payee/description) e também de bills existentes
+    const payeeOptions = useMemo(() => {
+        const counts = new Map(); // key(normalized) -> { label, count }
+
+        const bump = (raw) => {
+            const s = String(raw || "").trim();
+            if (!s) return;
+
+            // normalização simples (igual prática em merchants)
+            const key = s.toLowerCase().replace(/\s+/g, " ").trim();
+            if (!key) return;
+
+            const cur = counts.get(key);
+            if (cur) counts.set(key, { label: cur.label, count: cur.count + 1 });
+            else counts.set(key, { label: s, count: 1 });
+        };
+
+        // transactions
+        (txns || []).forEach((t) => {
+            // ajuste os campos conforme seu modelo
+            bump(t?.merchant);
+            bump(t?.payee);
+            // opcional: algumas bases usam "description" como merchant
+            // bump(t?.description);
+        });
+
+        // bills já cadastradas
+        (bills || []).forEach((b) => bump(b?.payee));
+
+        // ordena por frequência desc, depois alfabético
+        return Array.from(counts.values())
+            .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label, "pt-BR"))
+            .slice(0, 80); // limita (performance/UI)
+    }, [txns, bills]);
 
 
     function resolveCategoryFromBill(b) {
@@ -1666,8 +1755,8 @@ export default function BillsPage() {
                 )}
 
                 {/* ✅ dialogs sempre fora do loading */}
-                <BillsFormDialog open={openNew} onClose={() => setOpenNew(false)} initial={null} />
-                <BillsFormDialog open={!!editBill} onClose={() => setEditBill(null)} initial={editBill} />
+                <BillsFormDialog open={openNew} onClose={() => setOpenNew(false)} initial={null} payeeOptions={payeeOptions} />
+                <BillsFormDialog open={!!editBill} onClose={() => setEditBill(null)} initial={editBill} payeeOptions={payeeOptions} />
                 <GenerateDialog open={!!genBill} onClose={() => setGenBill(null)} bill={genBill} />
                 <PayBillDialog open={!!payBill} onClose={() => setPayBill(null)} bill={payBill} />
             </Stack>
