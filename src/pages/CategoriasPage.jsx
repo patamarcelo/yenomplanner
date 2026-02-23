@@ -14,6 +14,7 @@ import {
   IconButton,
   Tooltip,
   Chip,
+  useTheme
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { alpha } from "@mui/material/styles";
@@ -71,6 +72,8 @@ function CategoryDialog({ open, onClose, initial }) {
   const dispatch = useDispatch();
   const creating = useSelector(selectCategoriesCreating);
   const updating = useSelector(selectCategoriesUpdating);
+  const theme = useTheme();
+
 
   const isEdit = !!initial?.id;
 
@@ -79,6 +82,42 @@ function CategoryDialog({ open, onClose, initial }) {
   const [color, setColor] = useState(initial?.color || "");
   const [active, setActive] = useState(initial?.active !== false);
   const [err, setErr] = useState("");
+
+  function normalizeColorForSave(input) {
+    const s = String(input || "").trim();
+    if (!s) return null;
+
+    // formatos já OK
+    if (s.startsWith("#") || /^rgba?\(/i.test(s) || /^hsla?\(/i.test(s)) return s;
+
+    // palette keys do MUI (primary, success, etc.)
+    const key = s.toLowerCase();
+    const pal = theme?.palette?.[key];
+    if (pal?.main) return pal.main;
+
+    // nomes CSS comuns (expanda se quiser)
+    const NAMED = {
+      blue: "#0000ff",
+      red: "#ff0000",
+      green: "#00ff00",
+      yellow: "#ffff00",
+      orange: "#ffa500",
+      purple: "#800080",
+      pink: "#ffc0cb",
+      black: "#000000",
+      white: "#ffffff",
+      gray: "#808080",
+      grey: "#808080",
+      cyan: "#00ffff",
+      magenta: "#ff00ff",
+      teal: "#008080",
+      lime: "#00ff00",
+    };
+    if (NAMED[key]) return NAMED[key];
+
+    // se não reconheceu, devolve null (ou você pode manter s e deixar o fallback no render)
+    return null;
+  }
 
   useEffect(() => {
     const x = initial || {};
@@ -91,7 +130,10 @@ function CategoryDialog({ open, onClose, initial }) {
 
   function validate() {
     if (!String(name || "").trim()) return "Informe o nome da categoria.";
-    if (String(color || "").length > 0 && String(color || "").length < 3) return "Cor inválida.";
+    const c = String(color || "").trim();
+    if (c && !normalizeColorForSave(c)) {
+      return 'Cor inválida. Use "#rrggbb", "rgba(...)", ou nomes como "blue"/"primary".';
+    }
     return "";
   }
 
@@ -100,10 +142,12 @@ function CategoryDialog({ open, onClose, initial }) {
     const e = validate();
     if (e) return setErr(e);
 
+    const colorNorm = normalizeColorForSave(color);
+
     const payload = {
       name: String(name).trim(),
       icon: String(icon || "").trim() || null,
-      color: String(color || "").trim() || null,
+      color: colorNorm,
       active: !!active,
     };
 
