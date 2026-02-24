@@ -1,5 +1,5 @@
 // src/pages/BillsPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
     Box,
     Stack,
@@ -21,6 +21,8 @@ import {
     IconButton,
     Tooltip,
     Autocomplete,
+    Collapse,
+    Badge,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
@@ -36,6 +38,10 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import FilterAltRoundedIcon from "@mui/icons-material/FilterAltRounded";
 import ClearRoundedIcon from "@mui/icons-material/ClearRounded";
 import FiberManualRecordRoundedIcon from "@mui/icons-material/FiberManualRecordRounded";
+import ViewKanbanRoundedIcon from "@mui/icons-material/ViewKanbanRounded";
+import ViewTimelineRoundedIcon from "@mui/icons-material/ViewTimelineRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -52,23 +58,27 @@ import {
     selectBillsLastGenerateResult,
     payBillThunk,
     deleteBillSeriesThunk,
-    reopenBillThunk, // se não existir no slice, remova a import e o botão “Reabrir”
+    reopenBillThunk, // se não existir no slice, remova o import e o botão “Reabrir”
 } from "../store/billsSlice";
 
 import { fetchAllTransactionsThunk, selectTransactionsApi } from "../store/transactionsSlice";
 import { listAccounts } from "../api/accountsApi";
 
 import { formatBRL } from "../utils/money";
-
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-
 import { selectActiveCategories, fetchCategoriesThunk } from "../store/categoriesSlice";
 
 import Swal from "sweetalert2";
 import SpinnerPage from "../components/ui/Spinner";
 
-const pageSx = { maxWidth: 1120, mx: "auto", px: { xs: 2, md: 3 }, py: 2 };
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+
+import { DndContext, DragOverlay, useDraggable, useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
+
+
+const pageSx = { maxWidth: 1180, mx: "auto", px: { xs: 2, md: 3 }, py: 2 };
 
 /* =========================
    Helpers
@@ -366,7 +376,6 @@ function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
         }
     }
 
-    const monthFieldProps = { type: "month", InputLabelProps: { shrink: true } };
     const borderColor = "rgba(25,118,210,0.28)";
     const gradientAccent = "rgba(25,118,210,0.16)";
     const tintBg = "rgba(255,255,255,0.92)";
@@ -387,7 +396,7 @@ function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
             PaperProps={{
                 sx: {
                     color: "rgba(15,23,42,0.98)",
-                    borderRadius: 2,
+                    borderRadius: 2.25,
                     border: `1.5px solid ${borderColor}`,
                     background: `linear-gradient(-180deg, ${gradientAccent} 10%, ${tintBg} 36px, rgba(255,255,255,0.98) 84%)`,
                     boxShadow: "0 14px 40px rgba(2,6,23,0.10)",
@@ -438,7 +447,14 @@ function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
                             );
                         }}
                         renderInput={(params) => (
-                            <TextField {...params} sx={fieldSx} label="Favorecido" fullWidth placeholder="Ex: Supermercado, Uber, Claro..." helperText="Sugestões baseadas no histórico." />
+                            <TextField
+                                {...params}
+                                sx={fieldSx}
+                                label="Favorecido"
+                                fullWidth
+                                placeholder="Ex: Supermercado, Uber, Claro..."
+                                helperText="Sugestões baseadas no histórico."
+                            />
                         )}
                     />
 
@@ -756,6 +772,9 @@ export default function BillsPage() {
     const currentYear = String(now.getFullYear());
     const currentMonth = String(now.getMonth() + 1).padStart(2, "0");
 
+    const [viewMode, setViewMode] = useState("board"); // board | timeline
+    const [filtersOpen, setFiltersOpen] = useState(true);
+
     const [filterKind, setFilterKind] = useState("all");
     const [filterStatuses, setFilterStatuses] = useState(["planned", "due_today", "overdue"]);
     const [q, setQ] = useState("");
@@ -764,6 +783,27 @@ export default function BillsPage() {
     const [filterYear, setFilterYear] = useState(currentYear);
     const [filterCategory, setFilterCategory] = useState("all");
 
+    const [activeDrag, setActiveDrag] = useState(null); // { bill, dueISO, uiStatus }
+
+    const handleDragStart = (event) => {
+        const data = event?.active?.data?.current;
+        if (data?.bill) setActiveDrag(data);
+    };
+
+    const handleDragEnd = (event) => {
+        const data = event?.active?.data?.current;
+        const overId = event?.over?.id;
+
+        setActiveDrag(null);
+
+        if (!data?.bill) return;
+
+        // Drop na coluna "Pago" => abre confirmação (PayBillDialog)
+        if (overId === "drop:paid") {
+            setPayBill(data.bill);
+        }
+    };
+
     useEffect(() => {
         dispatch(fetchBillsThunk());
         dispatch(fetchAllTransactionsThunk());
@@ -771,14 +811,14 @@ export default function BillsPage() {
     }, [dispatch]);
 
     const yearOptions = useMemo(() => {
-        const set = new Set();
+        const set = new Set([currentYear]);
         (bills || []).forEach((b) => {
             const ym = String(b.startMonth || "").slice(0, 7);
             const y = ym ? ym.slice(0, 4) : "";
             if (y) set.add(y);
         });
         return Array.from(set).sort();
-    }, [bills]);
+    }, [bills, currentYear]);
 
     const categoriesById = useMemo(() => {
         const m = new Map();
@@ -903,29 +943,37 @@ export default function BillsPage() {
             });
     }, [bills, q, filterKind, filterYear, filterMonth, filterStatuses, billStatusForMonth, filterCategory]);
 
-    // ===== UI status meta =====
+    // ===== UI status meta (mais chamativo/moderno) =====
     const STATUS_META = useMemo(() => {
         const c = theme.palette;
         return {
             paid: {
                 label: "Pago",
                 dot: c.success.main,
-                chipSx: { bgcolor: alpha(c.success.main, 0.16), borderColor: alpha(c.success.main, 0.55), color: c.success.dark },
+                chipSx: { bgcolor: alpha(c.success.main, 0.18), borderColor: alpha(c.success.main, 0.55), color: c.success.dark },
+                cardRing: alpha(c.success.main, 0.42),
+                glow: alpha(c.success.main, 0.12),
             },
             due_today: {
                 label: "Vence hoje",
                 dot: c.warning.main,
-                chipSx: { bgcolor: alpha(c.warning.main, 0.20), borderColor: alpha(c.warning.main, 0.65), color: c.warning.dark },
+                chipSx: { bgcolor: alpha(c.warning.main, 0.22), borderColor: alpha(c.warning.main, 0.70), color: c.warning.dark },
+                cardRing: alpha(c.warning.main, 0.50),
+                glow: alpha(c.warning.main, 0.14),
             },
             overdue: {
                 label: "Atrasado",
                 dot: c.error.main,
-                chipSx: { bgcolor: alpha(c.error.main, 0.18), borderColor: alpha(c.error.main, 0.60), color: c.error.dark },
+                chipSx: { bgcolor: alpha(c.error.main, 0.20), borderColor: alpha(c.error.main, 0.70), color: c.error.dark },
+                cardRing: alpha(c.error.main, 0.52),
+                glow: alpha(c.error.main, 0.14),
             },
             planned: {
                 label: "Previsto",
                 dot: c.info.main,
-                chipSx: { bgcolor: alpha(c.info.main, 0.14), borderColor: alpha(c.info.main, 0.55), color: c.info.dark },
+                chipSx: { bgcolor: alpha(c.info.main, 0.18), borderColor: alpha(c.info.main, 0.58), color: c.info.dark },
+                cardRing: alpha(c.info.main, 0.42),
+                glow: alpha(c.info.main, 0.10),
             },
         };
     }, [theme]);
@@ -941,7 +989,7 @@ export default function BillsPage() {
                 sx={{
                     fontWeight: 950,
                     letterSpacing: -0.2,
-                    borderWidth: 1.6,
+                    borderWidth: 1.7,
                     borderRadius: 999,
                     height: dense ? 26 : 28,
                     ...m.chipSx,
@@ -968,18 +1016,57 @@ export default function BillsPage() {
 
     const today = todayISO();
 
-    // ===== timeline + totais =====
+    const safeCents = useCallback((bill) => {
+        const v = bill?.defaultAmount;
+        if (v === null || v === undefined) return 0;
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0;
+        return Math.round(n * 100);
+    }, []);
+
+    // ===== KPIs do período atual (filtros aplicados) =====
+    const kpis = useMemo(() => {
+        const out = { paid: 0, due_today: 0, overdue: 0, planned: 0, open: 0, all: 0, count: 0 };
+        (filteredBills || []).forEach((b) => {
+            const dueISO = isoFromYMDay(b.startMonth || `${filterYear}-${filterMonth}`, b.dayOfMonth);
+            const base = billStatusForMonth.get(b.id) || "planned";
+            const uiStatus = computeUiStatus({ baseStatus: base, dueISO, todayISO: today });
+            const cents = safeCents(b);
+            out.count += 1;
+            out.all += cents;
+            out[uiStatus] = (out[uiStatus] || 0) + cents;
+            out.open += uiStatus === "paid" ? 0 : cents;
+        });
+        return out;
+    }, [filteredBills, billStatusForMonth, filterYear, filterMonth, today, safeCents]);
+
+    // ===== Board columns =====
+    const board = useMemo(() => {
+        const cols = { overdue: [], due_today: [], planned: [], paid: [] };
+        (filteredBills || []).forEach((b) => {
+            const dueISO = isoFromYMDay(b.startMonth || `${filterYear}-${filterMonth}`, b.dayOfMonth);
+            const base = billStatusForMonth.get(b.id) || "planned";
+            const uiStatus = computeUiStatus({ baseStatus: base, dueISO, todayISO: today });
+            cols[uiStatus] = cols[uiStatus] || [];
+            cols[uiStatus].push({ bill: b, dueISO, uiStatus });
+        });
+
+        Object.keys(cols).forEach((k) => {
+            cols[k] = (cols[k] || []).sort((a, b) => {
+                const ad = a.dueISO || "9999-99-99";
+                const bd = b.dueISO || "9999-99-99";
+                if (ad !== bd) return ad.localeCompare(bd);
+                return String(a.bill?.name || "").localeCompare(String(b.bill?.name || ""), "pt-BR");
+            });
+        });
+
+        return cols;
+    }, [filteredBills, billStatusForMonth, filterYear, filterMonth, today]);
+
+    // ===== timeline (mantive, mas agora é view secundária) =====
     const timeline = useMemo(() => {
         const buckets = new Map();
         const fallbackYM = `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
-
-        const safeCents = (bill) => {
-            const v = bill?.defaultAmount;
-            if (v === null || v === undefined) return 0;
-            const n = Number(v);
-            if (!Number.isFinite(n)) return 0;
-            return Math.round(n * 100);
-        };
 
         (filteredBills || []).forEach((b) => {
             const dueYM = b.startMonth || fallbackYM;
@@ -1005,14 +1092,12 @@ export default function BillsPage() {
             const dayKeys = Array.from(byDay.keys()).sort();
 
             const days = dayKeys.map((dayKey) => {
-                const items = (byDay.get(dayKey) || [])
-                    .slice()
-                    .sort((a, b) => {
-                        const ad = a.dueISO || "9999-99-99";
-                        const bd = b.dueISO || "9999-99-99";
-                        if (ad !== bd) return ad.localeCompare(bd);
-                        return String(a.bill?.name || "").localeCompare(String(b.bill?.name || ""), "pt-BR");
-                    });
+                const items = (byDay.get(dayKey) || []).slice().sort((a, b) => {
+                    const ad = a.dueISO || "9999-99-99";
+                    const bd = b.dueISO || "9999-99-99";
+                    if (ad !== bd) return ad.localeCompare(bd);
+                    return String(a.bill?.name || "").localeCompare(String(b.bill?.name || ""), "pt-BR");
+                });
 
                 const totals = items.reduce(
                     (acc, it) => {
@@ -1048,7 +1133,7 @@ export default function BillsPage() {
 
             return { monthKey, monthLabel: monthYearLabelFromYM(monthKey), monthTotals, days };
         });
-    }, [filteredBills, billStatusForMonth, filterMonth, filterYear, today]);
+    }, [filteredBills, billStatusForMonth, filterMonth, filterYear, today, safeCents]);
 
     const monthOptions = [
         { v: "all", label: "Todos" },
@@ -1133,424 +1218,910 @@ export default function BillsPage() {
         setFilterKind("all");
     };
 
+    const hasActiveFilters = useMemo(() => {
+        const defStatuses = ["planned", "due_today", "overdue"];
+        const sameStatuses =
+            (filterStatuses || []).length === defStatuses.length &&
+            defStatuses.every((s) => (filterStatuses || []).includes(s));
+
+        return (
+            filterMonth !== "all" ||
+            String(filterYear) !== String(currentYear) ||
+            filterKind !== "all" ||
+            filterCategory !== "all" ||
+            !!String(q || "").trim() ||
+            !sameStatuses
+        );
+    }, [filterMonth, filterYear, currentYear, filterKind, filterCategory, q, filterStatuses]);
+
+    // ===== UI: Card compacto do Bill =====
+    function BoardBillCard({
+        b,
+        dueISO,
+        uiStatus,
+        onPay,
+        onEdit,
+        onDelete,
+        onGenerate,
+        onReopen,
+        resolveCategoryFromBill,
+        STATUS_META,
+        theme,
+    }) {
+        const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useDraggable({
+            id: `bill:${b.id}`,
+            data: { bill: b, dueISO, uiStatus },
+        });
+
+        const style = { transform: CSS.Transform.toString(transform), transition };
+
+        const sm = STATUS_META[uiStatus] || STATUS_META.planned;
+        const meta = kindMeta(b.kind);
+        const cat = resolveCategoryFromBill(b);
+        const amount = moneySafe(b.defaultAmount);
+        const due = formatBRDate(dueISO);
+
+        const showPay = uiStatus !== "paid";
+
+        return (
+            <Card
+                ref={setNodeRef}
+                style={style}
+                variant="outlined"
+                sx={{
+                    borderRadius: 1,
+                    borderColor: alpha(sm.dot, 0.22),
+                    bgcolor: "background.paper",
+                    overflow: "hidden",
+                    position: "relative",
+                    opacity: isDragging ? 0.6 : 1,
+                    boxShadow: isDragging ? `0 18px 46px ${alpha(sm.dot, 0.18)}` : "none",
+                    transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
+                    "&:hover": {
+                        borderColor: alpha(sm.dot, 0.45),
+                        boxShadow: `0 14px 38px ${alpha(sm.dot, 0.10)}`,
+                        transform: "translateY(-1px)",
+                    },
+
+                    "&:hover .drag-handle": { opacity: 1 },
+                    "&:hover .board-actions-wrapper": {
+                        height: 54,        // altura real da área (ajuste se precisar)
+                        opacity: 1,
+                    },
+                    "&:hover .board-actions": {
+                        opacity: 1,
+                        transform: "translateY(0px)",
+                        pointerEvents: "auto", // ✅ agora clica só no hover
+                    },
+                }}
+            >
+                {/* faixa lateral sutil */}
+                <Box
+                    sx={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 4,
+                        bgcolor: alpha(sm.dot, 0.9),
+                    }}
+                />
+
+                <CardContent sx={{ p: 1.35, pl: 1.75 }}>
+                    {/* topo: título + status */}
+                    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
+                        <Box sx={{ minWidth: 0 }}>
+                            <Typography sx={{ fontWeight: 950, lineHeight: 1.15 }} noWrap title={b.name}>
+                                {b.name}
+                            </Typography>
+
+                            {/* subline: tipo + parcela (pequeno e discreto) */}
+                            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.45, flexWrap: "wrap" }}>
+                                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 900 }}>
+                                    {meta.label}
+                                </Typography>
+
+                                {b.installmentTotal ? (
+                                    <Typography
+                                        variant="caption"
+                                        sx={{
+                                            color: alpha(theme.palette.text.primary, 0.55),
+                                            fontWeight: 950,
+                                            px: 0.8,
+                                            py: 0.15,
+                                            borderRadius: 999,
+                                            border: `1px solid ${alpha(theme.palette.secondary.main, 0.25)}`,
+                                            bgcolor: alpha(theme.palette.secondary.main, 0.06),
+                                        }}
+                                    >
+                                        {b.installmentCurrent}/{b.installmentTotal}
+                                    </Typography>
+                                ) : null}
+                            </Stack>
+                        </Box>
+
+                        {/* status pill menor e mais clean */}
+                        <Box
+                            sx={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 0.6,
+                                px: 1,
+                                py: 0.35,
+                                borderRadius: 0.6,
+                                border: `1px solid ${alpha(sm.dot, 0.30)}`,
+                                bgcolor: alpha(sm.dot, 0.10),
+                                color: sm.chipSx?.color || "text.primary",
+                                fontWeight: 950,
+                                fontSize: 12,
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            <Box sx={{ width: 8, height: 8, borderRadius: 999, bgcolor: sm.dot }} />
+                            {sm.label}
+                        </Box>
+                    </Stack>
+
+                    {/* linha forte: vencimento + valor */}
+                    <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mt: 1 }}>
+                        <Typography
+                            variant="body2"
+                            sx={{
+                                fontWeight: 950,
+                                color:
+                                    uiStatus === "overdue"
+                                        ? theme.palette.error.main
+                                        : uiStatus === "due_today"
+                                            ? theme.palette.warning.dark
+                                            : "text.secondary",
+                            }}
+                        >
+                            {due}
+                        </Typography>
+
+                        <Typography sx={{ fontWeight: 950, letterSpacing: -0.2, fontSize: 16 }}>
+                            {amount}
+                        </Typography>
+                    </Stack>
+
+                    {/* metadados em linha fina */}
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ mt: 0.9 }}>
+                        <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
+                            <Box
+                                sx={{
+                                    px: 0.9,
+                                    py: 0.35,
+                                    borderRadius: 0.6,
+                                    bgcolor: cat?.color ? alpha(cat.color, 0.10) : alpha(theme.palette.text.primary, 0.04),
+                                    border: `1px solid ${cat?.color ? alpha(cat.color, 0.28) : alpha(theme.palette.text.primary, 0.12)}`,
+                                    fontWeight: 950,
+                                    fontSize: 12,
+                                    maxWidth: 160,
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                }}
+                                title={cat?.name || "—"}
+                            >
+                                {cat?.name || "—"}
+                            </Box>
+
+                            {b.payee ? (
+                                <Typography
+                                    variant="caption"
+                                    sx={{ color: "text.secondary", fontWeight: 850, minWidth: 0 }}
+                                    noWrap
+                                    title={b.payee}
+                                >
+                                    {b.payee}
+                                </Typography>
+                            ) : null}
+                        </Stack>
+
+                        {/* handle drag discreto */}
+                        <Tooltip title="Arrastar (solte em Pago para pagar)">
+                            <IconButton
+                                className="drag-handle"
+                                size="small"
+                                {...listeners}
+                                {...attributes}
+                                sx={{
+                                    opacity: 0,
+                                    transition: "opacity 120ms ease",
+                                    border: `1px solid ${alpha(theme.palette.text.primary, 0.10)}`,
+                                    bgcolor: alpha(theme.palette.text.primary, 0.03),
+                                    "&:hover": { bgcolor: alpha(theme.palette.text.primary, 0.06) },
+                                }}
+                            >
+                                <span className="material-symbols-rounded" style={{ fontSize: 18, lineHeight: 1 }}>
+                                    drag_indicator
+                                </span>
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
+
+                    {/* ações (aparecem no hover) */}
+                    <Box
+                        className="board-actions-wrapper"
+                        sx={{
+                            overflow: "hidden",
+                            height: 0,
+                            opacity: 0,
+                            transition: "height 160ms ease, opacity 120ms ease",
+                        }}
+                    >
+                        <Divider sx={{ my: 1 }} />
+
+                        <Stack
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                        >
+                            <Stack direction="row" spacing={0.7}>
+                                {uiStatus !== "paid" ? (
+                                    <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => onPay(b)}
+                                        startIcon={<PaidRoundedIcon />}
+                                        sx={{ fontWeight: 950, borderRadius: 999, px: 1.2 }}
+                                    >
+                                        Pagar
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<ReplayRoundedIcon />}
+                                        onClick={() => onReopen(b)}
+                                        sx={{ fontWeight: 950, borderRadius: 999, px: 1.2 }}
+                                    >
+                                        Reabrir
+                                    </Button>
+                                )}
+                            </Stack>
+
+                            <Stack direction="row" spacing={0.4}>
+                                <IconButton size="small" onClick={() => onEdit(b)}>
+                                    <EditRoundedIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton size="small" onClick={() => onGenerate(b)}>
+                                    <PlayArrowRoundedIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton
+                                    size="small"
+                                    onClick={() => onDelete(b)}
+                                    sx={{ color: theme.palette.error.main }}
+                                >
+                                    <DeleteOutlineRoundedIcon fontSize="small" />
+                                </IconButton>
+                            </Stack>
+                        </Stack>
+                    </Box>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    function PaidDropZone({ children, theme }) {
+        const { setNodeRef, isOver } = useDroppable({ id: "drop:paid" });
+
+        return (
+            <Box
+                ref={setNodeRef}
+                sx={{
+                    borderRadius: 2,
+                    outline: isOver ? `2px dashed ${alpha(theme.palette.success.main, 0.85)}` : "2px dashed transparent",
+                    outlineOffset: 6,
+                    transition: "outline-color 120ms ease",
+                }}
+            >
+                {children}
+            </Box>
+        );
+    }
+
+    function KpiChip({ stKey, label, cents, accent }) {
+        const m = STATUS_META[stKey] || STATUS_META.planned;
+        const value = formatBRL((cents || 0) / 100);
+        return (
+            <Chip
+                label={
+                    <span>
+                        <span style={{ fontWeight: 950 }}>{label}:</span>{" "}
+                        <span style={{ fontWeight: 950 }}>{value}</span>
+                    </span>
+                }
+                icon={<FiberManualRecordRoundedIcon sx={{ fontSize: 14, color: m.dot }} />}
+                variant="outlined"
+                sx={{
+                    borderRadius: 999,
+                    fontWeight: 950,
+                    borderWidth: 1.6,
+                    borderColor: alpha(m.dot, 0.55),
+                    bgcolor: alpha(m.dot, 0.12),
+                    "& .MuiChip-icon": { ml: 0.45, mr: -0.2 },
+                    ...(accent ? { bgcolor: alpha(m.dot, 0.18), borderColor: alpha(m.dot, 0.70) } : null),
+                }}
+            />
+        );
+    }
+
     return (
         <Box sx={pageSx}>
             <Stack spacing={1.2}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                {/* HEADER */}
+                <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1}>
                     <Box>
                         <Typography variant="h5" sx={{ fontWeight: 950 }}>
-                            Despesas (Bills)
+                            Despesas
                         </Typography>
                         <Typography variant="body2" sx={{ color: "text.secondary" }}>
                             Total: <b>{bills.length}</b> • Ativas: <b>{activeCount}</b>
                         </Typography>
                     </Box>
 
-                    <Button variant="contained" startIcon={<AddRoundedIcon />} sx={{ fontWeight: 950 }} onClick={() => setOpenNew(true)}>
-                        Nova despesa
-                    </Button>
+                    <Stack direction="row" spacing={1} justifyContent={{ xs: "space-between", sm: "flex-end" }}>
+                        <ToggleButtonGroup
+                            value={viewMode}
+                            exclusive
+                            onChange={(_, v) => v && setViewMode(v)}
+                            sx={{
+                                "& .MuiToggleButton-root": {
+                                    borderRadius: 2,
+                                    textTransform: "none",
+                                    fontWeight: 950,
+                                    px: 1.2,
+                                    py: 0.75,
+                                },
+                            }}
+                        >
+                            <ToggleButton value="board">
+                                <ViewKanbanRoundedIcon sx={{ fontSize: 18, mr: 0.7 }} />
+                                Board
+                            </ToggleButton>
+                            <ToggleButton value="timeline">
+                                <ViewTimelineRoundedIcon sx={{ fontSize: 18, mr: 0.7 }} />
+                                Timeline
+                            </ToggleButton>
+                        </ToggleButtonGroup>
+
+                        <Button variant="contained" startIcon={<AddRoundedIcon />} sx={{ fontWeight: 950 }} onClick={() => setOpenNew(true)}>
+                            Nova despesa
+                        </Button>
+                    </Stack>
                 </Stack>
 
-                <Divider />
+                {/* KPIs */}
+                <Card variant="outlined" sx={{ borderRadius: 2 }}>
+                    <CardContent sx={{ py: 1.2 }}>
+                        <Stack spacing={1}>
+                            <Stack direction={{ xs: "column", md: "row" }} alignItems={{ xs: "flex-start", md: "center" }} justifyContent="space-between" gap={1}>
+                                <Typography sx={{ fontWeight: 950 }}>
+                                    Resumo do período •{" "}
+                                    <span style={{ color: theme.palette.text.secondary, fontWeight: 800 }}>
+                                        {filterMonth === "all" ? `${filterYear}` : `${monthYearLabelFromYM(`${filterYear}-${filterMonth}`)}`}
+                                    </span>
+                                </Typography>
 
-                {/* ===== filtros ===== */}
+                                <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                    <Chip
+                                        label={
+                                            <span>
+                                                <span style={{ fontWeight: 950 }}>Em aberto:</span>{" "}
+                                                <span style={{ fontWeight: 950 }}>{formatBRL((kpis.open || 0) / 100)}</span>
+                                            </span>
+                                        }
+                                        variant="outlined"
+                                        sx={{
+                                            borderRadius: 999,
+                                            fontWeight: 950,
+                                            borderWidth: 1.6,
+                                            borderColor: alpha(theme.palette.primary.main, 0.35),
+                                            bgcolor: alpha(theme.palette.primary.main, 0.10),
+                                        }}
+                                    />
+                                    <Chip
+                                        label={
+                                            <span>
+                                                <span style={{ fontWeight: 950 }}>Total:</span>{" "}
+                                                <span style={{ fontWeight: 950 }}>{formatBRL((kpis.all || 0) / 100)}</span>
+                                            </span>
+                                        }
+                                        variant="outlined"
+                                        sx={{
+                                            borderRadius: 999,
+                                            fontWeight: 950,
+                                            borderWidth: 1.6,
+                                            borderColor: alpha(theme.palette.text.primary, 0.20),
+                                            bgcolor: alpha(theme.palette.text.primary, 0.04),
+                                        }}
+                                    />
+                                </Stack>
+                            </Stack>
+
+                            <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap" }}>
+                                <KpiChip stKey="paid" label="Pago" cents={kpis.paid} />
+                                <KpiChip stKey="due_today" label="Vence hoje" cents={kpis.due_today} accent />
+                                <KpiChip stKey="overdue" label="Atrasado" cents={kpis.overdue} accent />
+                                <KpiChip stKey="planned" label="Previsto" cents={kpis.planned} />
+                            </Stack>
+                        </Stack>
+                    </CardContent>
+                </Card>
+
+                {/* FILTROS (colapsável) */}
                 <Card variant="outlined" sx={{ borderRadius: 2 }}>
                     <CardContent sx={{ py: 1.2 }}>
                         <Stack spacing={1}>
                             <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
                                 <Stack direction="row" alignItems="center" gap={1}>
-                                    <FilterAltRoundedIcon sx={{ opacity: 0.7 }} />
+                                    <FilterAltRoundedIcon sx={{ opacity: 0.75 }} />
                                     <Typography sx={{ fontWeight: 900, fontSize: 13 }}>Filtros</Typography>
+
+                                    <Chip
+                                        size="small"
+                                        label={`${filteredBills.length} itens`}
+                                        variant="outlined"
+                                        sx={{ fontWeight: 950, borderRadius: 999, bgcolor: alpha(theme.palette.text.primary, 0.04) }}
+                                    />
                                 </Stack>
 
-                                <Tooltip title="Limpar filtros">
-                                    <IconButton size="small" onClick={clearAllFilters}>
-                                        <ClearRoundedIcon fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
+                                <Stack direction="row" alignItems="center" gap={0.5}>
+                                    {hasActiveFilters ? (
+                                        <Tooltip title="Limpar filtros">
+                                            <IconButton size="small" onClick={clearAllFilters} sx={{ color: theme.palette.error.main }}>
+                                                <ClearRoundedIcon fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
+                                    ) : null}
+
+                                    <Tooltip title={filtersOpen ? "Recolher filtros" : "Expandir filtros"}>
+                                        <IconButton size="small" onClick={() => setFiltersOpen((v) => !v)}>
+                                            {filtersOpen ? <ExpandLessRoundedIcon fontSize="small" /> : <ExpandMoreRoundedIcon fontSize="small" />}
+                                        </IconButton>
+                                    </Tooltip>
+                                </Stack>
                             </Stack>
 
-                            <ToggleButtonGroup
-                                value={filterMonth}
-                                exclusive
-                                onChange={(_, v) => v != null && setFilterMonth(v)}
-                                sx={(t) => ({
-                                    width: "100%",
-                                    display: "grid",
-                                    gridTemplateColumns: "repeat(13, 1fr)",
-                                    gap: 0.6,
-                                    "& .MuiToggleButton-root": {
-                                        m: 0,
-                                        borderRadius: 1.2,
-                                        minHeight: 34,
-                                        px: 0.5,
-                                        py: 0.25,
-                                        fontSize: 11.5,
-                                        fontWeight: 900,
-                                        textTransform: "none",
-                                        border: `1px solid ${t.palette.divider}`,
-                                        color: t.palette.text.secondary,
-                                        backgroundColor: "transparent",
-                                        transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease",
-                                    },
-                                    "& .MuiToggleButton-root.Mui-selected": {
-                                        color: t.palette.primary.contrastText,
-                                        backgroundColor: t.palette.primary.main,
-                                        borderColor: t.palette.primary.main,
-                                    },
-                                    "& .MuiToggleButton-root.Mui-selected:hover": {
-                                        backgroundColor: t.palette.primary.dark,
-                                        borderColor: t.palette.primary.dark,
-                                    },
-                                    "& .MuiToggleButton-root:hover": { backgroundColor: t.palette.action.hover },
-                                })}
-                            >
-                                {monthOptions.map((m) => (
-                                    <ToggleButton key={m.v} value={m.v} aria-label={m.label}>
-                                        {m.label}
-                                    </ToggleButton>
-                                ))}
-                            </ToggleButtonGroup>
+                            <Collapse in={filtersOpen} timeout={180} unmountOnExit>
+                                <Stack spacing={1}>
+                                    <ToggleButtonGroup
+                                        value={filterMonth}
+                                        exclusive
+                                        onChange={(_, v) => v != null && setFilterMonth(v)}
+                                        sx={(t) => ({
+                                            width: "100%",
+                                            display: "grid",
+                                            gridTemplateColumns: "repeat(13, 1fr)",
+                                            gap: 0.6,
+                                            mt: 0.4,
+                                            "& .MuiToggleButton-root": {
+                                                m: 0,
+                                                borderRadius: 1.35,
+                                                minHeight: 34,
+                                                px: 0.5,
+                                                py: 0.25,
+                                                fontSize: 11.5,
+                                                fontWeight: 950,
+                                                textTransform: "none",
+                                                border: `1px solid ${t.palette.divider}`,
+                                                color: t.palette.text.secondary,
+                                                backgroundColor: "transparent",
+                                            },
+                                            "& .MuiToggleButton-root.Mui-selected": {
+                                                color: t.palette.primary.contrastText,
+                                                backgroundColor: t.palette.primary.main,
+                                                borderColor: t.palette.primary.main,
+                                            },
+                                            "& .MuiToggleButton-root.Mui-selected:hover": {
+                                                backgroundColor: t.palette.primary.dark,
+                                                borderColor: t.palette.primary.dark,
+                                            },
+                                            "& .MuiToggleButton-root:hover": { backgroundColor: t.palette.action.hover },
+                                        })}
+                                    >
+                                        {monthOptions.map((m) => (
+                                            <ToggleButton key={m.v} value={m.v} aria-label={m.label}>
+                                                {m.label}
+                                            </ToggleButton>
+                                        ))}
+                                    </ToggleButtonGroup>
 
-                            <Box
-                                sx={{
-                                    display: "grid",
-                                    gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "100px 220px 240px 240px 1fr" },
-                                    gap: 1,
-                                    alignItems: "center",
-                                    mt: 1,
-                                }}
-                            >
-                                <TextField size="small" label="Ano" select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} sx={compactFieldSx} fullWidth>
-                                    {yearOptions.map((y) => (
-                                        <MenuItem key={y} value={y}>
-                                            {y}
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
+                                    <Box
+                                        sx={{
+                                            display: "grid",
+                                            gridTemplateColumns: { xs: "1fr", sm: "repeat(2, 1fr)", md: "110px 200px 260px 240px 1fr" },
+                                            gap: 1,
+                                            alignItems: "center",
+                                            mt: 0.6,
+                                        }}
+                                    >
+                                        <TextField size="small" label="Ano" select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} sx={compactFieldSx} fullWidth>
+                                            {yearOptions.map((y) => (
+                                                <MenuItem key={y} value={y}>
+                                                    {y}
+                                                </MenuItem>
+                                            ))}
+                                        </TextField>
 
-                                <TextField size="small" label="Tipo" select value={filterKind} onChange={(e) => setFilterKind(e.target.value)} sx={compactFieldSx} fullWidth>
-                                    <MenuItem value="all">Todos</MenuItem>
-                                    <MenuItem value="recurring">Recorrente</MenuItem>
-                                    <MenuItem value="installment">Parcelado</MenuItem>
-                                    <MenuItem value="one_off">Pontual</MenuItem>
-                                </TextField>
+                                        <TextField size="small" label="Tipo" select value={filterKind} onChange={(e) => setFilterKind(e.target.value)} sx={compactFieldSx} fullWidth>
+                                            <MenuItem value="all">Todos</MenuItem>
+                                            <MenuItem value="recurring">Recorrente</MenuItem>
+                                            <MenuItem value="installment">Parcelado</MenuItem>
+                                            <MenuItem value="one_off">Pontual</MenuItem>
+                                        </TextField>
 
-                                <TextField
-                                    size="small"
-                                    label="Status"
-                                    select
-                                    SelectProps={{
-                                        multiple: true,
-                                        value: filterStatuses,
-                                        onChange: handleStatusesChange,
-                                        renderValue: (selected) =>
-                                            selected
-                                                .map(
-                                                    (s) =>
-                                                    ({
-                                                        planned: "Previsto",
-                                                        due_today: "Vencendo hoje",
-                                                        overdue: "Atrasado",
-                                                        paid: "Pago",
-                                                    }[s] || s)
-                                                )
-                                                .join(" • "),
-                                    }}
-                                    sx={compactFieldSx}
-                                    fullWidth
-                                >
-                                    <MenuItem value="planned">Previsto</MenuItem>
-                                    <MenuItem value="due_today">Vencendo hoje</MenuItem>
-                                    <MenuItem value="overdue">Atrasado</MenuItem>
-                                    <MenuItem value="paid">Pago</MenuItem>
-                                </TextField>
+                                        <TextField
+                                            size="small"
+                                            label="Status"
+                                            select
+                                            SelectProps={{
+                                                multiple: true,
+                                                value: filterStatuses,
+                                                onChange: handleStatusesChange,
+                                                renderValue: (selected) =>
+                                                    selected
+                                                        .map(
+                                                            (s) =>
+                                                            ({
+                                                                planned: "Previsto",
+                                                                due_today: "Vence hoje",
+                                                                overdue: "Atrasado",
+                                                                paid: "Pago",
+                                                            }[s] || s)
+                                                        )
+                                                        .join(" • "),
+                                            }}
+                                            sx={compactFieldSx}
+                                            fullWidth
+                                        >
+                                            <MenuItem value="planned">Previsto</MenuItem>
+                                            <MenuItem value="due_today">Vence hoje</MenuItem>
+                                            <MenuItem value="overdue">Atrasado</MenuItem>
+                                            <MenuItem value="paid">Pago</MenuItem>
+                                        </TextField>
 
-                                <TextField
-                                    size="small"
-                                    label="Categoria"
-                                    select
-                                    value={filterCategory}
-                                    onChange={(e) => setFilterCategory(e.target.value)}
-                                    fullWidth
-                                    SelectProps={{
-                                        renderValue: (val) => {
-                                            if (val === "all") return "Todas";
-                                            const cat = categoriesById.get(String(val));
-                                            if (!cat) return String(val);
-                                            return `${pickCategoryIcon(cat)} ${cat.name}`;
-                                        },
-                                    }}
-                                >
-                                    <MenuItem value="all">Todas</MenuItem>
-                                    {categoryOptions.map((c) => (
-                                        <MenuItem key={c.id} value={String(c.id)}>
-                                            <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, width: "100%" }}>
-                                                <MsIcon name={(c.icon || "").trim() || "tag"} size={18} />
-                                                <Typography noWrap sx={{ fontWeight: 900, flex: 1, minWidth: 0, marginLeft: "10px" }}>
-                                                    {c.name}
-                                                </Typography>
-                                            </Box>
-                                        </MenuItem>
-                                    ))}
-                                </TextField>
+                                        <TextField
+                                            size="small"
+                                            label="Categoria"
+                                            select
+                                            value={filterCategory}
+                                            onChange={(e) => setFilterCategory(e.target.value)}
+                                            fullWidth
+                                            SelectProps={{
+                                                renderValue: (val) => {
+                                                    if (val === "all") return "Todas";
+                                                    const cat = categoriesById.get(String(val));
+                                                    if (!cat) return String(val);
+                                                    return `${pickCategoryIcon(cat)} ${cat.name}`;
+                                                },
+                                            }}
+                                        >
+                                            <MenuItem value="all">Todas</MenuItem>
+                                            {categoryOptions.map((c) => (
+                                                <MenuItem key={c.id} value={String(c.id)}>
+                                                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, width: "100%" }}>
+                                                        <MsIcon name={(c.icon || "").trim() || "tag"} size={18} />
+                                                        <Typography noWrap sx={{ fontWeight: 900, flex: 1, minWidth: 0, marginLeft: "10px" }}>
+                                                            {c.name}
+                                                        </Typography>
+                                                    </Box>
+                                                </MenuItem>
+                                            ))}
+                                        </TextField>
 
-                                <TextField size="small" label="Buscar" value={q} onChange={(e) => setQ(e.target.value)} sx={compactFieldSx} fullWidth placeholder="Descrição, favorecido..." />
-                            </Box>
+                                        <TextField size="small" label="Buscar" value={q} onChange={(e) => setQ(e.target.value)} sx={compactFieldSx} fullWidth placeholder="Descrição, favorecido..." />
+                                    </Box>
+                                </Stack>
+                            </Collapse>
                         </Stack>
                     </CardContent>
                 </Card>
 
-                {/* ✅ CONTEÚDO */}
+                {/* CONTEÚDO */}
                 {status === "loading" ? (
                     <SpinnerPage status={status} />
                 ) : (
                     <>
                         {error ? <Alert severity="error">{String(error)}</Alert> : null}
 
-                        <Stack spacing={1.2}>
-                            {filteredBills.length === 0 ? (
-                                <Card variant="outlined" sx={{ borderRadius: 2, borderStyle: "dashed" }}>
-                                    <CardContent sx={{ py: 3 }}>
-                                        <Stack spacing={0.6} alignItems="center">
-                                            <PaymentsRoundedIcon sx={{ opacity: 0.6 }} />
-                                            <Typography sx={{ fontWeight: 950 }}>Nenhuma despesa encontrada</Typography>
-                                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                                Ajuste os filtros ou crie uma nova Bill.
-                                            </Typography>
-                                            <Button onClick={() => setOpenNew(true)} variant="contained" startIcon={<AddRoundedIcon />} sx={{ fontWeight: 950, mt: 1 }}>
-                                                Criar despesa
-                                            </Button>
-                                        </Stack>
-                                    </CardContent>
-                                </Card>
-                            ) : null}
+                        {filteredBills.length === 0 ? (
+                            <Card variant="outlined" sx={{ borderRadius: 2, borderStyle: "dashed" }}>
+                                <CardContent sx={{ py: 3 }}>
+                                    <Stack spacing={0.6} alignItems="center">
+                                        <PaymentsRoundedIcon sx={{ opacity: 0.6 }} />
+                                        <Typography sx={{ fontWeight: 950 }}>Nenhuma despesa encontrada</Typography>
+                                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                            Ajuste os filtros ou crie uma nova despesa.
+                                        </Typography>
+                                        <Button onClick={() => setOpenNew(true)} variant="contained" startIcon={<AddRoundedIcon />} sx={{ fontWeight: 950, mt: 1 }}>
+                                            Criar despesa
+                                        </Button>
+                                    </Stack>
+                                </CardContent>
+                            </Card>
+                        ) : null}
 
-                            {timeline.map((monthBlock) => {
-                                const mt = monthBlock.monthTotals || { open: 0, paid: 0, due_today: 0, overdue: 0, planned: 0 };
+                        {/* VIEW: BOARD */}
+                        {viewMode === "board" ? (
+                            <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                                <Box
+                                    sx={{
+                                        display: "grid",
+                                        gap: 1.2,
+                                        gridTemplateColumns: { xs: "1fr", md: "repeat(4, 1fr)" },
+                                        alignItems: "start",
+                                    }}
+                                >
+                                    {[
+                                        { key: "overdue", title: "Atrasado", badge: board.overdue?.length || 0 },
+                                        { key: "due_today", title: "Vence hoje", badge: board.due_today?.length || 0 },
+                                        { key: "planned", title: "Previsto", badge: board.planned?.length || 0 },
+                                        { key: "paid", title: "Pago", badge: board.paid?.length || 0, droppable: true },
+                                    ].map((col) => {
+                                        const m = STATUS_META[col.key] || STATUS_META.planned;
+                                        const items = board[col.key] || [];
 
-                                // ✅ chips consolidados do mês só aparecem se tiver MAIS DE 1 item (pra somar “de verdade”)
-                                const monthChipCandidates = [
-                                    { key: "open", label: "Em aberto", cents: mt.open, bg: alpha(theme.palette.primary.main, 0.10), bd: alpha(theme.palette.primary.main, 0.25) },
-                                    { key: "paid", label: "Pago", cents: mt.paid, bg: alpha(theme.palette.success.main, 0.12), bd: alpha(theme.palette.success.main, 0.25) },
-                                    { key: "due_today", label: "Vence hoje", cents: mt.due_today, bg: alpha(theme.palette.warning.main, 0.14), bd: alpha(theme.palette.warning.main, 0.32) },
-                                    { key: "overdue", label: "Atrasado", cents: mt.overdue, bg: alpha(theme.palette.error.main, 0.12), bd: alpha(theme.palette.error.main, 0.30) },
-                                    { key: "planned", label: "Previsto", cents: mt.planned, bg: alpha(theme.palette.info.main, 0.12), bd: alpha(theme.palette.info.main, 0.28) },
-                                ].filter((x) => (x.cents || 0) > 0);
-
-                                const showMonthChips = monthChipCandidates.length > 1;
-
-                                return (
-                                    <Box key={monthBlock.monthKey}>
-                                        <Stack
-                                            direction={{ xs: "column", sm: "row" }}
-                                            alignItems={{ xs: "flex-start", sm: "baseline" }}
-                                            justifyContent="space-between"
-                                            sx={{ mt: 1.2, mb: 0.8, marginTop: "40px" }}
-                                            gap={1}
-                                        >
-                                            <Typography variant="h6" sx={{ fontWeight: 950, textTransform: "capitalize" }}>
-                                                {monthBlock.monthLabel}
-                                            </Typography>
-
-                                            {showMonthChips ? (
-                                                <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                                    {monthChipCandidates.map((c) => (
-                                                        <Chip
-                                                            key={c.key}
-                                                            size="small"
-                                                            label={`${c.label}: ${formatBRL((c.cents || 0) / 100)}`}
-                                                            variant="outlined"
-                                                            sx={{ fontWeight: 950, borderRadius: 999, bgcolor: c.bg, border: `1px solid ${c.bd}` }}
-                                                        />
-                                                    ))}
-                                                </Stack>
-                                            ) : null}
-                                        </Stack>
-
-                                        {/* ✅ linhas (dividers) do mês */}
-                                        <Divider sx={{ mb: 1.2 }} />
-
-                                        {monthBlock.days.map((dayBlock) => {
-                                            const t = dayBlock.totals || { paid: 0, due_today: 0, overdue: 0, planned: 0 };
-
-                                            const dayChips = [
-                                                { key: "paid", label: "Pago", cents: t.paid, bg: alpha(theme.palette.success.main, 0.12), bd: alpha(theme.palette.success.main, 0.32) },
-                                                { key: "due_today", label: "Vence hoje", cents: t.due_today, bg: alpha(theme.palette.warning.main, 0.14), bd: alpha(theme.palette.warning.main, 0.36) },
-                                                { key: "overdue", label: "Atrasado", cents: t.overdue, bg: alpha(theme.palette.error.main, 0.12), bd: alpha(theme.palette.error.main, 0.34) },
-                                                { key: "planned", label: "Previsto", cents: t.planned, bg: alpha(theme.palette.info.main, 0.12), bd: alpha(theme.palette.info.main, 0.32) },
-                                            ].filter((x) => (x.cents || 0) > 0);
-
-                                            return (
-                                                <Box key={dayBlock.dayKey} sx={{ mb: 1.4 }}>
-                                                    {/* ✅ header do dia com divider linha (mantém as linhas) */}
-                                                    <Stack direction="row" alignItems="center" gap={1} sx={{ my: 1 }}>
-                                                        <Divider sx={{ flex: 1 }} />
-                                                        <Stack
-                                                            direction="row"
-                                                            alignItems="center"
-                                                            justifyContent="space-between"
-                                                            sx={{ px: 0.5, minWidth: { xs: "auto", sm: 520 }, width: "100%" }}
-                                                            gap={1}
-                                                        >
-                                                            <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 950, whiteSpace: "nowrap" }}>
-                                                                {dayBlock.dayLabel}
-                                                            </Typography>
-
-                                                            <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end", ml: "auto" }}>
-                                                                {dayChips.map((c) => (
-                                                                    <Chip
-                                                                        key={c.key}
-                                                                        size="small"
-                                                                        label={`${c.label}: ${formatBRL((c.cents || 0) / 100)}`}
-                                                                        variant="outlined"
-                                                                        sx={{ fontWeight: 950, borderRadius: 999, bgcolor: c.bg, border: `1px solid ${c.bd}` }}
-                                                                    />
-                                                                ))}
-                                                            </Stack>
-                                                        </Stack>
-                                                        <Divider sx={{ flex: 1 }} />
-                                                    </Stack>
-
-                                                    <Stack spacing={1.2}>
-                                                        {dayBlock.items.map(({ bill: b, dueISO, uiStatus }) => {
-                                                            const meta = kindMeta(b.kind);
-                                                            const canPay = uiStatus !== "paid";
-                                                            const sm = STATUS_META[uiStatus] || STATUS_META.planned;
-
-                                                            return (
-                                                                <Card
-                                                                    key={b.id}
-                                                                    variant="outlined"
+                                        const ColumnShell = (
+                                            <Card
+                                                key={col.key}
+                                                variant="outlined"
+                                                sx={{
+                                                    borderRadius: 1,
+                                                    overflow: "hidden",
+                                                    borderColor: alpha(m.dot, 0.30),
+                                                    background: `linear-gradient(180deg, ${alpha(m.dot, 0.08)}, rgba(255,255,255,0) 55%)`,
+                                                }}
+                                            >
+                                                <CardContent sx={{ py: 1.2 }}>
+                                                    <Stack spacing={1}>
+                                                        <Stack direction="row" alignItems="center" justifyContent="space-between">
+                                                            <Stack direction="row" alignItems="center" gap={1}>
+                                                                <Box
                                                                     sx={{
-                                                                        borderRadius: 2,
-                                                                        position: "relative",
-                                                                        overflow: "hidden",
-                                                                        borderColor: alpha(sm.dot, 0.35),
-                                                                        boxShadow: "0 0 0 rgba(0,0,0,0)",
-                                                                        transition: "box-shadow 160ms ease, border-color 160ms ease, transform 160ms ease",
-                                                                        "&:hover": {
-                                                                            borderColor: alpha(sm.dot, 0.70),
-                                                                            boxShadow: `0 10px 30px ${alpha(sm.dot, 0.12)}`,
-                                                                            transform: "translateY(-1px)",
-                                                                        },
+                                                                        width: 10,
+                                                                        height: 10,
+                                                                        borderRadius: 999,
+                                                                        bgcolor: m.dot,
+                                                                        boxShadow: `0 0 0 6px ${alpha(m.dot, 0.12)}`,
                                                                     }}
-                                                                >
-                                                                    {/* accent bar */}
-                                                                    <Box
-                                                                        sx={{
-                                                                            position: "absolute",
-                                                                            left: 0,
-                                                                            top: 0,
-                                                                            bottom: 0,
-                                                                            width: 6,
-                                                                            background: `linear-gradient(180deg, ${alpha(sm.dot, 0.95)}, ${alpha(sm.dot, 0.45)})`,
-                                                                        }}
-                                                                    />
+                                                                />
+                                                                <Typography sx={{ fontWeight: 950 }}>{col.title}</Typography>
+                                                            </Stack>
 
-                                                                    <CardContent sx={{ py: 1.35, pl: 2.2 }}>
-                                                                        {/* ✅ topo: chips em cima; botões em baixo à direita */}
-                                                                        <Stack spacing={1}>
-                                                                            {/* Header: título + chips no canto */}
-                                                                            <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
-                                                                                <Stack sx={{ minWidth: 0 }} spacing={0.35}>
-                                                                                    <Typography sx={{ fontWeight: 950 }} noWrap>
-                                                                                        {b.name}
-                                                                                    </Typography>
-                                                                                    <Stack direction="row" spacing={0.8} alignItems="center" sx={{ flexWrap: "wrap" }}>
-                                                                                        <Chip size="small" label={meta.label} icon={meta.icon} variant="outlined" sx={{ fontWeight: 900 }} />
-                                                                                    </Stack>
-                                                                                </Stack>
+                                                            <Badge
+                                                                badgeContent={col.badge}
+                                                                color="default"
+                                                                sx={{
+                                                                    "& .MuiBadge-badge": {
+                                                                        bgcolor: alpha(m.dot, 0.16),
+                                                                        color: theme.palette.text.primary,
+                                                                        fontWeight: 950,
+                                                                        border: `1px solid ${alpha(m.dot, 0.35)}`,
+                                                                        marginRight: 2,
+                                                                    },
+                                                                }}
+                                                            />
+                                                        </Stack>
 
-                                                                                <Stack direction="row" alignItems="center" gap={0.8} sx={{ flexShrink: 0 }}>
-                                                                                    {b.installmentTotal ? (
-                                                                                        <Chip
-                                                                                            size="small"
-                                                                                            label={`${b.installmentCurrent}/${b.installmentTotal}`}
-                                                                                            variant="outlined"
-                                                                                            sx={{
-                                                                                                fontWeight: 950,
-                                                                                                borderRadius: 999,
-                                                                                                bgcolor: alpha(theme.palette.secondary.main, 0.10),
-                                                                                                borderColor: alpha(theme.palette.secondary.main, 0.28),
-                                                                                            }}
-                                                                                        />
-                                                                                    ) : null}
-                                                                                    <StatusPill st={uiStatus} dense />
-                                                                                </Stack>
-                                                                            </Stack>
+                                                        <Divider />
 
-                                                                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                                                                Vencimento: <b>{formatBRDate(dueISO)}</b> • Valor: <b>{moneySafe(b.defaultAmount)}</b>
-                                                                            </Typography>
+                                                        <Stack spacing={1.05}>
+                                                            {items.length === 0 ? (
+                                                                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                                                                    —
+                                                                </Typography>
+                                                            ) : null}
 
-                                                                            {(() => {
-                                                                                const cat = resolveCategoryFromBill(b);
-                                                                                return (
-                                                                                    <Stack direction="row" alignItems="center" gap={1} sx={{ flexWrap: "wrap" }}>
-                                                                                        <CategoryChip cat={cat} />
-                                                                                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                                                                            • Favorecido: <b>{b.payee || "—"}</b>
-                                                                                        </Typography>
-                                                                                    </Stack>
-                                                                                );
-                                                                            })()}
+                                                            {items.map(({ bill: b, dueISO, uiStatus }) => (
+                                                                <BoardBillCard
+                                                                    key={b.id}
+                                                                    b={b}
+                                                                    dueISO={dueISO}
+                                                                    uiStatus={uiStatus}
+                                                                    onPay={(bill) => setPayBill(bill)}
+                                                                    onEdit={(bill) => setEditBill(bill)}
+                                                                    onDelete={(bill) => handleDeleteBill(bill)}
+                                                                    onGenerate={(bill) => setGenBill(bill)}
+                                                                    resolveCategoryFromBill={resolveCategoryFromBill}
+                                                                    STATUS_META={STATUS_META}
+                                                                    theme={theme}
+                                                                    onReopen={async (bill) => {
+                                                                        const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
+                                                                        if (!ok) return;
 
-                                                                            {b.notes ? (
-                                                                                <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                                                                                    {b.notes}
-                                                                                </Typography>
-                                                                            ) : null}
-
-                                                                            {/* ✅ divider interno (linhas precisam existir) */}
-                                                                            <Divider sx={{ mt: 0.5, mb: 0.5 }} />
-
-                                                                            {/* ✅ botões no rodapé à direita */}
-                                                                            <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" sx={{ flexWrap: "wrap" }}>
-                                                                                {canPay ? (
-                                                                                    <Button size="small" variant="contained" startIcon={<PaidRoundedIcon />} onClick={() => setPayBill(b)}>
-                                                                                        Pagar
-                                                                                    </Button>
-                                                                                ) : (
-                                                                                    <Button
-                                                                                        size="small"
-                                                                                        variant="outlined"
-                                                                                        startIcon={<ReplayRoundedIcon />}
-                                                                                        onClick={async () => {
-                                                                                            const ok = window.confirm(`Reabrir "${b.name}"? Isso remove a transação de pagamento.`);
-                                                                                            if (!ok) return;
-                                                                                            try {
-                                                                                                if (reopenBillThunk) await dispatch(reopenBillThunk({ id: b.id })).unwrap();
-                                                                                                await dispatch(fetchBillsThunk());
-                                                                                                await dispatch(fetchAllTransactionsThunk());
-                                                                                            } catch { }
-                                                                                        }}
-                                                                                    >
-                                                                                        Reabrir
-                                                                                    </Button>
-                                                                                )}
-
-                                                                                <Button size="small" variant="outlined" startIcon={<EditRoundedIcon />} onClick={() => setEditBill(b)}>
-                                                                                    Editar
-                                                                                </Button>
-
-                                                                                <Button size="small" color="error" variant="outlined" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => handleDeleteBill(b)}>
-                                                                                    Remover
-                                                                                </Button>
-                                                                            </Stack>
-                                                                        </Stack>
-                                                                    </CardContent>
-                                                                </Card>
-                                                            );
-                                                        })}
+                                                                        try {
+                                                                            await dispatch(reopenBillThunk({ id: bill.id })).unwrap();
+                                                                            await dispatch(fetchBillsThunk());
+                                                                            await dispatch(fetchAllTransactionsThunk());
+                                                                        } catch { }
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                        </Stack>
                                                     </Stack>
-                                                </Box>
+                                                </CardContent>
+                                            </Card>
+                                        );
+
+                                        // Coluna "Pago" vira área de drop
+                                        if (col.droppable) {
+                                            return (
+                                                <PaidDropZone key={col.key} theme={theme}>
+                                                    {ColumnShell}
+                                                </PaidDropZone>
                                             );
-                                        })}
-                                    </Box>
-                                );
-                            })}
-                        </Stack>
+                                        }
+
+                                        return ColumnShell;
+                                    })}
+                                </Box>
+
+                                <DragOverlay>
+                                    {activeDrag?.bill ? (
+                                        <Box sx={{ width: 360, maxWidth: "92vw" }}>
+                                            <Card
+                                                variant="outlined"
+                                                sx={{
+                                                    borderRadius: 2,
+                                                    borderColor: alpha((STATUS_META[activeDrag.uiStatus] || STATUS_META.planned).dot, 0.55),
+                                                    boxShadow: `0 20px 46px ${alpha(theme.palette.text.primary, 0.12)}`,
+                                                    overflow: "hidden",
+                                                }}
+                                            >
+                                                <Box sx={{ height: 4, bgcolor: (STATUS_META[activeDrag.uiStatus] || STATUS_META.planned).dot }} />
+                                                <CardContent sx={{ p: 1.2 }}>
+                                                    <Typography sx={{ fontWeight: 950 }} noWrap>
+                                                        {activeDrag.bill.name}
+                                                    </Typography>
+                                                    <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.9 }}>
+                                                        <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 900 }}>
+                                                            {formatBRDate(activeDrag.dueISO)}
+                                                        </Typography>
+                                                        <Typography sx={{ fontWeight: 950 }}>{moneySafe(activeDrag.bill.defaultAmount)}</Typography>
+                                                    </Stack>
+                                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                                                        Solte em <b>Pago</b> para abrir confirmação.
+                                                    </Typography>
+                                                </CardContent>
+                                            </Card>
+                                        </Box>
+                                    ) : null}
+                                </DragOverlay>
+                            </DndContext>
+                        ) : null}
+                        {/* VIEW: TIMELINE (secundária) */}
+                        {viewMode === "timeline" ? (
+                            <Stack spacing={1.2}>
+                                {timeline.map((monthBlock) => {
+                                    const mt = monthBlock.monthTotals || { open: 0, paid: 0, due_today: 0, overdue: 0, planned: 0 };
+
+                                    const monthChipCandidates = [
+                                        { key: "paid", label: "Pago", cents: mt.paid, dot: STATUS_META.paid.dot },
+                                        { key: "due_today", label: "Vence hoje", cents: mt.due_today, dot: STATUS_META.due_today.dot },
+                                        { key: "overdue", label: "Atrasado", cents: mt.overdue, dot: STATUS_META.overdue.dot },
+                                        { key: "planned", label: "Previsto", cents: mt.planned, dot: STATUS_META.planned.dot },
+                                    ].filter((x) => (x.cents || 0) > 0);
+
+                                    const showMonthChips = monthChipCandidates.length > 1;
+
+                                    return (
+                                        <Box key={monthBlock.monthKey}>
+                                            <Stack
+                                                direction={{ xs: "column", sm: "row" }}
+                                                alignItems={{ xs: "flex-start", sm: "center" }}
+                                                justifyContent="space-between"
+                                                sx={{ mt: 1.2, mb: 0.8 }}
+                                                gap={1}
+                                            >
+                                                <Typography variant="h6" sx={{ fontWeight: 950, textTransform: "capitalize" }}>
+                                                    {monthBlock.monthLabel}
+                                                </Typography>
+
+                                                {showMonthChips ? (
+                                                    <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                                        {monthChipCandidates.map((c) => (
+                                                            <Chip
+                                                                key={c.key}
+                                                                size="small"
+                                                                label={`${c.label}: ${formatBRL((c.cents || 0) / 100)}`}
+                                                                variant="outlined"
+                                                                sx={{
+                                                                    fontWeight: 950,
+                                                                    borderRadius: 999,
+                                                                    bgcolor: alpha(c.dot, 0.12),
+                                                                    border: `1px solid ${alpha(c.dot, 0.30)}`,
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </Stack>
+                                                ) : null}
+                                            </Stack>
+
+                                            <Divider sx={{ mb: 1.2 }} />
+
+                                            {monthBlock.days.map((dayBlock) => {
+                                                const t = dayBlock.totals || { paid: 0, due_today: 0, overdue: 0, planned: 0 };
+
+                                                const dayChips = [
+                                                    { key: "paid", label: "Pago", cents: t.paid, dot: STATUS_META.paid.dot },
+                                                    { key: "due_today", label: "Vence hoje", cents: t.due_today, dot: STATUS_META.due_today.dot },
+                                                    { key: "overdue", label: "Atrasado", cents: t.overdue, dot: STATUS_META.overdue.dot },
+                                                    { key: "planned", label: "Previsto", cents: t.planned, dot: STATUS_META.planned.dot },
+                                                ].filter((x) => (x.cents || 0) > 0);
+
+                                                return (
+                                                    <Box key={dayBlock.dayKey} sx={{ mb: 1.4 }}>
+                                                        {/* header do dia */}
+                                                        <Stack direction="row" alignItems="center" gap={1} sx={{ my: 1 }}>
+                                                            <Divider sx={{ flex: 1 }} />
+                                                            <Stack
+                                                                direction="row"
+                                                                alignItems="center"
+                                                                justifyContent="space-between"
+                                                                sx={{ px: 0.5, minWidth: { xs: "auto", sm: 520 }, width: "100%" }}
+                                                                gap={1}
+                                                            >
+                                                                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 950, whiteSpace: "nowrap" }}>
+                                                                    {dayBlock.dayLabel}
+                                                                </Typography>
+
+                                                                <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end", ml: "auto" }}>
+                                                                    {dayChips.map((c) => (
+                                                                        <Chip
+                                                                            key={c.key}
+                                                                            size="small"
+                                                                            label={`${c.label}: ${formatBRL((c.cents || 0) / 100)}`}
+                                                                            variant="outlined"
+                                                                            sx={{
+                                                                                fontWeight: 950,
+                                                                                borderRadius: 999,
+                                                                                bgcolor: alpha(c.dot, 0.12),
+                                                                                border: `1px solid ${alpha(c.dot, 0.32)}`,
+                                                                            }}
+                                                                        />
+                                                                    ))}
+                                                                </Stack>
+                                                            </Stack>
+                                                            <Divider sx={{ flex: 1 }} />
+                                                        </Stack>
+
+                                                        <Stack spacing={1.1}>
+                                                            {dayBlock.items.map(({ bill: b, dueISO, uiStatus }) => (
+                                                                <BoardBillCard
+                                                                    key={b.id}
+                                                                    b={b}
+                                                                    dueISO={dueISO}
+                                                                    uiStatus={uiStatus}
+                                                                    onPay={(bill) => setPayBill(bill)}
+                                                                    onEdit={(bill) => setEditBill(bill)}
+                                                                    onDelete={(bill) => handleDeleteBill(bill)}
+                                                                    onGenerate={(bill) => setGenBill(bill)}
+                                                                    resolveCategoryFromBill={resolveCategoryFromBill}
+                                                                    STATUS_META={STATUS_META}
+                                                                    theme={theme}
+                                                                    onReopen={async (bill) => {
+                                                                        const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
+                                                                        if (!ok) return;
+
+                                                                        try {
+                                                                            await dispatch(reopenBillThunk({ id: bill.id })).unwrap();
+                                                                            await dispatch(fetchBillsThunk());
+                                                                            await dispatch(fetchAllTransactionsThunk());
+                                                                        } catch { }
+                                                                    }}
+                                                                />
+                                                            ))}
+                                                        </Stack>
+                                                    </Box>
+                                                );
+                                            })}
+                                        </Box>
+                                    );
+                                })}
+                            </Stack>
+                        ) : null}
                     </>
                 )}
 
