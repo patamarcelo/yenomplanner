@@ -392,7 +392,7 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
     <Box
       sx={{
         p: 1.25,
-        borderRadius: 2,
+        borderRadius: 0.6,
         border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
         background: alpha(theme.palette.background.paper, 0.95),
         boxShadow: "0 18px 40px rgba(0,0,0,0.18)",
