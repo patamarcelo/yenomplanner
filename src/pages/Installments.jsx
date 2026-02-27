@@ -130,7 +130,7 @@ export default function InstallmentsMatrix() {
       if (!gid) return false;
       const ym = ymFromAny(t?.invoiceMonth || t?.invoice_month);
       if (!ym) return false;
-      if (hideInvoiced && isInvoiced(t)) return false;
+      // if (hideInvoiced && isInvoiced(t)) return false;
       return true;
     });
 
@@ -144,6 +144,8 @@ export default function InstallmentsMatrix() {
 
     const groups = Array.from(groupsMap.entries()).map(([groupId, arr]) => {
       const sorted = arr.slice().sort((a, b) => ymCompare(ymFromAny(a?.invoiceMonth), ymFromAny(b?.invoiceMonth)));
+      const openItems = sorted.filter((x) => !isInvoiced(x)); // ✅ parcelas ainda em aberto
+      const remainingOpen = openItems.length;                // ✅ ESSA é a métrica certa
       const first = sorted[0];
 
       const accountId = resolveAccountId(first);
@@ -154,6 +156,7 @@ export default function InstallmentsMatrix() {
 
       const byMonth = new Map();
       for (const t of sorted) {
+        if (hideInvoiced && isInvoiced(t)) continue; // ✅ agora sim, só para visual
         const ym = ymFromAny(t?.invoiceMonth || t?.invoice_month);
         const v = safeNumber(t?.amount);
         if (!ym || !v) continue;
@@ -162,21 +165,30 @@ export default function InstallmentsMatrix() {
 
       const total = sorted.reduce((acc2, x) => acc2 + safeNumber(x?.amount), 0);
 
+
+
       const totalParts =
         first?.installment?.total ??
         first?.installmentTotal ??
         first?.installment_total ??
         sorted.length;
+      const invoicedCount = arr.reduce((n, x) => n + (isInvoiced(x) ? 1 : 0), 0);
+      // se hideInvoiced=true, invoicedCount vai ser 0 mesmo (porque já filtrou)
+      const remainingParts = Math.max(0, safeNumber(totalParts) - safeNumber(invoicedCount));
 
       return {
         groupId,
         accountId,
+        remainingOpen,     // ✅ usado pra ordenar
+        openCount: remainingOpen,
+        closedCount: sorted.length - remainingOpen,
         accountName,
         tint,
         merchant: first?.merchant || first?.description || "Parcelamento",
         total,
         totalParts,
         installmentsCount: sorted.length,
+        remainingParts,
         byMonth,
         firstMonth: ymFromAny(sorted[0]?.invoiceMonth),
         lastMonth: ymFromAny(sorted[sorted.length - 1]?.invoiceMonth),
@@ -194,7 +206,11 @@ export default function InstallmentsMatrix() {
     const cardsOut = Array.from(byAccount.entries()).map(([accountId, arr]) => {
       const groupsSorted = arr
         .slice()
-        .sort((a, b) => safeNumber(b.total) - safeNumber(a.total) || ymCompare(a.firstMonth, b.firstMonth));
+        .sort((a, b) =>
+          safeNumber(a.remainingOpen) - safeNumber(b.remainingOpen) || // ✅ menos abertas primeiro
+          safeNumber(b.total) - safeNumber(a.total) ||                 // desempate: maior total
+          ymCompare(a.firstMonth, b.firstMonth)                         // desempate: mais antigo
+        );
 
       const total = groupsSorted.reduce((acc2, x) => acc2 + safeNumber(x.total), 0);
 
