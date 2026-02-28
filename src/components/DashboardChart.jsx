@@ -106,7 +106,7 @@ export default React.memo(function DashboardChart({
 
               return (
                 <text
-                  x={x + width / 2}
+                  x={x + width * 1.5 }
                   y={y - 6}
                   textAnchor="middle"
                   fontSize={10}

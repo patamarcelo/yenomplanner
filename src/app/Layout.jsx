@@ -63,7 +63,9 @@ import { fetchBillsThunk } from "../store/billsSlice.js";
 const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
 import { selectAuthUser } from "../store/authSlice";
 
-import { logoutAndResetThunk } from "../store/authSlice";
+
+
+
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -297,10 +299,13 @@ export default function Layout({ children }) {
 
     // se já tem usuário, carrega dados direto
     if (currentUser) {
-      dispatch(fetchAccountsThunk());
-      dispatch(fetchAllTransactionsThunk());
-      dispatch(fetchBillsThunk()); // ✅ ADD: bills para o dashboard não depender da página
-      bootstrappedRef.current = true;
+      Promise.allSettled([
+        dispatch(fetchAccountsThunk()).unwrap(),
+        dispatch(fetchAllTransactionsThunk()).unwrap(),
+        dispatch(fetchBillsThunk()).unwrap(),
+      ]).finally(() => {
+        bootstrappedRef.current = true;
+      });
     }
   }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
 
@@ -329,7 +334,9 @@ export default function Layout({ children }) {
     setNewOpen(false);
     setMobileOpen(false);
 
-    dispatch(logoutAndResetThunk());
+    dispatch(logout());           // remove token
+    dispatch({ type: "app/reset" }); // limpa redux inteiro
+
     navigate("/login", { replace: true });
   }
 
