@@ -54,12 +54,16 @@ import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 
+// ✅ ADD: bills
+import { fetchBillsThunk } from "../store/billsSlice.js";
 
 // import { selectTransactionsUi } from "../store/transactionsSlice.js";
 // import { selectBills } from "../store/billsSlice.js";
 
 const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
 import { selectAuthUser } from "../store/authSlice";
+
+import { logoutAndResetThunk } from "../store/authSlice";
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -74,7 +78,6 @@ const navItems = [
   { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon />, color: "#06b6d4" },
   { to: "/cadastros", label: "Cadastros", icon: <SettingsRoundedIcon />, color: "#64748b" },
 ];
-
 
 function NavItem({ to, label, icon, collapsed, color }) {
   const theme = useTheme();
@@ -186,7 +189,7 @@ export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const user = useSelector(selectAuthUser)
+  const user = useSelector(selectAuthUser);
 
   const month = useSelector((s) => s.finance.month); // "YYYY-MM"
   const hideValues = useSelector(selectHideValues);
@@ -195,9 +198,6 @@ export default function Layout({ children }) {
   const token = useSelector((s) => s.user.token) || localStorage.getItem("authToken") || "";
   const currentUser = useSelector((s) => s.user.user);
   const authStatus = useSelector((s) => s.user.status);
-
-  // const transactionsUi = useSelector(selectTransactionsUi);
-  // const bills = useSelector(selectBills);
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
 
@@ -230,19 +230,10 @@ export default function Layout({ children }) {
     return sorted.find((n) => location.pathname === n.to || location.pathname.startsWith(n.to + "/"));
   }, [location.pathname]);
 
-
   const activeIcon = location.pathname.startsWith("/cadastros") ? activeNav?.icon : null;
-
-
-
 
   // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
   const bootstrappedRef = useRef(false);
-
-  // =========================================================
-  // ✅ IMPORTANTÍSSIMO: hooks devem vir ANTES de qualquer return
-  // (corrige "Rendered fewer hooks than expected")
-  // =========================================================
 
   useEffect(() => {
     const t0 = performance.now();
@@ -255,60 +246,7 @@ export default function Layout({ children }) {
   // ✅ valores atuais do filtro
   const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
 
-  function extractYear(v) {
-    if (!v) return null;
-
-    // aceita Date
-    if (v instanceof Date && !Number.isNaN(v.getTime())) return v.getFullYear();
-
-    const s = String(v).trim();
-    if (!s) return null;
-
-    // YYYY-MM / YYYY-MM-DD / YYYY...
-    const m = s.match(/^(\d{4})/);
-    if (!m) return null;
-
-    const y = Number(m[1]);
-    if (!Number.isFinite(y) || y < 1900 || y > 2500) return null;
-    return y;
-  }
-
-  function collectYearsFromObject(obj) {
-    if (!obj || typeof obj !== "object") return [];
-
-    // tenta os campos mais prováveis (bills e transactions)
-    const candidates = [
-      obj.invoiceMonth,
-      obj.invoice_month,
-      obj.purchaseDate,
-      obj.purchase_date,
-      obj.chargeDate,
-      obj.charge_date,
-      obj.dueDate,
-      obj.due_date,
-      obj.date,
-      obj.createdAt,
-      obj.created_at,
-      obj.paidAt,
-      obj.paid_at,
-      obj.month,
-      obj.year, // se existir
-    ];
-
-    const out = [];
-    for (const c of candidates) {
-      const y = extractYear(c);
-      if (y) out.push(y);
-    }
-
-    // caso raro: year numérico já vindo pronto
-    if (typeof obj.year === "number" && Number.isFinite(obj.year)) out.push(obj.year);
-
-    return out;
-  }
-
   const years = useMemo(() => [2025, 2026], []);
-
 
   // ✅ garante "YYYY-MM" válido (ano atual por padrão)
   useEffect(() => {
@@ -361,6 +299,7 @@ export default function Layout({ children }) {
     if (currentUser) {
       dispatch(fetchAccountsThunk());
       dispatch(fetchAllTransactionsThunk());
+      dispatch(fetchBillsThunk()); // ✅ ADD: bills para o dashboard não depender da página
       bootstrappedRef.current = true;
     }
   }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
@@ -378,17 +317,19 @@ export default function Layout({ children }) {
     borderRight: `1px solid ${theme.palette.divider}`,
     overflowX: "hidden",
     borderRadius: 0,
-    borderTopRightRadius: 0,   // ✅ remove o radius superior direito
+    borderTopRightRadius: 0, // ✅ remove o radius superior direito
     borderBottomRightRadius: 0, // opcional, mantém consistente
     transition: theme.transitions.create(["width"], {
       duration: theme.transitions.duration.shortest,
     }),
   };
 
-
   function handleLogout() {
     bootstrappedRef.current = false;
-    dispatch(logout());
+    setNewOpen(false);
+    setMobileOpen(false);
+
+    dispatch(logoutAndResetThunk());
     navigate("/login", { replace: true });
   }
 
@@ -488,29 +429,13 @@ export default function Layout({ children }) {
 
       <Box sx={{ p: collapsed ? 1 : 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
         {navItems.map((it) => (
-          <NavItem
-            key={it.to}
-            to={it.to}
-            label={it.label}
-            icon={it.icon}
-            color={it.color}
-            collapsed={collapsed}
-          />
+          <NavItem key={it.to} to={it.to} label={it.label} icon={it.icon} color={it.color} collapsed={collapsed} />
         ))}
-
-
       </Box>
 
       <Box sx={{ flex: 1 }} />
 
-      <Box
-        sx={{
-          p: collapsed ? 1 : 1.6,
-          display: "flex",
-          flexDirection: "column",
-          gap: 1,
-        }}
-      >
+      <Box sx={{ p: collapsed ? 1 : 1.6, display: "flex", flexDirection: "column", gap: 1 }}>
         {!collapsed ? (
           <Button
             fullWidth
@@ -553,9 +478,7 @@ export default function Layout({ children }) {
               color: "#dc2626",
               border: "1px solid rgba(220,38,38,0.35)",
               bgcolor: "rgba(220,38,38,0.08)",
-              "&:hover": {
-                bgcolor: "rgba(220,38,38,0.14)",
-              },
+              "&:hover": { bgcolor: "rgba(220,38,38,0.14)" },
             }}
           >
             Sair
@@ -571,9 +494,7 @@ export default function Layout({ children }) {
                 color: "#dc2626",
                 border: "1px solid rgba(220,38,38,0.35)",
                 bgcolor: "rgba(220,38,38,0.08)",
-                "&:hover": {
-                  bgcolor: "rgba(220,38,38,0.14)",
-                },
+                "&:hover": { bgcolor: "rgba(220,38,38,0.14)" },
               }}
             >
               <ExitToAppRoundedIcon />
@@ -648,7 +569,7 @@ export default function Layout({ children }) {
           sx={{
             borderBottom: `1px solid ${theme.palette.divider}`,
             background: theme.palette.background.paper,
-            borderRadius: '0px'
+            borderRadius: "0px",
           }}
         >
           <Toolbar
@@ -686,77 +607,50 @@ export default function Layout({ children }) {
               <Stack spacing={0.2} sx={{ lineHeight: 1.1 }}>
                 <Typography
                   variant="body2"
-                  sx={{
-                    fontWeight: 600,
-                    opacity: 0.75,
-                    whiteSpace: "nowrap",
-                  }}
+                  sx={{ fontWeight: 600, opacity: 0.75, whiteSpace: "nowrap" }}
                 >
                   Olá, {user?.first_name} 👋
                 </Typography>
 
                 <Typography
                   variant="h6"
-                  sx={{
-                    fontWeight: 900,
-                    letterSpacing: -0.4,
-                    whiteSpace: "nowrap",
-                  }}
+                  sx={{ fontWeight: 900, letterSpacing: -0.4, whiteSpace: "nowrap" }}
                 >
                   {title}
                 </Typography>
               </Stack>
-
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {location.pathname === "/" &&
-                <>
-                  {/* <DashboardFilters /> */}
+              {location.pathname === "/" && (
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
+                  <Box sx={{ ...pillSx, minWidth: 120 }}>
+                    <FormControl size="small" fullWidth>
+                      <Select value={selectedMonth} onChange={(e) => setYM(selectedYear, e.target.value)} sx={selectSx}>
+                        {MONTHS_PT.map((mm) => (
+                          <MenuItem key={mm.value} value={mm.value}>
+                            {mm.label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Box>
 
+                  <Box sx={{ ...pillSx, minWidth: 110 }}>
+                    <FormControl size="small" fullWidth>
+                      <Select value={selectedYear} onChange={(e) => setYM(e.target.value, selectedMonth)} sx={selectSx}>
+                        {years.map((yy) => (
+                          <MenuItem key={yy} value={yy}>
+                            {yy}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Box>
+                </Stack>
+              )}
 
-                  {/* ✅ filtros separados: Mês e Ano */}
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
-                    <Box sx={{ ...pillSx, minWidth: 120 }}>
-                      <FormControl size="small" fullWidth>
-                        <Select value={selectedMonth} onChange={(e) => setYM(selectedYear, e.target.value)} sx={selectSx}>
-                          {MONTHS_PT.map((mm) => (
-                            <MenuItem key={mm.value} value={mm.value}>
-                              {mm.label}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Box>
-
-                    <Box sx={{ ...pillSx, minWidth: 110 }}>
-                      <FormControl size="small" fullWidth>
-                        <Select value={selectedYear} onChange={(e) => setYM(e.target.value, selectedMonth)} sx={selectSx}>
-                          {years.map((yy) => (
-                            <MenuItem key={yy} value={yy}>
-                              {yy}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Box>
-                  </Stack>
-                </>
-              }
-
-              {/* ✅ ações separadas (modo + eye) */}
-              {/* ✅ ações (modo + eye + sair) — menor e mais clean */}
-              <Stack
-                direction="row"
-                spacing={0.6}
-                alignItems="center"
-                sx={{
-                  ...pillSx,
-                  px: 0.6,
-                  py: 0.35,
-                  gap: 0.4,
-                }}
-              >
+              <Stack direction="row" spacing={0.6} alignItems="center" sx={{ ...pillSx, px: 0.6, py: 0.35, gap: 0.4 }}>
                 {(() => {
                   const btnSx = (t) => ({
                     width: 32,
@@ -768,7 +662,7 @@ export default function Layout({ children }) {
                       bgcolor: alpha(t.palette.text.primary, t.palette.mode === "dark" ? 0.08 : 0.06),
                       color: "text.primary",
                     },
-                    "& .MuiSvgIcon-root": { fontSize: 18 }, // deixa o ícone menos robusto
+                    "& .MuiSvgIcon-root": { fontSize: 18 },
                   });
 
                   const dangerBtnSx = (t) => ({
@@ -777,9 +671,7 @@ export default function Layout({ children }) {
                     borderRadius: 999,
                     color: t.palette.error.main,
                     transition: "all .16s ease",
-                    "&:hover": {
-                      bgcolor: alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.16 : 0.10),
-                    },
+                    "&:hover": { bgcolor: alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.16 : 0.10) },
                     "& .MuiSvgIcon-root": { fontSize: 18 },
                   });
 
@@ -787,33 +679,17 @@ export default function Layout({ children }) {
                     <>
                       <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
                         <IconButton onClick={themeMode.toggle} size="small" sx={btnSx}>
-                          {themeMode.mode === "dark" ? (
-                            <LightModeRoundedIcon fontSize="small" />
-                          ) : (
-                            <DarkModeRoundedIcon fontSize="small" />
-                          )}
+                          {themeMode.mode === "dark" ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
                         </IconButton>
                       </Tooltip>
 
                       <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
                         <IconButton size="small" onClick={() => dispatch(toggleHideValues())} sx={btnSx}>
-                          {hideValues ? (
-                            <VisibilityOffRoundedIcon fontSize="small" />
-                          ) : (
-                            <VisibilityRoundedIcon fontSize="small" />
-                          )}
+                          {hideValues ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
                         </IconButton>
                       </Tooltip>
 
-                      {/* separadorzinho sutil */}
-                      <Box
-                        sx={(t) => ({
-                          width: 1,
-                          height: 18,
-                          mx: 0.2,
-                          bgcolor: alpha(t.palette.divider, 0.9),
-                        })}
-                      />
+                      <Box sx={(t) => ({ width: 1, height: 18, mx: 0.2, bgcolor: alpha(t.palette.divider, 0.9) })} />
 
                       <Tooltip title="Sair">
                         <IconButton size="small" onClick={handleLogout} sx={dangerBtnSx}>
@@ -824,32 +700,19 @@ export default function Layout({ children }) {
                   );
                 })()}
               </Stack>
-
             </Stack>
           </Toolbar>
         </AppBar>
 
-        <Box
-          sx={{
-            flex: 1,
-            overflow: "auto",
-            width: "100%",
-            minWidth: 0,
-            px: { xs: 1.2, md: 2 },  // padding lateral controlado
-            py: 1.5,
-          }}
-        >
+        <Box sx={{ flex: 1, overflow: "auto", width: "100%", minWidth: 0, px: { xs: 1.2, md: 2 }, py: 1.5 }}>
           {children}
         </Box>
-
-
 
         {newOpen ? (
           <Suspense fallback={null}>
             <NewTransactionModal open={newOpen} onClose={() => setNewOpen(false)} />
           </Suspense>
         ) : null}
-
       </Box>
     </Box>
   );

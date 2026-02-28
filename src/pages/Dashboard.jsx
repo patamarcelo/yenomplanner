@@ -17,16 +17,7 @@ import { selectTransactionsUi } from "../store/transactionsSlice";
 import { bootstrapThunk } from "../store/bootstrapThunk";
 import Spinner from "../components/ui/Spinner";
 
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  LabelList,
-} from "recharts";
+
 
 import AccountsMatrix from "../components/AccountsMatrix";
 
@@ -37,10 +28,12 @@ import { Button, Collapse } from "@mui/material";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 
+import DashboardChart from "../components/DashboardChart";
+
 // =============================
 // DEBUG
 // =============================
-const DEBUG = true;
+const DEBUG = false;
 // eslint-disable-next-line no-console
 const dbg = (...args) => DEBUG && console.log(...args);
 // eslint-disable-next-line no-console
@@ -493,6 +486,8 @@ export default function Dashboard() {
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [showAllCards, setShowAllCards] = useState(false);
 
+  const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
+  
   // “tem dados?” (define o que é “dado suficiente” no seu caso)
   const hasAnyData =
     (accounts?.length || 0) > 0 ||
@@ -516,7 +511,7 @@ export default function Dashboard() {
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
 
-  const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
+  
   const categoriesById = useMemo(() => {
     const m = new Map();
     (categories || []).forEach((c) => {
@@ -537,10 +532,6 @@ export default function Dashboard() {
   };
 
 
-  useEffect(() => {
-    console.log('chamadno bootstrapThunk')
-    dispatch(bootstrapThunk());
-  }, []);
 
 
   // -----------------------------
@@ -1092,75 +1083,19 @@ export default function Dashboard() {
               </Stack>
 
               <Box sx={{ width: "100%", height: 360, minHeight: 360 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartStack.data} margin={{ top: 26, right: 18, left: 0, bottom: 0 }}>
-                    <CartesianGrid
-                      vertical={false}
-                      stroke={alpha(theme.palette.divider, 0.55)}
-                      strokeDasharray="3 6"
-                      opacity={0.18}
-                    />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={{ fontSize: 12 }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={60}
-                      domain={[0, Math.max(10, maxChartValue * 1.15)]}
-                      tickFormatter={(v) => (hideValues ? "••••" : formatBRL(v))}
-                    />
-                    <RechartsTooltip
-                      content={(props) => (
-                        <StackedDayTooltip
-                          {...props}
-                          catMeta={chartStack.catMeta}
-                          theme={theme}
-                          money={money}
-                          vizRef={vizRef}
-                        />
-                      )}
-                    />
-
-                    {chartStack.catKeys.map((k) => {
-                      const meta = chartStack.catMeta.get(String(k));
-                      const fill = meta?.color || pickFallbackColor(theme, k);
-                      return (
-                        <Bar
-                          key={k}
-                          dataKey={k}
-                          stackId="day"
-                          fill={fill}
-                          radius={[0, 0, 0, 0]}
-                          barSize={24}
-                          isAnimationActive
-                          animationDuration={500}
-                        />
-                      );
-                    })}
-
-                    <Bar dataKey="total" fill="transparent" stackId="__total_label__">
-                      <LabelList
-                        dataKey="total"
-                        position="top"
-                        content={({ x, y, width, value }) => {
-                          if (!value || Number(value) <= 0) return null;
-                          return (
-                            <text
-                              x={x + width / 2}
-                              y={y - 6}
-                              textAnchor="middle"
-                              fontSize={9}
-                              fontWeight={700}
-                              fill={theme.palette.text.secondary}
-                            >
-                              {money(value)}
-                            </text>
-                          );
-                        }}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <DashboardChart
+                  data={chartStack.data}
+                  catKeys={chartStack.catKeys}
+                  catMeta={chartStack.catMeta}
+                  maxChartValue={maxChartValue}
+                  hideValues={hideValues}
+                  money={money}
+                  theme={theme}
+                  vizRef={vizRef}
+                  formatBRL={formatBRL}
+                  pickFallbackColor={pickFallbackColor}
+                  StackedDayTooltip={StackedDayTooltip}
+                />
               </Box>
 
               <Divider />

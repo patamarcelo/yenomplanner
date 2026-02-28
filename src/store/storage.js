@@ -81,3 +81,11 @@ export function saveState(state) {
     // ignore
   }
 }
+
+export function clearState() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // ignore
+  }
+}
