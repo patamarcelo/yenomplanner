@@ -660,7 +660,44 @@ export default function Layout({ children }) {
                 </Stack>
               )}
 
-              <Stack direction="row" spacing={0.6} alignItems="center" sx={{ ...pillSx, px: 0.6, py: 0.35, gap: 0.4 }}>
+              <Stack
+                direction="row"
+                spacing={0.6}
+                alignItems="center"
+                sx={(t) => ({
+                  ...pillSx,
+                  px: 0.6,
+                  py: 0.35,
+                  gap: 0.4,
+
+                  "& .hideValuesBtn": {
+                    width: 0,
+                    minWidth: 0,
+                    padding: 0,
+                    margin: 0,
+                    opacity: 0,
+                    overflow: "hidden",
+                    pointerEvents: "none",
+                    transition: "all .18s ease",
+                  },
+
+                  "&:hover .hideValuesBtn": {
+                    width: 22,
+                    minWidth: 22,
+                  
+                    opacity: 1,
+                    pointerEvents: "auto",
+                  },
+                  // (opcional) em touch/mobile não tem hover → deixa sempre visível
+                  [t.breakpoints.down("sm")]: {
+                    "& .hideValuesBtn": {
+                      opacity: 1,
+                      transform: "translateY(0)",
+                      pointerEvents: "auto",
+                    },
+                  },
+                })}
+              >
                 {(() => {
                   const btnSx = (t) => ({
                     width: 32,
@@ -694,7 +731,7 @@ export default function Layout({ children }) {
                       </Tooltip>
 
                       <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
-                        <IconButton size="small" onClick={() => dispatch(toggleHideValues())} sx={btnSx}>
+                        <IconButton size="small" onClick={() => dispatch(toggleHideValues())} sx={btnSx} className="hideValuesBtn">
                           {hideValues ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
                         </IconButton>
                       </Tooltip>
@@ -724,6 +761,6 @@ export default function Layout({ children }) {
           </Suspense>
         ) : null}
       </Box>
-    </Box>
+    </Box >
   );
 }
