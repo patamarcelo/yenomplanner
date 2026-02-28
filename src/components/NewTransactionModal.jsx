@@ -34,6 +34,8 @@ import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
 
 import { selectTransactionsUi } from "../store/transactionsSlice";
 
+import CategoryOption from "./categories/CategoryOption.jsx";
+
 
 const MIN_MERCHANT_CHARS = 2; // use 1 se preferir
 const MIN_DESC_CHARS = 0;
@@ -362,6 +364,29 @@ export default function NewTransactionModal({ open, onClose, rows }) {
 
     return "";
   }
+
+  const categoriesBySlug = useMemo(() => {
+    const map = new Map();
+    (categories || []).forEach((c) => {
+      const key = String(c?.slug ?? c?.id ?? "");
+      if (key) map.set(key, c);
+    });
+    return map;
+  }, [categories]);
+
+  const selectedCategory = useMemo(() => {
+    return categoriesBySlug.get(String(categoryId || "")) || null;
+  }, [categoriesBySlug, categoryId]);
+
+
+  useEffect(() => {
+    if (!open) return;
+    const sample = (categories || []).slice(0, 3);
+    console.log("[NewTxnModal] categories sample:", sample);
+    console.log("[NewTxnModal] categoryId:", categoryId);
+    console.log("[NewTxnModal] selectedCategory:", selectedCategory);
+  }, [open, categories, categoryId, selectedCategory]);
+
 
   function buildBaseTxn() {
     const loja = (merchant || "").trim();
@@ -924,14 +949,22 @@ export default function NewTransactionModal({ open, onClose, rows }) {
               onChange={(e) => setCategoryId(e.target.value)}
               fullWidth
               helperText={suggestedCategoryForMerchant ? `Sugestão da loja: ${suggestedCategoryForMerchant}` : "—"}
+              SelectProps={{
+                renderValue: () => {
+                  if (!selectedCategory) return "(Sem categoria)";
+                  return <CategoryOption category={selectedCategory} dense />;
+                },
+              }}
             >
-              {categories.map((c) => (
-                <MenuItem key={c.id} value={c.slug}>
-                  {c.name}
-                </MenuItem>
-              ))}
+              {categories.map((c) => {
+                const value = String(c?.slug ?? c?.id ?? "");
+                return (
+                  <MenuItem key={value} value={value}>
+                    <CategoryOption category={c} />
+                  </MenuItem>
+                );
+              })}
             </TextField>
-
             <TextField
               sx={inputSx}
               label="Valor (R$)"

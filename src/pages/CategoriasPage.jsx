@@ -253,7 +253,18 @@ function CategoryDialog({ open, onClose, initial }) {
         },
       }}
     >
-      <DialogTitle sx={{ fontWeight: 950 }}>{isEdit ? "Editar categoria" : "Nova categoria"}</DialogTitle>
+      <DialogTitle
+        sx={{
+          fontWeight: 950,
+          color: "whitesmoke",
+          p: 2,
+          // bgcolor: "blue",
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          "& .MuiTypography-root": { fontWeight: 950, lineHeight: 1.15, p:2 },
+        }}
+
+      >{isEdit ? "Editar categoria" : "Nova categoria"}</DialogTitle>
 
       <DialogContent>
         <Stack spacing={1.2} sx={{ mt: 2 }}>

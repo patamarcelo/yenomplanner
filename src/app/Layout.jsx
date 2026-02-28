@@ -712,7 +712,7 @@ export default function Layout({ children }) {
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
               {location.pathname === "/" &&
                 <>
-                  <DashboardFilters />
+                  {/* <DashboardFilters /> */}
 
 
                   {/* ✅ filtros separados: Mês e Ano */}
