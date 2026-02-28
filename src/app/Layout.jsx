@@ -50,6 +50,7 @@ import { meThunk, logout } from "../store/authSlice";
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
+import { fetchCategoriesThunk } from "../store/categoriesSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
@@ -303,6 +304,8 @@ export default function Layout({ children }) {
         dispatch(fetchAccountsThunk()).unwrap(),
         dispatch(fetchAllTransactionsThunk()).unwrap(),
         dispatch(fetchBillsThunk()).unwrap(),
+        dispatch(fetchCategoriesThunk()).unwrap(),
+
       ]).finally(() => {
         bootstrappedRef.current = true;
       });
