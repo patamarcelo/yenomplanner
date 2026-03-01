@@ -156,6 +156,28 @@ function getDefaultYM() {
   return `${y}-${pad2(m)}`;
 }
 
+const LS_MONTH_KEY = "yp.finance.month"; // chave única do filtro
+
+function getStoredYM() {
+  try {
+    const v = localStorage.getItem(LS_MONTH_KEY);
+    if (!v) return "";
+    return String(v);
+  } catch {
+    return "";
+  }
+}
+
+function setStoredYM(ym) {
+  try {
+    if (!ym) return;
+    localStorage.setItem(LS_MONTH_KEY, String(ym));
+  } catch {
+    // ignore
+  }
+}
+
+
 function parseYM(ym) {
   // ym esperado: "YYYY-MM"
   if (!ym || typeof ym !== "string" || !ym.includes("-")) {
@@ -252,21 +274,39 @@ export default function Layout({ children }) {
   // ✅ valores atuais do filtro
   const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
 
-  const years = useMemo(() => [2025, 2026], []);
+  const years = useMemo(() => {
+    const now = new Date().getFullYear();
+    return [now - 1, now, now + 1];
+  }, []);
 
   // ✅ garante "YYYY-MM" válido (ano atual por padrão)
   useEffect(() => {
     if (isPublicRoute) return;
+
+    // 1) se não tem month no redux, tenta localStorage; senão usa current
     if (!month) {
-      dispatch(setMonth(getDefaultYM()));
+      const stored = getStoredYM();
+      const candidate = stored || getDefaultYM();
+      const { y, m } = parseYM(candidate);
+      const normalized = `${y}-${pad2(m)}`;
+
+      dispatch(setMonth(normalized));
+      setStoredYM(normalized);
       return;
     }
-    // se estiver inválido, normaliza
+
+    // 2) se tem month, normaliza e salva
     const { y, m } = parseYM(month);
     const normalized = `${y}-${pad2(m)}`;
-    if (normalized !== month) dispatch(setMonth(normalized));
-  }, [month, dispatch, isPublicRoute]);
 
+    if (normalized !== month) {
+      dispatch(setMonth(normalized));
+      setStoredYM(normalized);
+      return;
+    }
+
+    setStoredYM(month);
+  }, [month, dispatch, isPublicRoute]);
   // ✅ Guard de auth + bootstrap do /me + carregar dados (somente logado)
   useEffect(() => {
     // rota pública: não faz nada
