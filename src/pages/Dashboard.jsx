@@ -385,11 +385,11 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
   const total = (payload || []).find((p) => p?.dataKey === "total")?.value || 0;
 
   function brFromISO(iso) {
-  const s = String(iso || "").slice(0, 10); // "YYYY-MM-DD"
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return "—";
-  return `${m[3]}/${m[2]}/${m[1]}`;
-}
+    const s = String(iso || "").slice(0, 10); // "YYYY-MM-DD"
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return "—";
+    return `${m[3]}/${m[2]}/${m[1]}`;
+  }
 
   return (
     <Box
@@ -403,7 +403,12 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
       }}
     >
       <Stack spacing={0.8}>
-        <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="baseline"
+          sx={{ my: 3 }} // Adiciona margem em cima e embaixo (margin-y)
+        >
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>Dia {brFromISO(sp)}</Typography>
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>{money(total)}</Typography>
         </Stack>
