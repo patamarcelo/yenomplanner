@@ -29,6 +29,8 @@ import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 
 import DashboardChart from "../components/DashboardChart";
+import DashboardChartNivo from "../components/DashboardChartNivo";
+
 
 // =============================
 // DEBUG
@@ -54,9 +56,10 @@ const dbgGroup = (title, fn) => {
 function normalizeISODate(d) {
   if (!d) return "";
   if (d instanceof Date && !isNaN(d.getTime())) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
+    // ✅ usa UTC para não “voltar 1 dia” no Brasil quando vier meia-noite UTC
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
     return `${y}-${m}-${dd}`;
   }
   const s = String(d);
@@ -381,6 +384,13 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
 
   const total = (payload || []).find((p) => p?.dataKey === "total")?.value || 0;
 
+  function brFromISO(iso) {
+  const s = String(iso || "").slice(0, 10); // "YYYY-MM-DD"
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "—";
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
   return (
     <Box
       sx={{
@@ -394,36 +404,8 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
     >
       <Stack spacing={0.8}>
         <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-          <Typography sx={{ fontWeight: 950, fontSize: 12 }}>Dia {label}</Typography>
+          <Typography sx={{ fontWeight: 950, fontSize: 12 }}>Dia {brFromISO(sp)}</Typography>
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>{money(total)}</Typography>
-        </Stack>
-
-        <Stack spacing={0.2}>
-          {vizRef === "purchase" ? (
-            <>
-              <Typography sx={{ fontSize: 11, color: "text.secondary", fontWeight: 850 }}>
-                Compra: {sp ? new Date(sp).toLocaleDateString("pt-BR") : "—"}
-              </Typography>
-              {sc && sc !== sp ? (
-                <Typography sx={{ fontSize: 11, color: "text.secondary", fontWeight: 850 }}>
-                  Competência: {new Date(sc).toLocaleDateString("pt-BR")}
-                  {mixed ? " (múltiplas)" : ""}
-                </Typography>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <Typography sx={{ fontSize: 11, color: "text.secondary", fontWeight: 850 }}>
-                Competência: {sc ? new Date(sc).toLocaleDateString("pt-BR") : "—"}
-              </Typography>
-              {sp && sp !== sc ? (
-                <Typography sx={{ fontSize: 11, color: "text.secondary", fontWeight: 850 }}>
-                  Compra: {new Date(sp).toLocaleDateString("pt-BR")}
-                  {mixed ? " (múltiplas)" : ""}
-                </Typography>
-              ) : null}
-            </>
-          )}
         </Stack>
 
         <Divider sx={{ opacity: 0.6 }} />
@@ -487,7 +469,7 @@ export default function Dashboard() {
   const [showAllCards, setShowAllCards] = useState(false);
 
   const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
-  
+
   // “tem dados?” (define o que é “dado suficiente” no seu caso)
   const hasAnyData =
     (accounts?.length || 0) > 0 ||
@@ -501,6 +483,10 @@ export default function Dashboard() {
   // parts = parcela (competência real), consolidate_purchase = consolidado na compra, hide = oculta parcelados
   const [vizInstallments, setVizInstallments] = useState("consolidate_purchase"); // "parts" | "consolidate_purchase" | "hide"
 
+
+  const [chartLib, setChartLib] = useState("recharts"); // "nivo" | "recharts"
+
+
   useEffect(() => {
     const alreadyLoaded = accountsStatus === "succeeded" && txStatus === "succeeded";
     if (alreadyLoaded) return;
@@ -511,7 +497,7 @@ export default function Dashboard() {
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
 
-  
+
   const categoriesById = useMemo(() => {
     const m = new Map();
     (categories || []).forEach((c) => {
@@ -1078,25 +1064,60 @@ export default function Dashboard() {
                     <ToggleButton value="parts">Parcelados: parcela</ToggleButton>
                     <ToggleButton value="consolidate_purchase">Consolidado na compra</ToggleButton>
                     <ToggleButton value="hide">Ocultar</ToggleButton>
+                    {/* <ToggleButtonGroup
+                      size="small"
+                      exclusive
+                      value={chartLib}
+                      onChange={(_, v) => v && setChartLib(v)}
+                      sx={{
+                        "& .MuiToggleButton-root": {
+                          px: 1.1,
+                          py: 0.55,
+                          fontWeight: 900,
+                          textTransform: "none"
+                        },
+                      }}
+                    >
+                      <ToggleButton value="recharts">Recharts</ToggleButton>
+                      <ToggleButton value="nivo">Nivo</ToggleButton>
+                    </ToggleButtonGroup> */}
                   </ToggleButtonGroup>
                 </Stack>
               </Stack>
 
               <Box sx={{ width: "100%", height: 360, minHeight: 360 }}>
-                <DashboardChart
-                  data={chartStack.data}
-                  catKeys={chartStack.catKeys}
-                  catMeta={chartStack.catMeta}
-                  maxChartValue={maxChartValue}
-                  hideValues={hideValues}
-                  money={money}
-                  theme={theme}
-                  vizRef={vizRef}
-                  formatBRL={formatBRL}
-                  pickFallbackColor={pickFallbackColor}
-                  StackedDayTooltip={StackedDayTooltip}
-                />
+
+                {chartLib === "nivo" ? (
+                  <DashboardChartNivo
+                    data={chartStack.data}
+                    catKeys={chartStack.catKeys}
+                    catMeta={chartStack.catMeta}
+                    maxChartValue={maxChartValue}
+                    hideValues={hideValues}
+                    money={money}
+                    theme={theme}
+                    formatBRL={formatBRL}
+                    pickFallbackColor={pickFallbackColor}
+                  />
+                ) : (
+                  <DashboardChart
+                    data={chartStack.data}
+                    catKeys={chartStack.catKeys}
+                    catMeta={chartStack.catMeta}
+                    maxChartValue={maxChartValue}
+                    hideValues={hideValues}
+                    money={money}
+                    theme={theme}
+                    vizRef={vizRef}
+                    formatBRL={formatBRL}
+                    month={month}
+                    pickFallbackColor={pickFallbackColor}
+                    StackedDayTooltip={StackedDayTooltip}
+                  />
+                )}
               </Box>
+
+
 
               <Divider />
             </Stack>
