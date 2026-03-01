@@ -90,7 +90,7 @@ export default React.memo(function DashboardChart({
               fill={fill}
               radius={[0, 0, 0, 0]}
               barSize={24}
-              isAnimationActive={false}
+              isAnimationActive={true}
             />
           );
         })}
