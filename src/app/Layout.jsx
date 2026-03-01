@@ -156,22 +156,20 @@ function getDefaultYM() {
   return `${y}-${pad2(m)}`;
 }
 
-const LS_MONTH_KEY = "yp.finance.month"; // chave única do filtro
+const LS_FINANCE_YM_KEY = "yp.finance.filterYM";
 
-function getStoredYM() {
+function readStoredYM() {
   try {
-    const v = localStorage.getItem(LS_MONTH_KEY);
-    if (!v) return "";
-    return String(v);
+    const v = localStorage.getItem(LS_FINANCE_YM_KEY);
+    return v ? String(v) : "";
   } catch {
     return "";
   }
 }
 
-function setStoredYM(ym) {
+function writeStoredYM(ym) {
   try {
-    if (!ym) return;
-    localStorage.setItem(LS_MONTH_KEY, String(ym));
+    if (ym) localStorage.setItem(LS_FINANCE_YM_KEY, String(ym));
   } catch {
     // ignore
   }
@@ -283,30 +281,35 @@ export default function Layout({ children }) {
   useEffect(() => {
     if (isPublicRoute) return;
 
-    // 1) se não tem month no redux, tenta localStorage; senão usa current
-    if (!month) {
-      const stored = getStoredYM();
-      const candidate = stored || getDefaultYM();
-      const { y, m } = parseYM(candidate);
-      const normalized = `${y}-${pad2(m)}`;
+    // se já tem month no redux, não mexe
+    if (month) return;
 
-      dispatch(setMonth(normalized));
-      setStoredYM(normalized);
-      return;
-    }
+    const stored = readStoredYM();
+    const candidate = stored || getDefaultYM();
 
-    // 2) se tem month, normaliza e salva
+    const { y, m } = parseYM(candidate);
+    const normalized = `${y}-${pad2(m)}`;
+
+    dispatch(setMonth(normalized));
+  }, [isPublicRoute, month, dispatch]);
+
+  useEffect(() => {
+    if (isPublicRoute) return;
+    if (!month) return;
+
     const { y, m } = parseYM(month);
     const normalized = `${y}-${pad2(m)}`;
 
+    // se veio algo estranho, corrige no redux
     if (normalized !== month) {
       dispatch(setMonth(normalized));
-      setStoredYM(normalized);
       return;
     }
 
-    setStoredYM(month);
-  }, [month, dispatch, isPublicRoute]);
+    writeStoredYM(month);
+  }, [isPublicRoute, month, dispatch]);
+
+
   // ✅ Guard de auth + bootstrap do /me + carregar dados (somente logado)
   useEffect(() => {
     // rota pública: não faz nada
