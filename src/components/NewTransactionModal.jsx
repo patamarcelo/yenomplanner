@@ -1,5 +1,5 @@
 // src/components/NewTransactionModal.jsx
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useDeferredValue } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -18,7 +18,9 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   Autocomplete,
+  useMediaQuery,
 } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 
 import { useDispatch, useSelector } from "react-redux";
 
@@ -27,37 +29,36 @@ import { formatBRL } from "../utils/money";
 import { computeInvoiceMonthFromPurchase, ymFromDate } from "../utils/BillingDates.js";
 import { formatMonthBR } from "../utils/dateBR";
 
-import { createTransactionThunk } from "../store/transactionsSlice";
+import { createTransactionThunk, selectTransactionsUi } from "../store/transactionsSlice";
 import { selectCategories } from "../store/categoriesSlice";
 
 import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
-
-import { selectTransactionsUi } from "../store/transactionsSlice";
-
 import CategoryOption from "./categories/CategoryOption.jsx";
 
 import toast from "react-hot-toast";
-
-
-const MIN_MERCHANT_CHARS = 2; // use 1 se preferir
-const MIN_DESC_CHARS = 0;
-
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 
 // ---------- helpers ----------
-function addMonthsToISO(iso, idx) {
+function clampDayToMonth(year, monthIndex0, day) {
+  const d = Math.max(1, Math.min(31, Number(day || 1)));
+  const last = new Date(year, monthIndex0 + 1, 0).getDate();
+  return Math.min(d, last);
+}
+
+function addMonthsToISO(iso, idx, wantedDay) {
   const s = String(iso || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
   const y = Number(s.slice(0, 4));
   const m = Number(s.slice(5, 7));
-  const d = Number(s.slice(8, 10));
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return "";
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return "";
 
-  const base = new Date(y, m - 1, 1);
-  base.setMonth(base.getMonth() + Number(idx || 0));
+  const d0 = new Date(y, m - 1, 1);
+  d0.setMonth(d0.getMonth() + Number(idx || 0));
 
-  const yy = base.getFullYear();
-  const mm0 = base.getMonth(); // 0-11
-  const safeDay = clampDayToMonth(yy, mm0, d);
+  const yy = d0.getFullYear();
+  const mm0 = d0.getMonth(); // 0-11
+  const safeDay = clampDayToMonth(yy, mm0, wantedDay);
 
   const mm = String(mm0 + 1).padStart(2, "0");
   const dd = String(safeDay).padStart(2, "0");
@@ -77,13 +78,6 @@ function ymFromISODate(iso) {
   return s.slice(0, 7);
 }
 
-function clampDayToMonth(year, monthIndex0, day) {
-  // monthIndex0: 0-11
-  const d = Math.max(1, Math.min(31, Number(day || 1)));
-  const last = new Date(year, monthIndex0 + 1, 0).getDate(); // último dia do mês
-  return Math.min(d, last);
-}
-
 function addMonthsYM(ym, add) {
   const [y0, m0] = String(ym || "").split("-");
   const y = Number(y0);
@@ -97,7 +91,6 @@ function addMonthsYM(ym, add) {
 }
 
 function ymCompare(a, b) {
-  // retorna -1,0,1 comparando YYYY-MM
   if (!a || !b) return 0;
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -128,7 +121,6 @@ function genClientId() {
   return `manual:${Date.now()}:${rand}`;
 }
 
-// BRL input helpers (igual ao grid/dialog)
 function sanitizeBrlInput(raw) {
   return String(raw ?? "")
     .replace(/\s+/g, "")
@@ -157,22 +149,38 @@ function safeAccountActive(a) {
 }
 
 // -----------------------------------------------
-// ✅ Modal
+// ✅ Modal (Mobile Optimized)
 // -----------------------------------------------
-export default function NewTransactionModal({ open, onClose, rows }) {
+export default function NewTransactionModal({ open, onClose }) {
   const dispatch = useDispatch();
+  const theme = useTheme();
+  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
+
+  // ✅ min chars menor no mobile, pra reduzir digitação
+  const MIN_MERCHANT_CHARS = isSmDown ? 1 : 2;
+  const MIN_DESC_CHARS = 0;
 
   const accounts = useSelector((s) => s.accounts?.accounts || []);
   const apiError = useSelector((s) => s.transactions?.error || "");
-
   const rowsFromStore = useSelector(selectTransactionsUi);
-  const historyRows = useMemo(() => (Array.isArray(rowsFromStore) ? rowsFromStore : []), [rowsFromStore]);
-
-  // ✅ categorias reais do store (para ficar consistente com grid)
   const categories = useSelector(selectCategories) || [];
 
+  // ✅ history rows só como array estável
+  const historyRows = useMemo(
+    () => (Array.isArray(rowsFromStore) ? rowsFromStore : []),
+    [rowsFromStore]
+  );
 
-  const historyIndex = useMemo(() => buildTxnHistoryIndex(historyRows), [historyRows]);
+  // ✅ Só monta index quando usuário realmente precisa (focus)
+  const [historyEnabled, setHistoryEnabled] = useState(false);
+
+  const historyIndex = useMemo(() => {
+    if (!open) return null;
+    if (!historyEnabled) return null;
+    // se não tem nada, nem monta
+    if (!historyRows?.length) return null;
+    return buildTxnHistoryIndex(historyRows);
+  }, [open, historyEnabled, historyRows]);
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -190,35 +198,35 @@ export default function NewTransactionModal({ open, onClose, rows }) {
   // ✅ usar slug (consistente com grid)
   const [categoryId, setCategoryId] = useState("outros");
 
-  // ✅ guardar como string BRL (sempre positivo)
+  // ✅ string BRL
   const [amount, setAmount] = useState("0");
 
-  // ✅ status (mantive seus valores em inglês para não quebrar back/store)
   const [status, setStatus] = useState("planned"); // planned | confirmed | paid | overdue
-
-  // ✅ trava auto-status quando usuário mexer manualmente
   const statusTouchedRef = useRef(false);
 
   const [kind, setKind] = useState("one_off"); // one_off | recurring | installment
   const [nParts, setNParts] = useState(2);
 
-  // expense | income
   const [direction, setDirection] = useState("expense");
 
-  // ✅ recorrência mensal: até (YYYY-MM)
   const [recurringUntilYm, setRecurringUntilYm] = useState(() => {
     const t = new Date();
     const y = t.getFullYear();
-    return `${y}-12`; // padrão: dezembro do ano atual
+    return `${y}-12`;
   });
 
+  // ✅ preview parcels colapsado (mobile-friendly)
+  const [showInstallmentsPreview, setShowInstallmentsPreview] = useState(false);
+
+  // ✅ deferred values (reduz “engasgo” do autocomplete)
+  const merchantDeferred = useDeferredValue(merchant);
+  const descriptionDeferred = useDeferredValue(description);
 
   const selectedAccount = useMemo(() => {
     if (!accountId) return null;
     return accounts.find((a) => a.id === accountId) || null;
   }, [accounts, accountId]);
 
-  // invoiceMonth (YYYY-MM)
   const invoiceMonth = useMemo(() => {
     if (selectedAccount?.type === "credit_card") {
       const cutoffDay = selectedAccount?.statement?.cutoffDay;
@@ -227,7 +235,6 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     return ymFromDate(chargeDate);
   }, [purchaseDate, chargeDate, selectedAccount]);
 
-  // ✅ status automático ao selecionar conta
   function applyAutoStatusByAccount(nextAccountId) {
     if (statusTouchedRef.current) return;
 
@@ -238,24 +245,21 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     else setStatus("paid");
   }
 
-  // ✅ auto categoria pela loja (mais frequente)
+  // ✅ sugestão categoria por merchant (somente se index habilitado)
   const suggestedCategoryForMerchant = useMemo(() => {
-    return historyIndex?.getBestCategoryForMerchant?.(merchant) || "";
-  }, [historyIndex, merchant]);
+    if (!historyIndex) return "";
+    return historyIndex?.getBestCategoryForMerchant?.(merchantDeferred) || "";
+  }, [historyIndex, merchantDeferred]);
 
   useEffect(() => {
     if (!open) return;
-    if (!merchant) return;
+    if (!merchantDeferred) return;
     if (!suggestedCategoryForMerchant) return;
-
-    // autopreenche se está vazio ou no default "outros"
-    if (!categoryId || categoryId === "outros") {
-      setCategoryId(suggestedCategoryForMerchant);
-    }
+    if (!categoryId || categoryId === "outros") setCategoryId(suggestedCategoryForMerchant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, merchant, suggestedCategoryForMerchant]);
+  }, [open, merchantDeferred, suggestedCategoryForMerchant]);
 
-  // auto-ajuste chargeDate quando trocar conta / purchaseDate (se usuário não editou manualmente)
+  // auto-ajuste chargeDate quando trocar conta / purchaseDate (se usuário não editou)
   useEffect(() => {
     if (!open) return;
 
@@ -279,25 +283,52 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     }
   }, [open, selectedAccount, purchaseDate, chargeTouched]);
 
-  const previewParts = useMemo(() => {
-    const n = Math.max(1, Number(nParts || 1));
-    const v = parseBrlToNumber(amount);
-    if (kind !== "installment" || !Number.isFinite(v) || v <= 0 || n <= 1) return [];
-    return splitInstallments(v, n);
-  }, [amount, kind, nParts]);
+  const categoriesBySlug = useMemo(() => {
+    const map = new Map();
+    (categories || []).forEach((c) => {
+      const key = String(c?.slug ?? c?.id ?? "");
+      if (key) map.set(key, c);
+    });
+    return map;
+  }, [categories]);
 
+  const selectedCategory = useMemo(() => {
+    return categoriesBySlug.get(String(categoryId || "")) || null;
+  }, [categoriesBySlug, categoryId]);
+
+  // ✅ sugestões: só calcula se historyIndex estiver habilitado
+  const merchantOptions = useMemo(() => {
+    if (!historyIndex) return [];
+    const q = String(merchantDeferred || "").trim();
+    if (q.length < MIN_MERCHANT_CHARS) return [];
+    const list = historyIndex?.getMerchantSuggestions?.(q, isSmDown ? 8 : 12) || [];
+    return list.map((x) => x.label);
+  }, [historyIndex, merchantDeferred, MIN_MERCHANT_CHARS, isSmDown]);
+
+  const descriptionOptions = useMemo(() => {
+    if (!historyIndex) return [];
+    const m = String(merchantDeferred || "").trim();
+    const q = String(descriptionDeferred || "").trim();
+    if (!m) return [];
+    if (q.length < MIN_DESC_CHARS) return [];
+    const list = historyIndex?.getDescriptionSuggestions?.(m, q, isSmDown ? 8 : 12) || [];
+    return list.map((x) => x.label);
+  }, [historyIndex, merchantDeferred, descriptionDeferred, MIN_DESC_CHARS, isSmDown]);
+
+  // ✅ preview das parcelas: só calcula quando showInstallmentsPreview estiver true
   const previewInstallments = useMemo(() => {
+    if (kind !== "installment") return [];
+    if (!showInstallmentsPreview) return [];
     const n = Math.max(1, Number(nParts || 1));
     const v = parseBrlToNumber(amount);
-    if (kind !== "installment" || !Number.isFinite(v) || v <= 0 || n <= 1) return [];
+    if (!Number.isFinite(v) || v <= 0 || n <= 1) return [];
 
     const parts = splitInstallments(v, n);
-
-    // usa a chargeDate como base das datas previstas
     const baseCharge = chargeDate || todayISO();
+    const baseChargeDay = Number(String(baseCharge || "").slice(8, 10)) || 1;
 
     return parts.map((val, idx) => {
-      const iso = addMonthsToISO(baseCharge, idx) || baseCharge;
+      const iso = addMonthsToISO(baseCharge, idx, baseChargeDay) || baseCharge;
       return {
         idx,
         label: `${idx + 1}/${parts.length}`,
@@ -307,8 +338,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         valueLabel: formatBRL(val),
       };
     });
-  }, [amount, kind, nParts, chargeDate]);
-
+  }, [amount, kind, nParts, chargeDate, showInstallmentsPreview]);
 
   function reset() {
     const t = todayISO();
@@ -336,6 +366,9 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     const y = new Date().getFullYear();
     setRecurringUntilYm(`${y}-12`);
 
+    // ✅ mobile perf
+    setHistoryEnabled(false);
+    setShowInstallmentsPreview(false);
   }
 
   function handleClose() {
@@ -367,46 +400,23 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     return "";
   }
 
-  const categoriesBySlug = useMemo(() => {
-    const map = new Map();
-    (categories || []).forEach((c) => {
-      const key = String(c?.slug ?? c?.id ?? "");
-      if (key) map.set(key, c);
-    });
-    return map;
-  }, [categories]);
-
-  const selectedCategory = useMemo(() => {
-    return categoriesBySlug.get(String(categoryId || "")) || null;
-  }, [categoriesBySlug, categoryId]);
-
-
-  useEffect(() => {
-    if (!open) return;
-    const sample = (categories || []).slice(0, 3);
-    console.log("[NewTxnModal] categories sample:", sample);
-    console.log("[NewTxnModal] categoryId:", categoryId);
-    console.log("[NewTxnModal] selectedCategory:", selectedCategory);
-  }, [open, categories, categoryId, selectedCategory]);
-
-
   function buildBaseTxn() {
     const loja = (merchant || "").trim();
     const desc = (description || "").trim();
 
     const vNum = parseBrlToNumber(amount);
-    const amountStr = formatNumberToBrlInput(Math.abs(vNum)); // sempre positivo
+    const amountStr = formatNumberToBrlInput(Math.abs(vNum));
 
     return {
       client_id: genClientId(),
       purchaseDate,
       chargeDate,
-      invoiceMonth, // thunk converte pra invoice_month = YYYY-MM-01
+      invoiceMonth,
       accountId: accountId || null,
       merchant: loja,
       description: desc,
       categoryId,
-      amount: amountStr, // string BRL
+      amount: amountStr,
       status,
       direction,
       kind,
@@ -445,7 +455,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         return;
       }
 
-      // ✅ PARCELADO (garantido, com return)
+      // PARCELADO (principal)
       if (kind === "installment") {
         const n = Math.max(2, Number(nParts));
         const vNum = parseBrlToNumber(base.amount);
@@ -453,46 +463,24 @@ export default function NewTransactionModal({ open, onClose, rows }) {
 
         const groupId = `inst_${Math.random().toString(16).slice(2, 9)}`;
 
-        const acc = selectedAccount; // pode ser null
+        const acc = selectedAccount;
         const cutoffDay = acc?.statement?.cutoffDay;
         const dueDay = acc?.statement?.dueDay ?? 10;
 
-        // dia desejado (mantém o dia original, mas clampa pro mês)
         const basePurchaseDay = Number(String(base.purchaseDate || "").slice(8, 10)) || 1;
         const baseChargeDay = Number(String(base.chargeDate || "").slice(8, 10)) || 1;
 
-        function addMonthsToISO(iso, idx, wantedDay) {
-          const s = String(iso || "");
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "";
-          const y = Number(s.slice(0, 4));
-          const m = Number(s.slice(5, 7));
-          if (!Number.isFinite(y) || !Number.isFinite(m)) return "";
-
-          const d0 = new Date(y, m - 1, 1);
-          d0.setMonth(d0.getMonth() + idx);
-
-          const yy = d0.getFullYear();
-          const mm = d0.getMonth(); // 0-11
-          const safeDay = clampDayToMonth(yy, mm, wantedDay);
-          const m2 = String(mm + 1).padStart(2, "0");
-          const d2 = String(safeDay).padStart(2, "0");
-          return `${yy}-${m2}-${d2}`;
-        }
-
         const creates = parts.map((partValue, idx) => {
-          // para cada parcela: gera uma "compra" mensal (purchaseDate)
-          const purchaseDateStr = addMonthsToISO(base.purchaseDate, idx, basePurchaseDay) || base.purchaseDate;
+          const purchaseDateStr =
+            addMonthsToISO(base.purchaseDate, idx, basePurchaseDay) || base.purchaseDate;
 
           let chargeDateStr = "";
           let invoiceYm = "";
 
           if (acc?.type === "credit_card") {
-            // cartão: invoiceMonth vem do purchaseDate + cutoff
             invoiceYm = computeInvoiceMonthFromPurchase(purchaseDateStr, cutoffDay);
-            // cartão: chargeDate segue vencimento do mês de fatura
             chargeDateStr = makeChargeDateFromYM(invoiceYm, dueDay) || base.chargeDate;
           } else {
-            // conta corrente: chargeDate acompanha mês a mês (mesmo “dia da cobrança”)
             chargeDateStr = addMonthsToISO(base.chargeDate, idx, baseChargeDay) || base.chargeDate;
             invoiceYm = ymFromISODate(chargeDateStr);
           }
@@ -501,19 +489,14 @@ export default function NewTransactionModal({ open, onClose, rows }) {
             createTransactionThunk({
               ...base,
               client_id: genClientId(),
-
               kind: "installment",
               installmentGroupId: groupId,
               installmentCurrent: idx + 1,
               installmentTotal: n,
-
               purchaseDate: purchaseDateStr,
               chargeDate: chargeDateStr,
               invoiceMonth: invoiceYm,
-
               amount: formatNumberToBrlInput(partValue),
-
-              // 1ª parcela mantém status escolhido, futuras planned
               status: idx === 0 ? base.status : "planned",
             })
           ).unwrap();
@@ -526,9 +509,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         return;
       }
 
-
-      // MENSAL
-      // MENSAL (materializa 1 por mês, igual Bills)
+      // RECORRENTE
       if (kind === "recurring") {
         const startYm = ymFromISODate(base.chargeDate);
         const endYm = String(recurringUntilYm || "").trim();
@@ -549,16 +530,15 @@ export default function NewTransactionModal({ open, onClose, rows }) {
           return;
         }
 
-        const acc = selectedAccount; // pode ser null
+        const acc = selectedAccount;
         const dayWanted = Number(String(base.chargeDate).slice(8, 10)) || 1;
 
-        // conta quantos meses vamos gerar (inclusive)
         let months = 0;
         {
           const [sy, sm] = startYm.split("-").map(Number);
           const [ey, em] = endYm.split("-").map(Number);
           months = (ey * 12 + (em - 1)) - (sy * 12 + (sm - 1)) + 1;
-          months = Math.max(1, Math.min(240, months)); // trava hard (20 anos)
+          months = Math.max(1, Math.min(240, months));
         }
 
         const creates = Array.from({ length: months }).map((_, idx) => {
@@ -567,13 +547,9 @@ export default function NewTransactionModal({ open, onClose, rows }) {
           const safeDay = clampDayToMonth(yy, mm - 1, dayWanted);
           const chargeDateStr = `${yy}-${String(mm).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
 
-          // ✅ regra do invoiceMonth por tipo de conta:
-          // - cartão: usa purchaseDate + cutoff (igual seu memo)
-          // - outros: usa o mês da cobrança
           let nextInvoiceMonth = ym;
           if (acc?.type === "credit_card") {
             const cutoffDay = acc?.statement?.cutoffDay;
-            // compra mensal geralmente acompanha a cobrança (você pode mudar depois)
             const purchaseLike = chargeDateStr;
             nextInvoiceMonth = computeInvoiceMonthFromPurchase(purchaseLike, cutoffDay);
           }
@@ -585,10 +561,8 @@ export default function NewTransactionModal({ open, onClose, rows }) {
               kind: "recurring",
               recurringRule: "monthly",
               chargeDate: chargeDateStr,
-              // para “salário”, normalmente compra = cobrança
               purchaseDate: acc?.type === "credit_card" ? base.purchaseDate : chargeDateStr,
               invoiceMonth: nextInvoiceMonth,
-              // status: primeiro mantém, futuros ficam planned
               status: idx === 0 ? base.status : "planned",
             })
           ).unwrap();
@@ -601,42 +575,8 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         return;
       }
 
-
-      // PARCELADO
-      const n = Math.max(2, Number(nParts));
-      const vNum = parseBrlToNumber(base.amount);
-      const parts = splitInstallments(vNum, n);
-
-      const groupId = `inst_${Math.random().toString(16).slice(2, 9)}`;
-
-      const baseDate = new Date(base.chargeDate);
-      baseDate.setDate(1);
-
-      const creates = parts.map((partValue, idx) => {
-        const d = new Date(baseDate);
-        d.setMonth(d.getMonth() + idx);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const ym = `${y}-${m}`;
-        const dStr = `${y}-${m}-01`;
-
-        return dispatch(
-          createTransactionThunk({
-            ...base,
-            client_id: genClientId(),
-            chargeDate: dStr,
-            invoiceMonth: ym,
-            kind: "installment",
-            installmentGroupId: groupId,
-            installmentCurrent: idx + 1,
-            installmentTotal: n,
-            amount: formatNumberToBrlInput(partValue),
-            status: idx === 0 ? base.status : "planned",
-          })
-        ).unwrap();
-      });
-
-      await Promise.all(creates);
+      // fallback (não deveria cair aqui)
+      toast.success("Salvo!");
       handleClose();
     } catch (ex) {
       const msg =
@@ -645,42 +585,16 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         apiError ||
         "Erro ao salvar. Verifique os campos e tente novamente.";
       setErr(msg);
-      toast.error(msg); // ✅ opcional, mas ótimo
+      toast.error(msg);
       setSaving(false);
     }
   }
 
-  // ✅ sugestões
-  const merchantOptions = useMemo(() => {
-    const q = String(merchant || "").trim();
-    if (q.length < MIN_MERCHANT_CHARS) return [];
-    const list = historyIndex?.getMerchantSuggestions?.(q, 12) || [];
-    return list.map((x) => x.label);
-  }, [historyIndex, merchant]);
-
-
-  const descriptionOptions = useMemo(() => {
-    const m = String(merchant || "").trim();
-    const q = String(description || "").trim();
-    if (!m) return [];
-    if (q.length < MIN_DESC_CHARS) return [];
-    const list = historyIndex?.getDescriptionSuggestions?.(m, q, 12) || [];
-    return list.map((x) => x.label);
-  }, [historyIndex, merchant, description]);
-
-  // ======= (seu styling original mantido) =======
+  // ======= estilo / cores (seu padrão) =======
   const isExpense = direction === "expense";
-
   const borderColor = isExpense ? "rgba(211,47,47,0.45)" : "rgba(46,125,50,0.45)";
-  // const tintBg = isExpense
-  //   ? "rgba(211,47,47,0.45)"
-  //   : "rgba(46,125,50,0.45)";
-
-  // const gradientAccent = isExpense
-  //   ? "rgba(211,47,47,0.55)"
-  //   : "rgba(46,125,50,0.55)";
-
-
+  const gradientAccent = isExpense ? "#f04444" : "#22c55e";
+  const tintBg = isExpense ? "#ffd5d5" : "#d7ffe7";
 
   const headerToggleSx = {
     borderRadius: 999,
@@ -688,8 +602,8 @@ export default function NewTransactionModal({ open, onClose, rows }) {
     border: `1px solid ${borderColor}`,
     bgcolor: "rgba(255,255,255,0.55)",
     "& .MuiToggleButton-root": {
-      px: 1.5,
-      py: 0.6,
+      px: 1.25,
+      py: 0.55,
       fontWeight: 900,
       border: "none",
       textTransform: "none",
@@ -700,20 +614,10 @@ export default function NewTransactionModal({ open, onClose, rows }) {
   };
 
   const inputSx = {
-    "& .MuiInputLabel-root": {
-      color: "rgba(15,23,42,0.78)", // slate-900 suave
-      fontWeight: 800,
-    },
-    "& .MuiInputLabel-root.Mui-focused": {
-      color: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)",
-    },
+    "& .MuiInputLabel-root": { color: "rgba(15,23,42,0.78)", fontWeight: 800 },
+    "& .MuiInputLabel-root.Mui-focused": { color: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)" },
     "& .MuiInputBase-input": { color: "#0f172a" },
-
-    "& .MuiOutlinedInput-root": {
-      backgroundColor: "#fff",        // sólido (sem transparência)
-      borderRadius: 10,
-    },
-
+    "& .MuiOutlinedInput-root": { backgroundColor: "#fff", borderRadius: 10 },
     "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(2,6,23,0.18)" },
     "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
       borderColor: isExpense ? "rgba(211,47,47,0.55)" : "rgba(46,125,50,0.55)",
@@ -722,33 +626,22 @@ export default function NewTransactionModal({ open, onClose, rows }) {
       borderColor: isExpense ? "rgba(211,47,47,0.85)" : "rgba(46,125,50,0.85)",
       borderWidth: 1,
     },
-
     "& .MuiFormHelperText-root": { color: "rgba(15,23,42,0.62)" },
   };
 
-
-  const inputBg = isExpense
-    ? "rgba(211,47,47,0.10)"
-    : "rgba(46,125,50,0.10)";
-
-  const inputBgHover = isExpense
-    ? "rgba(211,47,47,0.18)"
-    : "rgba(46,125,50,0.18)";
-
-  const inputBgFocus = isExpense
-    ? "rgba(211,47,47,0.25)"
-    : "rgba(46,125,50,0.25)";
-
-
-  const inputBorder = "rgba(0,0,0,0.14)";
-  const inputBorderHover = isExpense ? "rgba(211,47,47,0.35)" : "rgba(46,125,50,0.35)";
-  const inputBorderFocus = isExpense ? "rgba(211,47,47,0.55)" : "rgba(46,125,50,0.55)";
-
-  const inputRing = isExpense ? "rgba(211,47,47,0.16)" : "rgba(46,125,50,0.16)";
-
-
-  const gradientAccent = isExpense ? "#f04444" : "#22c55e"; // topo
-  const tintBg = isExpense ? "#ffd5d5" : "#d7ffe7";         // faixa suave
+  // ✅ em mobile: deixa actions “grudado” com mais área útil
+  const actionsSx = isSmDown
+    ? {
+      position: "sticky",
+      bottom: 0,
+      background: "rgba(255,255,255,0.92)",
+      backdropFilter: "blur(10px)",
+      borderTop: `1px solid ${alpha(theme.palette.divider, 0.75)}`,
+      px: 2,
+      py: 1.2,
+      zIndex: 10,
+    }
+    : { pb: 2, pr: 2, gap: 1, marginTop: "-20px" };
 
   return (
     <Dialog
@@ -756,18 +649,19 @@ export default function NewTransactionModal({ open, onClose, rows }) {
       onClose={handleClose}
       fullWidth
       maxWidth="sm"
+      fullScreen={isSmDown}
       slotProps={{
         backdrop: {
           sx: {
-            backgroundColor: "rgba(2,6,23,0.72)", // escurece fundo
-            backdropFilter: "blur(10px)",          // blur premium
+            backgroundColor: "rgba(2,6,23,0.72)",
+            backdropFilter: "blur(10px)",
           },
         },
       }}
       PaperProps={{
         sx: {
-          borderRadius: 2,
-          border: `1.5px solid ${borderColor}`,
+          borderRadius: isSmDown ? 0 : 2,
+          border: isSmDown ? "none" : `1.5px solid ${borderColor}`,
           background: `
             linear-gradient(
               -180deg,
@@ -776,26 +670,19 @@ export default function NewTransactionModal({ open, onClose, rows }) {
               rgba(255,255,255,1) 85%
             )
           `,
-          boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
-          transition: "all 0.2s ease",
-          "&:hover": {
-            boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
-            borderColor: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)",
-          },
+          boxShadow: isSmDown ? "none" : "0 2px 10px rgba(0,0,0,0.04)",
+          overflow: "hidden",
         },
       }}
     >
-      <DialogTitle sx={{ fontWeight: 950, py: 1.5 }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.5}>
+      <DialogTitle sx={{ fontWeight: 950, py: isSmDown ? 1.2 : 1.5 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.2}>
           <Typography sx={{ fontWeight: 950, color: "whitesmoke" }}>Novo lançamento</Typography>
 
           <ToggleButtonGroup
             exclusive
             value={direction}
-            onChange={(_, v) => {
-              if (!v) return;
-              setDirection(v);
-            }}
+            onChange={(_, v) => v && setDirection(v)}
             size="small"
             sx={headerToggleSx}
           >
@@ -807,12 +694,12 @@ export default function NewTransactionModal({ open, onClose, rows }) {
 
       <DialogContent
         sx={{
-          pt: 1.5,
+          pt: 1.4,
+          pb: 1.6,
           "& .MuiTextField-root .MuiOutlinedInput-root": {
             borderRadius: 10,
             backgroundColor: "#fff",
             transition: "box-shadow .15s ease, border-color .15s ease",
-
             "&.Mui-focused": {
               boxShadow: `0 0 0 4px ${isExpense ? "rgba(211,47,47,0.18)" : "rgba(46,125,50,0.18)"}`,
             },
@@ -822,10 +709,10 @@ export default function NewTransactionModal({ open, onClose, rows }) {
           "& .MuiSelect-select": { paddingTop: "12.5px", paddingBottom: "12.5px" },
         }}
       >
-        <Stack spacing={1.4}>
+        <Stack spacing={1.25}>
           {err ? <Alert severity="error">{err}</Alert> : null}
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ paddingTop: "10px" }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1} sx={{ pt: 2.5 }}>
             <TextField
               label="Data compra"
               type="date"
@@ -855,7 +742,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
             />
           </Stack>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1}>
             <TextField
               sx={inputSx}
               label="Conta / Cartão"
@@ -864,11 +751,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
               onChange={(e) => {
                 const next = e.target.value;
                 setAccountId(next);
-
-                // ao trocar a conta, volta a auto-calcular
                 setChargeTouched(false);
-
-                // ✅ status automático (💳 => confirmed, 🏦 => paid)
                 statusTouchedRef.current = false;
                 applyAutoStatusByAccount(next);
               }}
@@ -903,36 +786,42 @@ export default function NewTransactionModal({ open, onClose, rows }) {
             </TextField>
           </Stack>
 
-          {/* ✅ Loja com sugestões (histórico) */}
+          {/* ✅ Loja (habilita histórico no focus) */}
           <Autocomplete
             freeSolo
             options={merchantOptions}
             openOnFocus={false}
-            filterOptions={(x) => x} // evita filtro duplicado (já filtramos no index)
+            filterOptions={(x) => x}
             value={merchant}
+            onFocus={() => setHistoryEnabled(true)}
             onChange={(e, val) => setMerchant(val || "")}
             inputValue={merchant}
             onInputChange={(e, val) => setMerchant(val || "")}
             renderInput={(params) => (
               <TextField
                 {...params}
+                sx={inputSx}
                 label="Loja *"
                 fullWidth
                 helperText={
-                  String(merchant || "").trim().length < MIN_MERCHANT_CHARS
-                    ? `Digite pelo menos ${MIN_MERCHANT_CHARS} caracteres`
-                    : "Sugestões do histórico"
+                  !historyEnabled
+                    ? "Toque para habilitar sugestões do histórico"
+                    : String(merchant || "").trim().length < MIN_MERCHANT_CHARS
+                      ? `Digite pelo menos ${MIN_MERCHANT_CHARS} caractere(s)`
+                      : "Sugestões do histórico"
                 }
               />
             )}
           />
 
-
-          {/* ✅ Descrição com sugestões por loja */}
+          {/* ✅ Descrição */}
           <Autocomplete
             freeSolo
             options={descriptionOptions}
+            openOnFocus={false}
+            filterOptions={(x) => x}
             value={description}
+            onFocus={() => setHistoryEnabled(true)}
             onChange={(e, val) => setDescription(val || "")}
             inputValue={description}
             onInputChange={(e, val) => setDescription(val || "")}
@@ -948,7 +837,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
             )}
           />
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1}>
             <TextField
               sx={inputSx}
               label="Categoria"
@@ -973,6 +862,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
                 );
               })}
             </TextField>
+
             <TextField
               sx={inputSx}
               label="Valor (R$)"
@@ -989,19 +879,30 @@ export default function NewTransactionModal({ open, onClose, rows }) {
 
           <Divider />
 
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ flexWrap: "wrap", rowGap: 0.8 }}
+          >
             <Chip
               label="Avulso"
               color={kind === "one_off" ? "primary" : "default"}
               variant={kind === "one_off" ? "filled" : "outlined"}
-              onClick={() => setKind("one_off")}
+              onClick={() => {
+                setKind("one_off");
+                setShowInstallmentsPreview(false);
+              }}
               sx={{ fontWeight: 900 }}
             />
             <Chip
               label="Mensal"
               color={kind === "recurring" ? "primary" : "default"}
               variant={kind === "recurring" ? "filled" : "outlined"}
-              onClick={() => setKind("recurring")}
+              onClick={() => {
+                setKind("recurring");
+                setShowInstallmentsPreview(false);
+              }}
               sx={{ fontWeight: 900 }}
             />
             <Chip
@@ -1012,18 +913,17 @@ export default function NewTransactionModal({ open, onClose, rows }) {
               sx={{ fontWeight: 900 }}
             />
           </Stack>
+
           {kind === "recurring" ? (
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ mt: 0.5 }}>
-              <TextField
-                sx={inputSx}
-                label="Repetir até"
-                type="month"
-                value={recurringUntilYm}
-                onChange={(e) => setRecurringUntilYm(e.target.value)}
-                fullWidth
-                helperText="Será criado 1 lançamento por mês, do mês da cobrança até esse mês (inclusive)."
-              />
-            </Stack>
+            <TextField
+              sx={inputSx}
+              label="Repetir até"
+              type="month"
+              value={recurringUntilYm}
+              onChange={(e) => setRecurringUntilYm(e.target.value)}
+              fullWidth
+              helperText="Será criado 1 lançamento por mês, do mês da cobrança até esse mês (inclusive)."
+            />
           ) : null}
 
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -1038,93 +938,97 @@ export default function NewTransactionModal({ open, onClose, rows }) {
 
           {kind === "installment" ? (
             <Box>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} alignItems={{ sm: "center" }}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1} alignItems={{ sm: "center" }}>
                 <TextField
+                  sx={inputSx}
                   label="Nº parcelas"
                   type="number"
                   value={nParts}
                   onChange={(e) => setNParts(e.target.value)}
                   inputProps={{ min: 2, max: 36 }}
-                  sx={{ width: { xs: "100%", sm: 180 } }}
+                  fullWidth={isSmDown}
+                  style={isSmDown ? undefined : { width: 180 }}
                 />
                 <Typography variant="body2" sx={{ color: "text.secondary" }}>
                   Centavos distribuídos nas primeiras parcelas.
                 </Typography>
               </Stack>
 
-              {previewInstallments.length ? (
-                <Stack spacing={0.8} sx={{ mt: 1.2 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 900 }}>
-                    Preview das parcelas
-                  </Typography>
+              {/* ✅ preview colapsado no mobile */}
+              <Box sx={{ mt: 1.0 }}>
+                <Button
+                  size="small"
+                  onClick={() => setShowInstallmentsPreview((v) => !v)}
+                  sx={{ fontWeight: 950, textTransform: "none", borderRadius: 999 }}
+                  endIcon={showInstallmentsPreview ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+                >
+                  {showInstallmentsPreview ? "Ocultar preview" : "Ver preview das parcelas"}
+                </Button>
 
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: {
-                        xs: "1fr",        // mobile: 1 coluna
-                        sm: "1fr 1fr",    // >= sm: 2 colunas
-                      },
-                      gap: 0.8,
-                    }}
-                  >
-                    {previewInstallments.map((p) => (
+                {showInstallmentsPreview ? (
+                  previewInstallments.length ? (
+                    <Stack spacing={0.8} sx={{ mt: 1.0 }}>
                       <Box
-                        key={p.idx}
                         sx={{
-                          border: "1px solid rgba(2,6,23,0.12)",
-                          borderRadius: 1.5,
-                          px: 1.2,
-                          py: 0.9,
-                          background: "rgba(255,255,255,0.9)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
+                          display: "grid",
+                          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                          gap: 0.8,
                         }}
                       >
-                        {/* ESQUERDA: data */}
-                        <Typography
-                          variant="body2"
-                          sx={{ color: "text.secondary", fontWeight: 600 }}
-                        >
-                          {p.dateLabel}
-                        </Typography>
+                        {previewInstallments.map((p) => (
+                          <Box
+                            key={p.idx}
+                            sx={{
+                              border: "1px solid rgba(2,6,23,0.12)",
+                              borderRadius: 1.5,
+                              px: 1.2,
+                              py: 0.9,
+                              background: "rgba(255,255,255,0.9)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 1,
+                            }}
+                          >
+                            <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 700 }}>
+                              {p.dateLabel}
+                            </Typography>
 
-                        {/* CENTRO: parcela */}
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontWeight: 900,
-                            px: 0.8,
-                            py: 0.2,
-                            borderRadius: 1,
-                            backgroundColor: "rgba(2,6,23,0.06)",
-                          }}
-                        >
-                          {p.label}
-                        </Typography>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontWeight: 900,
+                                px: 0.8,
+                                py: 0.2,
+                                borderRadius: 1,
+                                backgroundColor: "rgba(2,6,23,0.06)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {p.label}
+                            </Typography>
 
-                        {/* DIREITA: valor */}
-                        <Typography
-                          variant="body2"
-                          sx={{ fontWeight: 950 }}
-                        >
-                          {p.valueLabel}
-                        </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 950, whiteSpace: "nowrap" }}>
+                              {p.valueLabel}
+                            </Typography>
+                          </Box>
+                        ))}
                       </Box>
-                    ))}
-                  </Box>
-                </Stack>
-              ) : null}
-
-
+                    </Stack>
+                  ) : (
+                    <Alert severity="info" sx={{ mt: 1 }}>
+                      Para ver o preview, informe um <b>Valor</b> válido e <b>Nº de parcelas</b> (mín. 2).
+                    </Alert>
+                  )
+                ) : null}
+              </Box>
             </Box>
           ) : null}
         </Stack>
       </DialogContent>
 
-      <DialogActions sx={{ pb: 2, pr: 2, gap: 1, marginTop: "-20px" }}>
-        <Button onClick={handleClose} variant="outlined" disabled={saving}>
+      <DialogActions sx={actionsSx}>
+        <Button onClick={handleClose} variant="outlined" disabled={saving} sx={{ borderRadius: 2 }}>
           Cancelar
         </Button>
 

@@ -1,6 +1,5 @@
 // src/layouts/Layout.jsx
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { lazy, Suspense } from "react";
+import React, { useMemo, useState, useEffect, useRef, lazy, Suspense } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -18,6 +17,7 @@ import {
   FormControl,
   Select,
   MenuItem,
+  Fab,
 } from "@mui/material";
 
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
@@ -33,7 +33,6 @@ import LightModeRoundedIcon from "@mui/icons-material/LightModeRounded";
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 
-// import NewTransactionModal from "../components/NewTransactionModal";
 import { useThemeMode } from "../theme";
 
 import { useSelector, useDispatch } from "react-redux";
@@ -44,32 +43,21 @@ import VisibilityOffRoundedIcon from "@mui/icons-material/VisibilityOffRounded";
 import { toggleHideValues, selectHideValues } from "../store/uiSlice";
 import { alpha } from "@mui/material/styles";
 
-import DashboardFilters from "../components/DashboardFilters.jsx";
-import { meThunk, logout } from "../store/authSlice";
+import { meThunk, logout, selectAuthUser } from "../store/authSlice";
 
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
 import { fetchAccountsThunk } from "../store/accountsSlice.js";
 import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
 import { fetchCategoriesThunk } from "../store/categoriesSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
-
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 
-// ✅ ADD: bills
+// ✅ bills
 import { fetchBillsThunk } from "../store/billsSlice.js";
-
-// import { selectTransactionsUi } from "../store/transactionsSlice.js";
-// import { selectBills } from "../store/billsSlice.js";
-
-const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
-import { selectAuthUser } from "../store/authSlice";
-
 
 import { Toaster } from "react-hot-toast";
 
-
-
-
+const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
 
 const DRAWER_EXPANDED = 270;
 const DRAWER_COLLAPSED = 76;
@@ -85,7 +73,7 @@ const navItems = [
   { to: "/cadastros", label: "Cadastros", icon: <SettingsRoundedIcon />, color: "#64748b" },
 ];
 
-function NavItem({ to, label, icon, collapsed, color }) {
+function NavItem({ to, label, icon, collapsed, color, onClick }) {
   const theme = useTheme();
   const isRoot = to === "/";
 
@@ -93,6 +81,7 @@ function NavItem({ to, label, icon, collapsed, color }) {
     <NavLink
       to={to}
       end={isRoot}
+      onClick={onClick}
       style={({ isActive }) => ({
         display: "flex",
         alignItems: "center",
@@ -175,9 +164,7 @@ function writeStoredYM(ym) {
   }
 }
 
-
 function parseYM(ym) {
-  // ym esperado: "YYYY-MM"
   if (!ym || typeof ym !== "string" || !ym.includes("-")) {
     const def = getDefaultYM();
     const [y0, m0] = def.split("-");
@@ -217,17 +204,16 @@ export default function Layout({ children }) {
   const dispatch = useDispatch();
   const user = useSelector(selectAuthUser);
 
-  const month = useSelector((s) => s.finance.month); // "YYYY-MM"
+  const month = useSelector((s) => s.finance.month);
   const hideValues = useSelector(selectHideValues);
 
-  // ✅ auth (reducer registrado como "user" no store)
   const token = useSelector((s) => s.user.token) || localStorage.getItem("authToken") || "";
   const currentUser = useSelector((s) => s.user.user);
   const authStatus = useSelector((s) => s.user.status);
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  // ✅ rotas públicas: sem menu/topbar
   const isPublicRoute = useMemo(() => {
     return location.pathname === "/login" || location.pathname === "/register";
   }, [location.pathname]);
@@ -261,13 +247,10 @@ export default function Layout({ children }) {
   // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
   const bootstrappedRef = useRef(false);
 
+  // ✅ fecha drawer mobile ao navegar
   useEffect(() => {
-    const t0 = performance.now();
-    requestAnimationFrame(() => {
-      const dt = performance.now() - t0;
-      console.log("[route paint]", location.pathname, Math.round(dt), "ms");
-    });
-  }, [location.pathname]);
+    if (!isMdUp) setMobileOpen(false);
+  }, [location.pathname, isMdUp]);
 
   // ✅ valores atuais do filtro
   const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
@@ -280,8 +263,6 @@ export default function Layout({ children }) {
   // ✅ garante "YYYY-MM" válido (ano atual por padrão)
   useEffect(() => {
     if (isPublicRoute) return;
-
-    // se já tem month no redux, não mexe
     if (month) return;
 
     const stored = readStoredYM();
@@ -300,7 +281,6 @@ export default function Layout({ children }) {
     const { y, m } = parseYM(month);
     const normalized = `${y}-${pad2(m)}`;
 
-    // se veio algo estranho, corrige no redux
     if (normalized !== month) {
       dispatch(setMonth(normalized));
       return;
@@ -309,31 +289,26 @@ export default function Layout({ children }) {
     writeStoredYM(month);
   }, [isPublicRoute, month, dispatch]);
 
-
-  // ✅ Guard de auth + bootstrap do /me + carregar dados (somente logado)
+  // ✅ Guard de auth + bootstrap do /me + carregar dados
   useEffect(() => {
-    // rota pública: não faz nada
     if (isPublicRoute) {
-      bootstrappedRef.current = false; // quando sair e voltar, permite bootstrap de novo
+      bootstrappedRef.current = false;
       return;
     }
 
-    // sem token: manda login e não busca nada
     if (!token) {
       bootstrappedRef.current = false;
       navigate("/login", { replace: true });
       return;
     }
 
-    // já bootstrapou nesta sessão do Layout? evita disparar de novo
     if (bootstrappedRef.current) return;
 
-    // se não tem usuário ainda, carrega /me primeiro
     if (!currentUser && authStatus !== "loading") {
       dispatch(meThunk())
         .unwrap()
         .then(() => {
-          bootstrappedRef.current = true;
+          // não marca bootstrapped aqui: ainda vamos buscar dados base abaixo
         })
         .catch(() => {
           bootstrappedRef.current = false;
@@ -344,21 +319,27 @@ export default function Layout({ children }) {
       return;
     }
 
-    // se já tem usuário, carrega dados direto
     if (currentUser) {
-      Promise.allSettled([
+      // ✅ Mobile Lite: não puxa “tudo” de transações no shell.
+      // Deixa cada página puxar o que precisa quando o user entrar.
+      const baseFetches = [
         dispatch(fetchAccountsThunk()).unwrap(),
-        dispatch(fetchAllTransactionsThunk()).unwrap(),
         dispatch(fetchBillsThunk()).unwrap(),
         dispatch(fetchCategoriesThunk()).unwrap(),
+      ];
 
-      ]).finally(() => {
+      const heavyFetches = [
+        dispatch(fetchAllTransactionsThunk()).unwrap(),
+      ];
+
+      const jobs = isMobile ? baseFetches : baseFetches.concat(heavyFetches);
+
+      Promise.allSettled(jobs).finally(() => {
         bootstrappedRef.current = true;
       });
     }
-  }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
+  }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate, isMobile]);
 
-  // ✅ em páginas públicas, não renderiza drawer/appbar
   if (isPublicRoute) {
     return <Box sx={{ minHeight: "100vh" }}>{children}</Box>;
   }
@@ -371,8 +352,8 @@ export default function Layout({ children }) {
     borderRight: `1px solid ${theme.palette.divider}`,
     overflowX: "hidden",
     borderRadius: 0,
-    borderTopRightRadius: 0, // ✅ remove o radius superior direito
-    borderBottomRightRadius: 0, // opcional, mantém consistente
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
     transition: theme.transitions.create(["width"], {
       duration: theme.transitions.duration.shortest,
     }),
@@ -383,8 +364,8 @@ export default function Layout({ children }) {
     setNewOpen(false);
     setMobileOpen(false);
 
-    dispatch(logout());           // remove token
-    dispatch({ type: "app/reset" }); // limpa redux inteiro
+    dispatch(logout());
+    dispatch({ type: "app/reset" });
 
     navigate("/login", { replace: true });
   }
@@ -395,7 +376,7 @@ export default function Layout({ children }) {
         position="top-center"
         toastOptions={{
           duration: 4800,
-          style: { borderRadius: "12px", marginTop: '-5px' },
+          style: { borderRadius: "12px", marginTop: "-5px" },
           success: {
             style: {
               background: "rgba(34, 197, 94, 0.14)",
@@ -414,6 +395,7 @@ export default function Layout({ children }) {
           },
         }}
       />
+
       <Box
         sx={{
           height: TOP_H,
@@ -468,12 +450,12 @@ export default function Layout({ children }) {
             <IconButton
               size="small"
               onClick={() => setCollapsed((v) => !v)}
-              sx={(theme) => ({
+              sx={(t) => ({
                 position: "absolute",
                 right: 4,
                 top: "50%",
                 transform: "translateY(-50%)",
-                zIndex: theme.zIndex.drawer + 20,
+                zIndex: t.zIndex.drawer + 20,
                 width: 28,
                 height: 28,
                 borderRadius: "50%",
@@ -483,9 +465,7 @@ export default function Layout({ children }) {
                 borderColor: "divider",
                 transition: "all .2s ease",
                 opacity: 0.85,
-                "&:hover": {
-                  backgroundColor: "background.default",
-                },
+                "&:hover": { backgroundColor: "background.default" },
               })}
             >
               {theme.direction === "rtl" ? (
@@ -508,7 +488,17 @@ export default function Layout({ children }) {
 
       <Box sx={{ p: collapsed ? 1 : 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
         {navItems.map((it) => (
-          <NavItem key={it.to} to={it.to} label={it.label} icon={it.icon} color={it.color} collapsed={collapsed} />
+          <NavItem
+            key={it.to}
+            to={it.to}
+            label={it.label}
+            icon={it.icon}
+            color={it.color}
+            collapsed={collapsed}
+            onClick={() => {
+              if (!isMdUp) setMobileOpen(false);
+            }}
+          />
         ))}
       </Box>
 
@@ -640,7 +630,7 @@ export default function Layout({ children }) {
         </Drawer>
       )}
 
-      <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
         <AppBar
           position="sticky"
           color="default"
@@ -657,6 +647,7 @@ export default function Layout({ children }) {
               display: "flex",
               justifyContent: "space-between",
               gap: 1.2,
+              px: { xs: 1, sm: 2 },
             }}
           >
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
@@ -683,25 +674,21 @@ export default function Layout({ children }) {
                 </Box>
               ) : null}
 
-              <Stack spacing={0.2} sx={{ lineHeight: 1.1 }}>
-                <Typography
-                  variant="body2"
-                  sx={{ fontWeight: 600, opacity: 0.75, whiteSpace: "nowrap" }}
-                >
+              <Stack spacing={0.2} sx={{ lineHeight: 1.1, minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, opacity: 0.75, whiteSpace: "nowrap" }}>
                   Olá, {user?.first_name} 👋
                 </Typography>
 
-                <Typography
-                  variant="h6"
-                  sx={{ fontWeight: 900, letterSpacing: -0.4, whiteSpace: "nowrap" }}
-                >
+                <Typography variant="h6" sx={{ fontWeight: 900, letterSpacing: -0.4, whiteSpace: "nowrap" }}>
                   {title}
                 </Typography>
               </Stack>
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {location.pathname === "/" && (
+              {/* Desktop: mantém seletor mês/ano na home.
+                  Mobile: esconde pra simplificar e reduzir “poluição” (você pode depois criar um botão que abre um bottom sheet). */}
+              {location.pathname === "/" && !isMobile && (
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
                   <Box sx={{ ...pillSx, minWidth: 120 }}>
                     <FormControl size="small" fullWidth>
@@ -753,15 +740,16 @@ export default function Layout({ children }) {
                   "&:hover .hideValuesBtn": {
                     width: 22,
                     minWidth: 22,
-
                     opacity: 1,
                     pointerEvents: "auto",
                   },
-                  // (opcional) em touch/mobile não tem hover → deixa sempre visível
+
+                  // touch/mobile não tem hover → deixa sempre visível
                   [t.breakpoints.down("sm")]: {
                     "& .hideValuesBtn": {
+                      width: 22,
+                      minWidth: 22,
                       opacity: 1,
-                      transform: "translateY(0)",
                       pointerEvents: "auto",
                     },
                   },
@@ -800,7 +788,12 @@ export default function Layout({ children }) {
                       </Tooltip>
 
                       <Tooltip title={hideValues ? "Mostrar valores" : "Ocultar valores"}>
-                        <IconButton size="small" onClick={() => dispatch(toggleHideValues())} sx={btnSx} className="hideValuesBtn">
+                        <IconButton
+                          size="small"
+                          onClick={() => dispatch(toggleHideValues())}
+                          sx={btnSx}
+                          className="hideValuesBtn"
+                        >
                           {hideValues ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
                         </IconButton>
                       </Tooltip>
@@ -820,9 +813,38 @@ export default function Layout({ children }) {
           </Toolbar>
         </AppBar>
 
-        <Box sx={{ flex: 1, overflow: "auto", width: "100%", minWidth: 0, px: { xs: 1.2, md: 2 }, py: 1.5 }}>
+        <Box
+          sx={{
+            flex: 1,
+            overflow: "auto",
+            width: "100%",
+            minWidth: 0,
+            px: { xs: 1, md: 2 },
+            py: { xs: 1.0, md: 1.5 },
+            pb: { xs: 10, md: 2 }, // espaço pro FAB no mobile
+          }}
+        >
           {children}
         </Box>
+
+        {/* ✅ Mobile CTA sempre acessível */}
+        {isMobile && !newOpen ? (
+          <Fab
+            color="primary"
+            onClick={() => setNewOpen(true)}
+            sx={(t) => ({
+              position: "fixed",
+              right: 16,
+              bottom: 16,
+              zIndex: t.zIndex.fab, // pode manter padrão
+              borderRadius: 999,
+              fontWeight: 900,
+              boxShadow: 6,
+            })}
+          >
+            <AddRoundedIcon />
+          </Fab>
+        ) : null}
 
         {newOpen ? (
           <Suspense fallback={null}>
@@ -830,6 +852,6 @@ export default function Layout({ children }) {
           </Suspense>
         ) : null}
       </Box>
-    </Box >
+    </Box>
   );
 }
