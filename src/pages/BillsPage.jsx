@@ -76,6 +76,8 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import { DndContext, DragOverlay, useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
+import toast from "react-hot-toast";
+
 
 
 const pageSx = { maxWidth: 1180, mx: "auto", px: { xs: 2, md: 3 }, py: 2 };
@@ -803,6 +805,7 @@ export default function BillsPage() {
             setPayBill(data.bill);
         }
     };
+
 
     useEffect(() => {
         dispatch(fetchBillsThunk());

@@ -348,7 +348,29 @@ export default function Layout({ children }) {
 
   const DrawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Toaster position="top-right" toastOptions={{ duration: 2800 }} />
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 4800,
+          style: { borderRadius: "12px", marginTop: '-5px' },
+          success: {
+            style: {
+              background: "rgba(34, 197, 94, 0.14)",
+              color: "#052e16",
+              border: "1px solid rgba(34, 197, 94, 0.65)",
+            },
+            iconTheme: { primary: "#16a34a", secondary: "#dcfce7" },
+          },
+          error: {
+            style: {
+              background: "rgba(239, 68, 68, 0.14)",
+              color: "#450a0a",
+              border: "1px solid rgba(239, 68, 68, 0.35)",
+            },
+            iconTheme: { primary: "#dc2626", secondary: "#fee2e2" },
+          },
+        }}
+      />
       <Box
         sx={{
           height: TOP_H,
@@ -688,7 +710,7 @@ export default function Layout({ children }) {
                   "&:hover .hideValuesBtn": {
                     width: 22,
                     minWidth: 22,
-                  
+
                     opacity: 1,
                     pointerEvents: "auto",
                   },
