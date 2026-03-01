@@ -36,6 +36,8 @@ import { selectTransactionsUi } from "../store/transactionsSlice";
 
 import CategoryOption from "./categories/CategoryOption.jsx";
 
+import toast from "react-hot-toast";
+
 
 const MIN_MERCHANT_CHARS = 2; // use 1 se preferir
 const MIN_DESC_CHARS = 0;
@@ -438,6 +440,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
           })
         ).unwrap();
 
+        toast.success("Lançamento criado com sucesso!");
         handleClose();
         return;
       }
@@ -517,6 +520,8 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         });
 
         await Promise.all(creates);
+
+        toast.success(`Parcelamento criado (${n}x) com sucesso!`);
         handleClose();
         return;
       }
@@ -590,6 +595,8 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         });
 
         await Promise.all(creates);
+
+        toast.success(`Recorrência criada (${months} mês${months > 1 ? "es" : ""})!`);
         handleClose();
         return;
       }
@@ -638,6 +645,7 @@ export default function NewTransactionModal({ open, onClose, rows }) {
         apiError ||
         "Erro ao salvar. Verifique os campos e tente novamente.";
       setErr(msg);
+      toast.error(msg); // ✅ opcional, mas ótimo
       setSaving(false);
     }
   }
@@ -1124,9 +1132,16 @@ export default function NewTransactionModal({ open, onClose, rows }) {
           onClick={handleSave}
           variant="contained"
           disabled={saving}
-          sx={{ fontWeight: 950, borderRadius: 2, minWidth: 140 }}
+          sx={{ fontWeight: 950, borderRadius: 2, minWidth: 160 }}
         >
-          {saving ? <CircularProgress size={18} /> : "Salvar"}
+          {saving ? (
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <CircularProgress size={18} />
+              <span>Salvando...</span>
+            </Stack>
+          ) : (
+            "Salvar"
+          )}
         </Button>
       </DialogActions>
     </Dialog>

@@ -65,6 +65,9 @@ const NewTransactionModal = lazy(() => import("../components/NewTransactionModal
 import { selectAuthUser } from "../store/authSlice";
 
 
+import { Toaster } from "react-hot-toast";
+
+
 
 
 
@@ -345,6 +348,7 @@ export default function Layout({ children }) {
 
   const DrawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <Toaster position="top-right" toastOptions={{ duration: 2800 }} />
       <Box
         sx={{
           height: TOP_H,
