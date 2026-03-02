@@ -369,7 +369,13 @@ function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
             if (isEdit) await dispatch(updateBillThunk({ id: initial.id, patch: payload })).unwrap();
             else await dispatch(createBillThunk(payload)).unwrap();
 
-            await dispatch(fetchBillsThunk());
+            const res = isEdit
+                ? await dispatch(updateBillThunk({ id: initial.id, patch: payload })).unwrap()
+                : await dispatch(createBillThunk(payload)).unwrap();
+
+            if (res?._expanded_created > 1) {
+                dispatch(fetchBillsThunk());
+            }
             onClose();
         } catch (x) {
             setErr(x?.detail || "Erro ao salvar.");

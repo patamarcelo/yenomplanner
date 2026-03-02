@@ -709,18 +709,25 @@ export default function NewTransactionModal({ open, onClose }) {
           "& .MuiSelect-select": { paddingTop: "12.5px", paddingBottom: "12.5px" },
         }}
       >
-        <Stack spacing={1.25}>
+        <Stack spacing={3.25}>
           {err ? <Alert severity="error">{err}</Alert> : null}
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1} sx={{ pt: 2.5 }}>
+          <Stack
+            direction="row"
+            spacing={1.1}
+            sx={{
+              pt: 2.5,
+              flexWrap: "nowrap",
+              "& > *": { minWidth: 0 }, // evita overflow por width mínima do input
+            }}
+          >
             <TextField
               label="Data compra"
               type="date"
               value={purchaseDate}
               onChange={(e) => setPurchaseDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
-              fullWidth
-              sx={inputSx}
+              sx={{ ...inputSx, flex: 1 }}
             />
 
             <TextField
@@ -732,17 +739,16 @@ export default function NewTransactionModal({ open, onClose }) {
                 setChargeTouched(true);
               }}
               InputLabelProps={{ shrink: true }}
-              fullWidth
-              sx={inputSx}
-              helperText={
-                selectedAccount?.type === "credit_card"
-                  ? "Auto pelo vencimento do cartão (você pode editar)."
-                  : "Para conta corrente, padrão = data da compra."
-              }
+              sx={{ ...inputSx, flex: 1 }}
+            // helperText={
+            //   selectedAccount?.type === "credit_card"
+            //     ? "Auto pelo vencimento do cartão (você pode editar)."
+            //     : "Para conta corrente, padrão = data da compra."
+            // }
             />
           </Stack>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={3.1}>
             <TextField
               sx={inputSx}
               label="Conta / Cartão"
@@ -837,7 +843,7 @@ export default function NewTransactionModal({ open, onClose }) {
             )}
           />
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.1}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={5.1}>
             <TextField
               sx={inputSx}
               label="Categoria"
@@ -845,7 +851,7 @@ export default function NewTransactionModal({ open, onClose }) {
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
               fullWidth
-              helperText={suggestedCategoryForMerchant ? `Sugestão da loja: ${suggestedCategoryForMerchant}` : "—"}
+              // helperText={suggestedCategoryForMerchant ? `Sugestão da loja: ${suggestedCategoryForMerchant}` : "—"}
               SelectProps={{
                 renderValue: () => {
                   if (!selectedCategory) return "(Sem categoria)";
@@ -872,12 +878,16 @@ export default function NewTransactionModal({ open, onClose }) {
                 const v = parseBrlToNumber(amount);
                 if (Number.isFinite(v)) setAmount(formatNumberToBrlInput(Math.abs(v)));
               }}
-              inputMode="decimal"
+              type="text"
+              inputProps={{
+                inputMode: "decimal",
+                pattern: "[0-9]*[.,]?[0-9]*",
+              }}
               fullWidth
             />
           </Stack>
 
-          <Divider />
+          <Divider sx={{mt: 20}} />
 
           <Stack
             direction="row"

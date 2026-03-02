@@ -1030,6 +1030,17 @@ export default function Invoices() {
 
                   const isClosed = invoice?.status === "closed";
                   const isPaid = invoice?.status === "paid";
+                  const dueDay =
+                    Number(r?.statement?.dueDay ?? r?.dueDay ?? r?.account?.statement?.dueDay) || 10;
+
+                  // se a invoice tiver uma due_date / dueDate / chargeDate, prefira ela
+                  const dueISO =
+                    r?.invoice?.due_date ||
+                    r?.invoice?.dueDate ||
+                    r?.invoice?.chargeDate ||
+                    (ym && dueDay ? `${ym}-${String(dueDay).padStart(2, "0")}` : "");
+
+                  const dueLabel = dueISO ? formatDateBR(dueISO) : "—";
 
                   const safeInvoiceTotalCents =
                     Number(
@@ -1092,7 +1103,7 @@ export default function Invoices() {
                               </Typography>
 
                               <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
-                                Vencimento: {r.dueLabel}
+                                Vencimento: {dueLabel}
                               </Typography>
                             </Stack>
 
