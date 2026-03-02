@@ -467,21 +467,32 @@ export default function NewTransactionModal({ open, onClose }) {
         const cutoffDay = acc?.statement?.cutoffDay;
         const dueDay = acc?.statement?.dueDay ?? 10;
 
-        const basePurchaseDay = Number(String(base.purchaseDate || "").slice(8, 10)) || 1;
-        const baseChargeDay = Number(String(base.chargeDate || "").slice(8, 10)) || 1;
+        // ✅ compra é fixa (não cresce)
+        const purchaseDateFixed = base.purchaseDate;
+
+        // ✅ cobrança base (já vem auto-ajustada pelo cartão quando chargeTouched=false)
+        const baseCharge = base.chargeDate || todayISO();
+
+        // dia "desejado" para crescer a cobrança (mantém o dia base da cobrança; no cartão, força dueDay)
+        const baseChargeDay = Number(String(baseCharge || "").slice(8, 10)) || 1;
+        const wantedChargeDay = acc?.type === "credit_card" ? dueDay : baseChargeDay;
 
         const creates = parts.map((partValue, idx) => {
-          const purchaseDateStr =
-            addMonthsToISO(base.purchaseDate, idx, basePurchaseDay) || base.purchaseDate;
+          // ✅ mantém compra fixa
+          const purchaseDateStr = purchaseDateFixed;
 
-          let chargeDateStr = "";
+          // ✅ cresce cobrança mês a mês
+          const chargeDateStr =
+            addMonthsToISO(baseCharge, idx, wantedChargeDay) || baseCharge;
+
+          // ✅ invoiceMonth deve acompanhar a cobrança que cresce
+          // - cartão: usa sua regra existente via computeInvoiceMonthFromPurchase,
+          //   mas alimentando com a chargeDate (que cresce)
+          // - conta corrente: usa o mês da chargeDate
           let invoiceYm = "";
-
           if (acc?.type === "credit_card") {
-            invoiceYm = computeInvoiceMonthFromPurchase(purchaseDateStr, cutoffDay);
-            chargeDateStr = makeChargeDateFromYM(invoiceYm, dueDay) || base.chargeDate;
+            invoiceYm = computeInvoiceMonthFromPurchase(chargeDateStr, cutoffDay);
           } else {
-            chargeDateStr = addMonthsToISO(base.chargeDate, idx, baseChargeDay) || base.chargeDate;
             invoiceYm = ymFromISODate(chargeDateStr);
           }
 
@@ -493,9 +504,9 @@ export default function NewTransactionModal({ open, onClose }) {
               installmentGroupId: groupId,
               installmentCurrent: idx + 1,
               installmentTotal: n,
-              purchaseDate: purchaseDateStr,
-              chargeDate: chargeDateStr,
-              invoiceMonth: invoiceYm,
+              purchaseDate: purchaseDateStr,   // ✅ FIXO
+              chargeDate: chargeDateStr,       // ✅ CRESCE
+              invoiceMonth: invoiceYm,         // ✅ acompanha chargeDate
               amount: formatNumberToBrlInput(partValue),
               status: idx === 0 ? base.status : "planned",
             })
@@ -537,7 +548,7 @@ export default function NewTransactionModal({ open, onClose }) {
         {
           const [sy, sm] = startYm.split("-").map(Number);
           const [ey, em] = endYm.split("-").map(Number);
-          months = (ey * 12 + (em - 1)) - (sy * 12 + (sm - 1)) + 1;
+          months = ey * 12 + (em - 1) - (sy * 12 + (sm - 1)) + 1;
           months = Math.max(1, Math.min(240, months));
         }
 
@@ -550,8 +561,8 @@ export default function NewTransactionModal({ open, onClose }) {
           let nextInvoiceMonth = ym;
           if (acc?.type === "credit_card") {
             const cutoffDay = acc?.statement?.cutoffDay;
-            const purchaseLike = chargeDateStr;
-            nextInvoiceMonth = computeInvoiceMonthFromPurchase(purchaseLike, cutoffDay);
+            // já estava certo: usa a data "tipo compra" (chargeDateStr) pra derivar invoiceMonth
+            nextInvoiceMonth = computeInvoiceMonthFromPurchase(chargeDateStr, cutoffDay);
           }
 
           return dispatch(
@@ -561,6 +572,7 @@ export default function NewTransactionModal({ open, onClose }) {
               kind: "recurring",
               recurringRule: "monthly",
               chargeDate: chargeDateStr,
+              // recorrente: mantém seu comportamento atual
               purchaseDate: acc?.type === "credit_card" ? base.purchaseDate : chargeDateStr,
               invoiceMonth: nextInvoiceMonth,
               status: idx === 0 ? base.status : "planned",
@@ -887,7 +899,7 @@ export default function NewTransactionModal({ open, onClose }) {
             />
           </Stack>
 
-          <Divider sx={{mt: 20}} />
+          <Divider sx={{ mt: 20 }} />
 
           <Stack
             direction="row"
