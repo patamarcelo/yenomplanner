@@ -23,6 +23,8 @@ import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
 import { loginThunk, selectAuthStatus, selectAuthError } from "../store/authSlice";
 import CircularProgress from "@mui/material/CircularProgress";
 
+import { trackEvent } from "../utils/analytics";
+
 const TOUR_EMAIL = "tour@yenomplanner.com";
 const TOUR_PASS = "Tour123456";
 
@@ -73,6 +75,9 @@ export default function LoginPage() {
         try {
             await dispatch(loginThunk(payload)).unwrap();
             navigate("/");
+            trackEvent("login_success", {
+                method: "email",
+            });
         } catch (err) {
             console.log("erro de login : ", err);
             setLocalError("Não foi possível entrar. Verifique e-mail e senha.");
@@ -93,114 +98,114 @@ export default function LoginPage() {
 
     return (
         <>
-        
-        <Box sx={{ width: "100%", marginTop: '110px' }}>
-            <Stack spacing={1.2} sx={{ mb: 2 }}>
-                <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
-                    Entrar
-                </Typography>
-                <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                    Acesse sua conta para continuar.
-                </Typography>
-            </Stack>
 
-            {localError ? (
-                <Alert severity="error" sx={{ mb: 1.5 }}>
-                    {localError}
-                </Alert>
-            ) : null}
-            {apiError ? (
-                <Alert severity="error" sx={{ mb: 1.5 }}>
-                    {apiError}
-                </Alert>
-            ) : null}
-
-            <Box component="form" onSubmit={handleSubmit}>
-                <Stack spacing={1.3} sx={{marginBottom: '100px'}}>
-                    <TextField
-                        label="E-mail"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        fullWidth
-                        disabled={loading}
-                        inputMode="email"
-                        autoComplete="email"
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <MailRoundedIcon fontSize="small" />
-                                </InputAdornment>
-                            ),
-                        }}
-                    />
-
-                    <TextField
-                        label="Senha"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        fullWidth
-                        disabled={loading}
-                        type={showPass ? "text" : "password"}
-                        autoComplete="current-password"
-                        InputProps={{
-                            startAdornment: (
-                                <InputAdornment position="start">
-                                    <LockRoundedIcon fontSize="small" />
-                                </InputAdornment>
-                            ),
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => setShowPass((v) => !v)}
-                                        edge="end"
-                                        aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
-                                    >
-                                        {showPass ? (
-                                            <VisibilityOffRoundedIcon fontSize="small" />
-                                        ) : (
-                                            <VisibilityRoundedIcon fontSize="small" />
-                                        )}
-                                    </IconButton>
-                                </InputAdornment>
-                            ),
-                        }}
-                    />
-
-                    <Button
-                        type="submit"
-                        variant="contained"
-                        disabled={!canSubmit || loading}
-                        sx={{
-                            fontWeight: 950,
-                            py: 1.25,
-                            borderRadius: 2.4,
-                            textTransform: "none",
-                        }}
-                        startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
-                    >
-                        {loading ? "Entrando..." : "Entrar"}
-                    </Button>
-
-                    <Divider />
-
+            <Box sx={{ width: "100%", marginTop: '110px' }}>
+                <Stack spacing={1.2} sx={{ mb: 2 }}>
+                    <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
+                        Entrar
+                    </Typography>
                     <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                        Não tem conta?{" "}
-                        <Typography
-                            component={RouterLink}
-                            to="/register"
-                            variant="body2"
-                            sx={{ fontWeight: 900, textDecoration: "none" }}
-                        >
-                            Criar conta
-                        </Typography>
+                        Acesse sua conta para continuar.
                     </Typography>
                 </Stack>
-                
+
+                {localError ? (
+                    <Alert severity="error" sx={{ mb: 1.5 }}>
+                        {localError}
+                    </Alert>
+                ) : null}
+                {apiError ? (
+                    <Alert severity="error" sx={{ mb: 1.5 }}>
+                        {apiError}
+                    </Alert>
+                ) : null}
+
+                <Box component="form" onSubmit={handleSubmit}>
+                    <Stack spacing={1.3} sx={{ marginBottom: '100px' }}>
+                        <TextField
+                            label="E-mail"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            fullWidth
+                            disabled={loading}
+                            inputMode="email"
+                            autoComplete="email"
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <MailRoundedIcon fontSize="small" />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+
+                        <TextField
+                            label="Senha"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            fullWidth
+                            disabled={loading}
+                            type={showPass ? "text" : "password"}
+                            autoComplete="current-password"
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <LockRoundedIcon fontSize="small" />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => setShowPass((v) => !v)}
+                                            edge="end"
+                                            aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                                        >
+                                            {showPass ? (
+                                                <VisibilityOffRoundedIcon fontSize="small" />
+                                            ) : (
+                                                <VisibilityRoundedIcon fontSize="small" />
+                                            )}
+                                        </IconButton>
+                                    </InputAdornment>
+                                ),
+                            }}
+                        />
+
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            disabled={!canSubmit || loading}
+                            sx={{
+                                fontWeight: 950,
+                                py: 1.25,
+                                borderRadius: 2.4,
+                                textTransform: "none",
+                            }}
+                            startIcon={loading ? <CircularProgress size={18} color="inherit" /> : null}
+                        >
+                            {loading ? "Entrando..." : "Entrar"}
+                        </Button>
+
+                        <Divider />
+
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                            Não tem conta?{" "}
+                            <Typography
+                                component={RouterLink}
+                                to="/register"
+                                variant="body2"
+                                sx={{ fontWeight: 900, textDecoration: "none" }}
+                            >
+                                Criar conta
+                            </Typography>
+                        </Typography>
+                    </Stack>
+
+                </Box>
+
             </Box>
-            
-        </Box>
-        {/* ✅ Demo/Tour */}
+            {/* ✅ Demo/Tour */}
             <Box
                 sx={{
                     mb: 1.5,
@@ -209,7 +214,7 @@ export default function LoginPage() {
                     border: "1px solid",
                     borderColor: "divider",
                     background: "rgba(0,0,0,0.02)",
-                    
+
                 }}
             >
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
@@ -236,6 +241,6 @@ export default function LoginPage() {
                     Acessar tour (demo)
                 </Button>
             </Box>
-            </>
+        </>
     );
 }

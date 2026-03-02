@@ -196,7 +196,22 @@ const MONTHS_PT = [
   { value: 12, label: "Dez" },
 ];
 
+
+function usePageTracking() {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (window.gtag) {
+      window.gtag("event", "page_view", {
+        page_path: location.pathname,
+      });
+    }
+  }, [location]);
+}
+
 export default function Layout({ children }) {
+  usePageTracking(); // 👈 chama aqui
+
   const theme = useTheme();
   const themeMode = useThemeMode();
   const location = useLocation();
@@ -213,6 +228,10 @@ export default function Layout({ children }) {
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
+
+
+
 
   const isPublicRoute = useMemo(() => {
     return location.pathname === "/login" || location.pathname === "/register";
