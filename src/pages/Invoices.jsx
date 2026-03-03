@@ -24,6 +24,7 @@ import {
   FormControlLabel,
   InputAdornment,
 } from "@mui/material";
+import CircularProgress from "@mui/material/CircularProgress";
 import { alpha, useTheme } from "@mui/material/styles";
 
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
@@ -51,22 +52,66 @@ import { formatBRL } from "../utils/money";
 import { formatMonthBR, formatDateBR } from "../utils/dateBR";
 
 import { selectAccounts } from "../store/accountsSlice";
-import { selectTransactionsUi } from "../store/transactionsSlice";
+import { selectTransactionsUi, fetchAllTransactionsThunk as fetchTransactionsThunk } from "../store/transactionsSlice";
 import {
   selectInvoices,
   fetchInvoicesThunk,
   closeInvoiceThunk,
   payInvoiceThunk,
   clearInvoicePreview,
+  reopenInvoiceThunk
 } from "../store/invoicesSlice";
 
 import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import SavingsRoundedIcon from "@mui/icons-material/SavingsRounded";
 
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
+
+
+
 // -----------------------------
 // Helpers
 // -----------------------------
+
+const swalConfirmAsync = async ({ title, html, confirmText, confirmColor = "#1976d2", run }) => {
+  const res = await Swal.fire({
+    title,
+    html,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: confirmText,
+    cancelButtonText: "Cancelar",
+    confirmButtonColor: confirmColor,
+    reverseButtons: true,
+    focusCancel: true,
+
+    // 🔥 spinner do Swal durante o preConfirm
+    showLoaderOnConfirm: true,
+    allowOutsideClick: () => !Swal.isLoading(),
+    allowEscapeKey: () => !Swal.isLoading(),
+
+    preConfirm: async () => {
+      try {
+        const out = await run();
+        return out;
+      } catch (err) {
+        // mostra erro dentro do modal sem fechar
+        const msg =
+          err?.detail ||
+          err?.message ||
+          err?.response?.data?.detail ||
+          "Erro ao executar operação.";
+        Swal.showValidationMessage(msg);
+        // re-throw pra manter comportamento consistente
+        throw err;
+      }
+    },
+  });
+
+  return res;
+};
 
 function formatInvYMShort(invYM) {
   // invYM: "YYYY-MM"
@@ -381,6 +426,13 @@ export default function Invoices() {
   const txns = useSelector(selectTransactionsUi);
   const invoices = useSelector(selectInvoices);
 
+  const [reopenBusyId, setReopenBusyId] = useState(null);
+
+  const MySwal = withReactContent(Swal);
+
+  const [reopenBusy, setReopenBusy] = useState(false);
+  const [confirmCloseBusy, setConfirmCloseBusy] = useState(false);
+
   // dedupe mínimo por id/fallback
   const txnsUnique = useMemo(() => {
     const seen = new Set();
@@ -507,7 +559,11 @@ export default function Invoices() {
       const accId = String(c.id);
       const inv = monthInvoices.get(accId) || null;
 
-      if (inv) {
+      const invStatus = String(inv?.status || "").toLowerCase();
+      const invFinal = !!inv && (invStatus === "closed" || invStatus === "paid");
+
+
+      if (invFinal) {
         const invCents = getInvoiceTotalCents(inv);
         const buckets = sumCardByInvoiceMonth.get(accId) || { invoicedCents: 0, paidCents: 0 };
         out.set(accId, invCents > 0 ? invCents : Math.max(buckets.invoicedCents, buckets.paidCents));
@@ -554,6 +610,64 @@ export default function Invoices() {
 
   const monthTotalCents = useMemo(() => rows.reduce((acc, r) => acc + (r.displayCents || 0), 0), [rows]);
 
+  // 🔧 helper: id REAL (não fallback)
+  function resolveTxnId(t) {
+    return String(t?.id || t?.uuid || t?.transaction_id || t?.txn_id || "").trim();
+  }
+
+  const handleReopen = async (row) => {
+    setError("");
+    setNotice("");
+
+    const inv = row?.invoice;
+    if (!inv?.id) return;
+
+    const invStatus = String(inv?.status || "").toLowerCase();
+    if (invStatus === "paid") {
+      setError("Não é possível reabrir uma fatura já paga.");
+      return;
+    }
+
+    const dueLabel = inv?.due_date ? formatDateBR(inv.due_date) : "—";
+    const totalLabel = moneyBRLFromCents(getInvoiceTotalCents(inv));
+
+    const r1 = await swalConfirmAsync({
+      title: `Reabrir fatura ${row?.name}?`,
+      html: `
+      <div style="text-align:left">
+        <div><b>Cartão:</b> ${row?.name || "—"}</div>
+        <div><b>Vencimento:</b> ${dueLabel}</div>
+        <div><b>Valor:</b> ${totalLabel}</div>
+        <div style="margin-top:8px; opacity:.8">Isso vai desfazer o fechamento e devolver as transações para <b>CONFIRMED</b>.</div>
+      </div>
+    `,
+      confirmText: "Sim, reabrir",
+      confirmColor: "#ed6c02", // warning
+      run: async () => {
+        const out = await dispatch(reopenInvoiceThunk(inv.id)).unwrap();
+
+        // ✅ refresh para atualizar subtotais (depende de txns!)
+        await Promise.all([
+          dispatch(fetchInvoicesThunk()).unwrap().catch(() => null),
+          dispatch(fetchTransactionsThunk()).unwrap().catch(() => null),
+          // se seu layout depende:
+          // dispatch(fetchBillsThunk()).unwrap().catch(() => null),
+        ]);
+
+        return out;
+      },
+    });
+
+    if (r1.isConfirmed) {
+      await Swal.fire({
+        icon: "success",
+        title: "Fatura reaberta!",
+        timer: 1400,
+        showConfirmButton: false,
+      });
+      setNotice(`Fatura reaberta: ${row?.name}`);
+    }
+  };
   // -----------------------------
   // OPEN CLOSE MODAL (novo, alinhado ao card)
   // -----------------------------
@@ -576,10 +690,15 @@ export default function Invoices() {
         const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
         if (hasInvoiceLink) continue;
 
+        const txId = resolveTxnId(t);
+        // ✅ se não tem id real, não dá pra fechar (backend precisa de id)
+        if (!txId) continue;
+
         const invYM = resolveTxnInvoiceYM(t); // aqui pode ser "" em alguns casos, mas você disse que tem
         const key = txnKey(t) || `${String(accId)}|${txnDateISO(t)}|${centsFromTxnRaw(t)}|${txnLabel(t)}`;
 
-        const item = { t, key, invYM, isPrimary: invYM === ym };
+        const item = { t, key, txId, invYM, isPrimary: invYM === ym };
+
 
         if (item.isPrimary) primary.push(item);
         else extras.push(item);
@@ -599,7 +718,9 @@ export default function Invoices() {
 
       const all = [...primary, ...extras].sort(sortFn);
 
-      const defaultSelected = new Set(primary.map((x) => x.key)); // ✅ exatamente o subtotal do card
+
+      const defaultSelected = new Set(primary.map((x) => x.txId)); // ✅ seleciona por txId real
+
 
       return { all, defaultSelected, counts: { primary: primary.length, extras: extras.length } };
     },
@@ -629,9 +750,11 @@ export default function Invoices() {
 
     // total sugerido = soma das selecionadas (primárias)
     const totalCents = all.reduce((acc, x) => {
-      if (!defaultSelected.has(x.key)) return acc;
+      if (!defaultSelected.has(x.txId)) return acc; // ✅ txId, não key
       return acc + Math.abs(centsForStatement(x.t));
     }, 0);
+
+
     setCloseTotalBRL(String((totalCents / 100).toFixed(2)).replace(".", ","));
 
     // zera preview antigo do redux (se existir)
@@ -646,7 +769,7 @@ export default function Invoices() {
     let selectedExtras = 0;
 
     for (const x of closeCandidates || []) {
-      if (!closeSelected.has(x.key)) continue;
+      if (!closeSelected.has(x.txId)) continue;
       const cents = Math.abs(centsForStatement(x.t));
       selectedCents += cents;
       if (x.isPrimary) selectedPrimary += 1;
@@ -668,11 +791,13 @@ export default function Invoices() {
     if (!closeOpen) setCloseTotalTouched(false);
   }, [closeOpen]);
 
-  const toggleTxn = (key) => {
+
+  const toggleTxn = (txId) => {
     setCloseSelected((prev) => {
       const n = new Set(prev);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
+
+      if (n.has(txId)) n.delete(txId);
+      else n.add(txId);
       return n;
     });
   };
@@ -680,20 +805,23 @@ export default function Invoices() {
   const selectAllPrimary = () => {
     const n = new Set();
     for (const x of closeCandidates || []) {
-      if (x.isPrimary) n.add(x.key);
+      if (x.isPrimary) n.add(x.txId);
     }
     setCloseSelected(n);
   };
 
   useEffect(() => {
-    selectAllPrimary()
-  }, []);
+    if (!closeOpen) return;
+    selectAllPrimary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeOpen, closeCandidates.length]);
 
   const includeAllExtras = () => {
     setCloseSelected((prev) => {
       const n = new Set(prev);
       for (const x of closeCandidates || []) {
-        if (!x.isPrimary) n.add(x.key);
+        if (!x.isPrimary) n.add(x.txId);
+
       }
       return n;
     });
@@ -705,7 +833,8 @@ export default function Invoices() {
     const q = String(closeQ || "").trim().toLowerCase();
 
     return (closeCandidates || []).filter((x) => {
-      if (closeOnlySelected && !closeSelected.has(x.key)) return false;
+      if (closeOnlySelected && !closeSelected.has(x.txId)) return false;
+
       if (!q) return true;
 
       const label = txnLabel(x.t).toLowerCase();
@@ -837,32 +966,71 @@ export default function Invoices() {
 
     const tx_ids = Array.from(closeSelected || []);
     if (!tx_ids.length) {
-      setError("Selecione ao menos 1 transação para fechar a fatura.");
+      setError("Selecione ao menos 1 transação.");
       return;
     }
 
-    try {
-      setCloseBusy(true);
+    // 🔵 Swal apenas com loader
+    Swal.fire({
+      title: "Fechando fatura...",
+      text: "Aguarde um momento.",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      customClass: {
+        container: "swal-top-layer"
+      },
+      didOpen: () => {
+        Swal.showLoading();
+      },
+    });
 
+    try {
       await dispatch(
         closeInvoiceThunk({
           account_id: closeTarget.id,
           statement_month: monthStartISO(ym),
           due_date: due,
           total_cents: totalCents,
-          tx_ids, // ✅ manda exatamente o que o usuário marcou
+          tx_ids,
         })
       ).unwrap();
 
-      setNotice(`Fatura fechada: ${closeTarget.name}`);
+      // 🔁 importante: atualizar dados
+      await Promise.all([
+        dispatch(fetchInvoicesThunk()).unwrap().catch(() => null),
+        dispatch(fetchTransactionsThunk()).unwrap().catch(() => null),
+      ]);
+
+      Swal.close();
+
+      await Swal.fire({
+        icon: "success",
+        title: "Fatura fechada!",
+        timer: 1400,
+        showConfirmButton: false,
+      });
+
       setCloseOpen(false);
       dispatch(clearInvoicePreview());
     } catch (e) {
-      setError(e?.detail || e?.message || "Erro ao fechar fatura.");
-    } finally {
-      setCloseBusy(false);
+      Swal.close();
+
+      const msg =
+        e?.detail ||
+        e?.message ||
+        e?.response?.data?.detail ||
+        "Erro ao fechar fatura.";
+
+      await Swal.fire({
+        icon: "error",
+        title: "Erro",
+        text: msg,
+      });
+
+      setError(msg);
     }
   };
+
 
   const openPayDialog = (row) => {
     setError("");
@@ -1028,8 +1196,10 @@ export default function Invoices() {
                 {rows.map((r, idx) => {
                   const invoice = r.invoice || null;
 
-                  const isClosed = invoice?.status === "closed";
-                  const isPaid = invoice?.status === "paid";
+                  const invStatus = String(invoice?.status || "").toLowerCase();
+                  const isOpen = invStatus === "open";
+                  const isClosed = invStatus === "closed";
+                  const isPaid = invStatus === "paid";
                   const dueDay =
                     Number(r?.statement?.dueDay ?? r?.dueDay ?? r?.account?.statement?.dueDay) || 10;
 
@@ -1068,7 +1238,7 @@ export default function Invoices() {
                     <Chip size="small" label="Paga" color="success" />
                   ) : isClosed ? (
                     <Chip size="small" label="Fechada" color="info" />
-                  ) : r.invoice ? (
+                  ) : isOpen ? (
                     <Chip size="small" label="Aberta" color="warning" />
                   ) : (
                     <Chip size="small" label="Sem fatura" variant="outlined" />
@@ -1157,7 +1327,8 @@ export default function Invoices() {
                         </Box>
 
                         <Stack direction="row" spacing={1} alignItems="center">
-                          {!r.invoice ? (
+                          {/* ✅ Fechar aparece quando NÃO tem invoice OU quando está OPEN (reaberta) */}
+                          {(!r.invoice || String(r.invoice?.status || "").toLowerCase() === "open") ? (
                             <Button
                               size="small"
                               variant="outlined"
@@ -1169,7 +1340,23 @@ export default function Invoices() {
                             </Button>
                           ) : null}
 
-                          {r.invoice && r.invoice.status === "closed" ? (
+                          {/* ✅ Reabrir só quando CLOSED */}
+                          {String(r.invoice?.status || "").toLowerCase() === "closed" ? (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="warning"
+                              onClick={() => handleReopen(r)}
+                              sx={{ borderRadius: 2 }}
+                              disabled={reopenBusyId === r.invoice?.id || reopenBusy}
+                              startIcon={reopenBusyId === r.invoice?.id ? <CircularProgress size={16} color="inherit" /> : null}
+                            >
+                              {reopenBusyId === r.invoice?.id ? "Reabrindo..." : "Reabrir"}
+                            </Button>
+                          ) : null}
+
+                          {/* ✅ Pagar só quando CLOSED */}
+                          {String(r.invoice?.status || "").toLowerCase() === "closed" ? (
                             <Button
                               size="small"
                               variant="contained"
@@ -1390,7 +1577,7 @@ export default function Invoices() {
                     {filteredCandidates.map((x) => {
                       const t = x.t;
                       const key = x.key;
-                      const selected = closeSelected.has(key);
+                      const selected = closeSelected.has(x.txId);
 
                       const cents = Math.abs(centsForStatement(t));
                       const invYM = x.invYM || "—";
@@ -1473,7 +1660,7 @@ export default function Invoices() {
                                 variant={selected ? "contained" : "outlined"}
                                 color={selected ? "primary" : "inherit"}
                                 startIcon={selected ? <RemoveCircleOutlineRoundedIcon /> : <AddCircleOutlineRoundedIcon />}
-                                onClick={() => toggleTxn(key)}
+                                onClick={() => toggleTxn(x.txId)}
                                 sx={{
                                   borderRadius: 999,
                                   textTransform: "none",
@@ -1543,12 +1730,14 @@ export default function Invoices() {
 
                 <Button
                   variant="contained"
-                  startIcon={<LockRoundedIcon />}
+                  startIcon={
+                    closeBusy ? <CircularProgress size={16} color="inherit" /> : <LockRoundedIcon />
+                  }
                   onClick={handleConfirmClose}
-                  disabled={closeBusy || !closeSelected.size}
+                  disabled={confirmCloseBusy || closeBusy || !closeSelected.size}
                   sx={{ borderRadius: 2 }}
                 >
-                  Confirmar fechamento
+                  {closeBusy ? "Fechando..." : "Confirmar fechamento"}
                 </Button>
               </Stack>
             </Stack>
