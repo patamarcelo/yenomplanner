@@ -598,33 +598,18 @@ export default function Dashboard() {
     const targetInvoiceYM = addMonthsYM(month, 1);
 
     const out = (txns || []).filter((t) => {
+      // ✅ NÃO contar transações geradas por bills (inclui pagamento de fatura / cc_invoice)
+      const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
+      if (billId) return false;
+
       const k = getTxnMonthKey(t);
       if (k.kind === "card") return k.ym === targetInvoiceYM;
       return k.ym === month;
     });
 
-    if (DEBUG) {
-      dbgGroup(`[DASH KPI DEBUG] month=${month} targetInvoiceYM=${targetInvoiceYM} out=${out.length}`, () => {
-        console.table(
-          out.slice(0, 20).map((t) => {
-            const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
-            const pdYM = ymFromISODate(t?.purchaseDate ?? t?.purchase_date ?? "");
-            return {
-              id: t?.id,
-              invYM,
-              pdYM,
-              appliedRule: invYM ? `card(inv==${targetInvoiceYM})` : `normal(pd==${month})`,
-              amount: Number(t?.amount ?? 0),
-              desc: String(t?.description || t?.merchant || ""),
-            };
-          })
-        );
-      });
-    }
-
+    // ... resto igual
     return out;
   }, [txns, month, getTxnMonthKey]);
-
   // -----------------------------
   // KPIs
   // -----------------------------
@@ -664,7 +649,10 @@ export default function Dashboard() {
     return (bills || [])
       .filter((b) => {
         if (!b?.active) return false;
-        // if (String(b?.kind || "").toLowerCase() !== "recurring") return false;
+
+        // ✅ NÃO contar bills de "pagamento de fatura" (evita duplicar com cartões)
+        const kind = String(b?.kind || "").toLowerCase();
+        if (kind === "cc_invoice" || kind === "credit_card_invoice") return false;
 
         const start = String(b?.startMonth || "").slice(0, 7);
         const end = String(b?.endMonth || "").slice(0, 7) || start;
@@ -674,6 +662,7 @@ export default function Dashboard() {
       })
       .reduce((acc, b) => acc + Math.abs(Number(b?.defaultAmount || 0)), 0);
   }, [bills, month]);
+
 
   const totalAvulso = useMemo(() => {
     return sum(
