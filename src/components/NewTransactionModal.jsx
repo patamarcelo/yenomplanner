@@ -489,12 +489,7 @@ export default function NewTransactionModal({ open, onClose }) {
           // - cartão: usa sua regra existente via computeInvoiceMonthFromPurchase,
           //   mas alimentando com a chargeDate (que cresce)
           // - conta corrente: usa o mês da chargeDate
-          let invoiceYm = "";
-          if (acc?.type === "credit_card") {
-            invoiceYm = computeInvoiceMonthFromPurchase(chargeDateStr, cutoffDay);
-          } else {
-            invoiceYm = ymFromISODate(chargeDateStr);
-          }
+          const invoiceYm = ymFromISODate(chargeDateStr);
 
           return dispatch(
             createTransactionThunk({
@@ -558,12 +553,7 @@ export default function NewTransactionModal({ open, onClose }) {
           const safeDay = clampDayToMonth(yy, mm - 1, dayWanted);
           const chargeDateStr = `${yy}-${String(mm).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
 
-          let nextInvoiceMonth = ym;
-          if (acc?.type === "credit_card") {
-            const cutoffDay = acc?.statement?.cutoffDay;
-            // já estava certo: usa a data "tipo compra" (chargeDateStr) pra derivar invoiceMonth
-            nextInvoiceMonth = computeInvoiceMonthFromPurchase(chargeDateStr, cutoffDay);
-          }
+          let nextInvoiceMonth = ym; // ym já é monthStart(chargeDateStr)
 
           return dispatch(
             createTransactionThunk({
@@ -651,9 +641,26 @@ export default function NewTransactionModal({ open, onClose }) {
       borderTop: `1px solid ${alpha(theme.palette.divider, 0.75)}`,
       px: 2,
       py: 1.2,
+
+      // ✅ espaço extra para iPhone / home indicator
+      pb: "calc(16px + env(safe-area-inset-bottom))",
+
       zIndex: 10,
     }
     : { pb: 2, pr: 2, gap: 1, marginTop: "-20px" };
+
+  useEffect(() => {
+    if (!open) return;
+
+    const prevent = (e) => {
+      // pinch zoom
+      if (e.touches && e.touches.length > 1) e.preventDefault();
+    };
+
+    document.addEventListener("touchmove", prevent, { passive: false });
+
+    return () => document.removeEventListener("touchmove", prevent);
+  }, [open]);
 
   return (
     <Dialog
@@ -856,30 +863,62 @@ export default function NewTransactionModal({ open, onClose }) {
           />
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={5.1}>
-            <TextField
-              sx={inputSx}
-              label="Categoria"
-              select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
+            <Autocomplete
+              disablePortal
               fullWidth
-              // helperText={suggestedCategoryForMerchant ? `Sugestão da loja: ${suggestedCategoryForMerchant}` : "—"}
-              SelectProps={{
-                renderValue: () => {
-                  if (!selectedCategory) return "(Sem categoria)";
-                  return <CategoryOption category={selectedCategory} dense />;
+              options={categories || []}
+              value={selectedCategory || null}
+
+              slotProps={{
+                popper: {
+                  placement: "top-start",
+                  modifiers: [
+                    {
+                      name: "flip",
+                      enabled: false, // 🚀 impede virar pra baixo
+                    },
+                  ],
                 },
               }}
-            >
-              {categories.map((c) => {
-                const value = String(c?.slug ?? c?.id ?? "");
-                return (
-                  <MenuItem key={value} value={value}>
-                    <CategoryOption category={c} />
-                  </MenuItem>
-                );
-              })}
-            </TextField>
+
+              ListboxProps={{
+                style: {
+                  maxHeight: 260,
+                  overflow: "auto",
+                },
+              }}
+
+              isOptionEqualToValue={(opt, val) =>
+                String(opt?.slug ?? opt?.id ?? "") === String(val?.slug ?? val?.id ?? "")
+              }
+
+              getOptionLabel={(opt) => {
+                const slug = String(opt?.slug ?? opt?.id ?? "");
+                const name = String(opt?.name ?? opt?.title ?? opt?.label ?? "");
+                return name || slug;
+              }}
+
+              onChange={(_, val) => {
+                const next = String(val?.slug ?? val?.id ?? "");
+                if (next) setCategoryId(next);
+              }}
+
+              renderOption={(props, option) => (
+                <li {...props} key={String(option?.slug ?? option?.id ?? "")}>
+                  <CategoryOption category={option} />
+                </li>
+              )}
+
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  sx={inputSx}
+                  label="Categoria"
+                  placeholder="Digite para buscar"
+                  fullWidth
+                />
+              )}
+            />
 
             <TextField
               sx={inputSx}
