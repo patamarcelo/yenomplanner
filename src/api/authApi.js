@@ -1,5 +1,5 @@
 // src/api/authApi.js
-import { api } from "./client";
+import api from "./http";
 
 export async function signup(payload) {
   const { data } = await api.post("/usuario/users/", payload);
@@ -25,3 +25,34 @@ export async function fetchMe() {
   const { data } = await api.get("/usuario/users/me/");
   return data;
 }
+
+/**
+ * ✅ Reset de senha (request)
+ * Backend: POST /auth/password/reset/
+ * Obs: sempre responde 200 com mensagem genérica (por segurança).
+ */
+export async function requestPasswordReset({ email }) {
+  const { data } = await api.post("/auth/password/reset/", {
+    email: String(email || "").trim().toLowerCase(),
+  });
+  return data;
+}
+
+
+export async function confirmPasswordReset({ uid, token, new_password }) {
+  console.log("[RESET CONFIRM] baseURL:", api.defaults.baseURL);
+
+  try {
+    const { data } = await api.post("/auth/password/reset/confirm/", {
+      uid,
+      token,
+      new_password,
+    });
+    return data;
+  } catch (err) {
+    console.log("[RESET CONFIRM] status:", err?.response?.status);
+    console.log("[RESET CONFIRM] data:", err?.response?.data);
+    throw err;
+  }
+}
+

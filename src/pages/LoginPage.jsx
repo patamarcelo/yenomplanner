@@ -10,6 +10,11 @@ import {
     Divider,
     InputAdornment,
     IconButton,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    CircularProgress,
 } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
@@ -20,8 +25,15 @@ import MailRoundedIcon from "@mui/icons-material/MailRounded";
 import LockRoundedIcon from "@mui/icons-material/LockRounded";
 import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
 
-import { loginThunk, selectAuthStatus, selectAuthError } from "../store/authSlice";
-import CircularProgress from "@mui/material/CircularProgress";
+import {
+    loginThunk,
+    selectAuthStatus,
+    selectAuthError,
+    requestPasswordResetThunk,
+    selectResetStatus,
+    selectResetError,
+    clearResetState,
+} from "../store/authSlice";
 
 import { trackEvent } from "../utils/analytics";
 
@@ -35,13 +47,21 @@ export default function LoginPage() {
     const status = useSelector(selectAuthStatus);
     const apiError = useSelector(selectAuthError);
 
+    const resetStatus = useSelector(selectResetStatus);
+    const resetError = useSelector(selectResetError);
+
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
 
     const [showPass, setShowPass] = useState(false);
     const [localError, setLocalError] = useState("");
 
+    // reset modal
+    const [resetOpen, setResetOpen] = useState(false);
+    const [resetEmail, setResetEmail] = useState("");
+
     const loading = status === "loading";
+    const resetting = resetStatus === "loading";
 
     const canSubmit = useMemo(() => {
         const e = email.trim();
@@ -75,9 +95,7 @@ export default function LoginPage() {
         try {
             await dispatch(loginThunk(payload)).unwrap();
             navigate("/");
-            trackEvent("login_success", {
-                method: "email",
-            });
+            trackEvent("login_success", { method: "email" });
         } catch (err) {
             console.log("erro de login : ", err);
             setLocalError("Não foi possível entrar. Verifique e-mail e senha.");
@@ -96,10 +114,36 @@ export default function LoginPage() {
         await doLogin(TOUR_EMAIL, TOUR_PASS);
     }
 
+    const openReset = () => {
+        dispatch(clearResetState());
+        setResetEmail(email || "");
+        setResetOpen(true);
+    };
+
+    const closeReset = () => {
+        setResetOpen(false);
+        dispatch(clearResetState());
+    };
+
+    const canSendReset = useMemo(() => {
+        const e = String(resetEmail || "").trim();
+        return e.includes("@") && e.length >= 5;
+    }, [resetEmail]);
+
+    async function handleSendReset() {
+        const e = String(resetEmail || "").trim().toLowerCase();
+        try {
+            await dispatch(requestPasswordResetThunk({ email: e })).unwrap();
+            trackEvent("password_reset_requested", { method: "email" });
+            // mantém modal aberto e mostra mensagem de sucesso simples
+        } catch (err) {
+            // erro já vem no resetError
+        }
+    }
+
     return (
         <>
-
-            <Box sx={{ width: "100%", marginTop: '110px' }}>
+            <Box sx={{ width: "100%", marginTop: "110px" }}>
                 <Stack spacing={1.2} sx={{ mb: 2 }}>
                     <Typography variant="h5" sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
                         Entrar
@@ -114,6 +158,7 @@ export default function LoginPage() {
                         {localError}
                     </Alert>
                 ) : null}
+
                 {apiError ? (
                     <Alert severity="error" sx={{ mb: 1.5 }}>
                         {apiError}
@@ -121,7 +166,7 @@ export default function LoginPage() {
                 ) : null}
 
                 <Box component="form" onSubmit={handleSubmit}>
-                    <Stack spacing={1.3} sx={{ marginBottom: '100px' }}>
+                    <Stack spacing={1.3} sx={{ marginBottom: "100px" }}>
                         <TextField
                             label="E-mail"
                             value={email}
@@ -172,6 +217,18 @@ export default function LoginPage() {
                             }}
                         />
 
+                        {/* ✅ Esqueci minha senha */}
+                        <Box sx={{ display: "flex", justifyContent: "flex-end", mt: -0.2 }}>
+                            <Button
+                                onClick={openReset}
+                                disabled={loading}
+                                size="small"
+                                sx={{ textTransform: "none", fontWeight: 900, px: 0.5 }}
+                            >
+                                Esqueci minha senha
+                            </Button>
+                        </Box>
+
                         <Button
                             type="submit"
                             variant="contained"
@@ -201,10 +258,9 @@ export default function LoginPage() {
                             </Typography>
                         </Typography>
                     </Stack>
-
                 </Box>
-
             </Box>
+
             {/* ✅ Demo/Tour */}
             <Box
                 sx={{
@@ -214,7 +270,6 @@ export default function LoginPage() {
                     border: "1px solid",
                     borderColor: "divider",
                     background: "rgba(0,0,0,0.02)",
-
                 }}
             >
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
@@ -241,6 +296,53 @@ export default function LoginPage() {
                     Acessar tour (demo)
                 </Button>
             </Box>
+
+            {/* ✅ Modal: Redefinir senha */}
+            <Dialog open={resetOpen} onClose={closeReset} fullWidth maxWidth="xs">
+                <DialogTitle sx={{ fontWeight: 950 }}>Redefinir senha</DialogTitle>
+
+                <DialogContent>
+                    <Stack spacing={1.2} sx={{ mt: 1 }}>
+                        <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                            Informe seu e-mail. Se ele existir, enviaremos um link para criar uma nova senha.
+                        </Typography>
+
+                        {resetStatus === "succeeded" ? (
+                            <Alert severity="success">
+                                Se o e-mail estiver cadastrado, você receberá o link de redefinição em instantes.
+                            </Alert>
+                        ) : null}
+
+                        {resetError ? <Alert severity="error">{resetError}</Alert> : null}
+
+                        <TextField
+                            label="E-mail"
+                            value={resetEmail}
+                            onChange={(e) => setResetEmail(e.target.value)}
+                            disabled={resetting}
+                            autoComplete="email"
+                            inputMode="email"
+                            fullWidth
+                        />
+                    </Stack>
+                </DialogContent>
+
+                <DialogActions sx={{ p: 2, pt: 1 }}>
+                    <Button onClick={closeReset} disabled={resetting} sx={{ textTransform: "none", fontWeight: 900 }}>
+                        Fechar
+                    </Button>
+
+                    <Button
+                        onClick={handleSendReset}
+                        disabled={!canSendReset || resetting}
+                        variant="contained"
+                        sx={{ textTransform: "none", fontWeight: 950 }}
+                        startIcon={resetting ? <CircularProgress size={18} color="inherit" /> : null}
+                    >
+                        {resetting ? "Enviando..." : "Enviar link"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </>
     );
 }

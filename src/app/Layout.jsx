@@ -233,8 +233,10 @@ export default function Layout({ children }) {
 
 
 
+
   const isPublicRoute = useMemo(() => {
-    return location.pathname === "/login" || location.pathname === "/register";
+    const PUBLIC_ROUTES = ["/login", "/register", "/reset-password"];
+    return PUBLIC_ROUTES.includes(location.pathname);
   }, [location.pathname]);
 
   // ✅ auto-colapse
