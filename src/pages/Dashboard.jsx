@@ -556,6 +556,17 @@ export default function Dashboard() {
   // - Se tiver invoiceMonth => é cartão
   // - Senão: olha o account.type === "credit_card"
   // -----------------------------
+  function isBillFromInvoice(b) {
+    const notes = String(b?.notes || "").trim().toLowerCase();
+
+    // ✅ assinatura do backend (não usa categoria)
+    return (
+      notes.startsWith("auto-gerado ao fechar fatura") ||
+      (notes.includes("auto-gerado") && notes.includes("fechar fatura"))
+    );
+  }
+
+  
   const isCardTxn = useMemo(() => {
     return (t) => {
       if (!t) return false;
@@ -649,10 +660,15 @@ export default function Dashboard() {
     return (bills || [])
       .filter((b) => {
         if (!b?.active) return false;
+        if (isBillFromInvoice(b)) return false; // ✅ aqui
 
-        // ✅ NÃO contar bills de "pagamento de fatura" (evita duplicar com cartões)
+
+        // ✅ NÃO contar bills que são "fatura de cartão"
         const kind = String(b?.kind || "").toLowerCase();
         if (kind === "cc_invoice" || kind === "credit_card_invoice") return false;
+
+        // (opcional) se você também não quer somar "one_off" aqui, descomente:
+        // if (kind === "one_off") return false;
 
         const start = String(b?.startMonth || "").slice(0, 7);
         const end = String(b?.endMonth || "").slice(0, 7) || start;
@@ -662,7 +678,6 @@ export default function Dashboard() {
       })
       .reduce((acc, b) => acc + Math.abs(Number(b?.defaultAmount || 0)), 0);
   }, [bills, month]);
-
 
   const totalAvulso = useMemo(() => {
     return sum(

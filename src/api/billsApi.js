@@ -29,14 +29,27 @@ export function mapBillFromApi(b) {
         payee: b.payee || "",
         categoryId: b.category_id || "outros",
         notes: b.notes || "",
-        kind: b.kind, // recurring | installment | one_off
+
+        // ✅ mantenha como está (UI usa kind)
+        kind: b.kind,
+
+        // ✅ DEBUG/diagnóstico (não quebra nada)
+        rawKind: b.kind,
+        raw: {
+            bill_kind: b.bill_kind,
+            type: b.type,
+            source: b.source,
+            invoice_id: b.invoice_id ?? b.invoiceId ?? b.invoice?.id,
+            statement_month: b.statement_month ?? b.statementMonth,
+            card_account_id: b.card_account_id ?? b.cardAccountId,
+        },
+
         defaultAmount: centsToMoney(b.default_amount_cents),
         dayOfMonth: b.day_of_month ?? 10,
         startMonth: b.start_month ? String(b.start_month).slice(0, 7) : "",
         endMonth: b.end_month ? String(b.end_month).slice(0, 7) : "",
         active: b.active !== false,
 
-        // opcionais (se você expor no serializer)
         lastPaidTransactionId: b.last_paid_transaction || null,
         lastPaidAt: b.last_paid_at || null,
         installmentGroupId: b.installment_group_id || null,
