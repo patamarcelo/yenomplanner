@@ -1729,6 +1729,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           defaultAccountId={resolveAccountIdFast(selectedTxn)}
           onSave={handleSaveDialog}
           historyIndex={historyIndex}
+          busy={busy}   // 👈 adicionar
         />
       ) : null}
 

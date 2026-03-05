@@ -13,6 +13,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { CircularProgress } from "@mui/material";
 import { useSelector } from "react-redux";
 import { selectCategories } from "../../store/categoriesSlice";
 
@@ -70,6 +71,8 @@ export default function EditTxnDialog({
   onSave,
   defaultAccountId,
   historyIndex, // <- vindo do grid
+  busy
+
 }) {
   const t = txn || {};
   const categories = useSelector(selectCategories);
@@ -196,7 +199,7 @@ export default function EditTxnDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+    <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="sm">
       <DialogTitle sx={{ fontWeight: 900 }}>
         {mode === "duplicate" ? "Duplicar lançamento" : "Editar lançamento"}
       </DialogTitle>
@@ -360,8 +363,20 @@ export default function EditTxnDialog({
         <Button onClick={onClose} variant="outlined">
           Cancelar
         </Button>
-        <Button onClick={handleSave} variant="contained" sx={{ fontWeight: 900 }}>
-          {mode === "duplicate" ? "Criar" : "Salvar"}
+        <Button
+          onClick={handleSave}
+          variant="contained"
+          sx={{ fontWeight: 900 }}
+          disabled={busy}
+          startIcon={
+            busy ? <CircularProgress size={16} color="inherit" /> : null
+          }
+        >
+          {busy
+            ? "Salvando..."
+            : mode === "duplicate"
+              ? "Criar"
+              : "Salvar"}
         </Button>
       </DialogActions>
     </Dialog>
