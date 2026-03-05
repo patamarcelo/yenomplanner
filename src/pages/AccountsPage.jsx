@@ -106,16 +106,15 @@ function moneyBRL(v) {
 }
 
 function signedAmount(tx) {
-  const v = Number(tx?.amount || 0);
+  const v = Math.abs(Number(tx?.amount || 0));
   if (!Number.isFinite(v)) return 0;
-  // income soma, expense subtrai
-  return tx?.direction === "income" ? v : -v;
+
+  return String(tx?.direction).toLowerCase() === "income" ? v : -v;
 }
 
 function calcAccountBalance(account, txns, accounts) {
   const opening = Number(account?.openingBalance || 0);
   const accId = String(account?.id || "");
-
   const sum = (txns || [])
     .filter((t) => {
       const tid = String(resolveTxnAccountId(t, accounts) || "");
@@ -127,7 +126,7 @@ function calcAccountBalance(account, txns, accounts) {
       const st = String(t?.status || "").toLowerCase();
 
       // ✅ somente transações efetivamente pagas entram no saldo
-      return st === "paid";
+      return st === "pago";
     })
     .reduce((acc, t) => acc + signedAmount(t), 0);
 
