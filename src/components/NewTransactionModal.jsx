@@ -674,12 +674,12 @@ export default function NewTransactionModal({ open, onClose }) {
       fullWidth
       maxWidth="sm"
       fullScreen={isSmDown}
-      scroll="paper"
+      scroll="body"
       disableScrollLock={false}
       slotProps={{
         backdrop: {
           sx: {
-            backgroundColor: "rgba(20,20,20,0.30)",
+            backgroundColor: "rgba(20,20,20,0.40)",
             backdropFilter: "blur(2px)",
           },
         },
@@ -688,6 +688,7 @@ export default function NewTransactionModal({ open, onClose }) {
         sx: {
           borderRadius: isSmDown ? 0 : 2,
           border: isSmDown ? "none" : `1.5px solid ${borderColor}`,
+          height: isSmDown ? "100dvh" : "auto",
           background: `
         linear-gradient(
           -180deg,
@@ -696,7 +697,7 @@ export default function NewTransactionModal({ open, onClose }) {
           rgba(255,255,255,1) 85%
         )
       `,
-          boxShadow: isSmDown ? "none" : "0 2px 10px rgba(0,0,0,0.04)",
+          boxShadow: isSmDown ? "none" : "0 2px 10px rgba(0,0,0,0.3)",
           overflow: "hidden",
           maxHeight: isSmDown ? "100dvh" : undefined,
         },
@@ -723,9 +724,7 @@ export default function NewTransactionModal({ open, onClose }) {
         sx={{
           pt: 1.4,
           pb: 1.6,
-          overflowY: "auto",
-          WebkitOverflowScrolling: "touch",
-          overscrollBehavior: "contain",
+          overflow: "visible",
           "& .MuiTextField-root .MuiOutlinedInput-root": {
             borderRadius: 10,
             backgroundColor: "#fff",
