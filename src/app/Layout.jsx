@@ -842,30 +842,40 @@ export default function Layout({ children }) {
             minWidth: 0,
             px: { xs: 1, md: 2 },
             py: { xs: 1.0, md: 1.5 },
-            pb: { xs: 10, md: 2 }, // espaço pro FAB no mobile
+            pb: { xs: "calc(env(safe-area-inset-bottom, 0px) + 88px)", md: 2 },
           }}
         >
           {children}
         </Box>
 
-        {/* ✅ Mobile CTA sempre acessível */}
-        {isMobile && !newOpen ? (
+        {/* FAB global mobile */}
+        {!isPublicRoute && isMobile && !newOpen ? (
           <Fab
             color="primary"
+            aria-label="Novo lançamento"
             onClick={() => setNewOpen(true)}
             sx={(t) => ({
               position: "fixed",
               right: 16,
-              bottom: 16,
-              zIndex: t.zIndex.fab, // pode manter padrão
-              borderRadius: 999,
+              bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+              zIndex: t.zIndex.speedDial,
+              width: 58,
+              height: 58,
+              borderRadius: "50%",
               fontWeight: 900,
-              boxShadow: 6,
+              boxShadow: "0 10px 28px rgba(0,0,0,0.22)",
             })}
           >
             <AddRoundedIcon />
           </Fab>
         ) : null}
+
+        <Suspense fallback={null}>
+          <NewTransactionModal
+            open={newOpen}
+            onClose={() => setNewOpen(false)}
+          />
+        </Suspense>
 
         {newOpen ? (
           <Suspense fallback={null}>
