@@ -16,6 +16,8 @@ import {
   DialogActions,
   Button,
   Alert,
+  CircularProgress,
+  Snackbar,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 
@@ -46,6 +48,8 @@ import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import FilterAltOffRoundedIcon from "@mui/icons-material/FilterAltOffRounded";
+
+import CategoryOption from "../components/categories/CategoryOption";
 
 
 // =========================
@@ -389,7 +393,53 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
 
   const historyIndex = useMemo(() => buildTxnHistoryIndex(safeRows), [safeRows]);
 
+  const [inlineSavingKey, setInlineSavingKey] = useState(null);
+
   const [busy, setBusy] = useState(false);
+  const [inlineSavingId, setInlineSavingId] = useState(null);
+  const [toast, setToast] = useState({
+    open: false,
+    severity: "success",
+    message: "",
+  });
+
+  const showToast = useCallback((message, severity = "success") => {
+    setToast({
+      open: true,
+      severity,
+      message,
+    });
+  }, []);
+
+
+  const handleInlinePatch = useCallback(
+    async (row, patch, successMessage = "Alteração salva com sucesso.", fieldKey = "generic") => {
+      try {
+        setInlineSavingKey(`${row.id}:${fieldKey}`);
+
+        const res = dispatch(
+          patchTransactionThunk({
+            id: row.id,
+            patch,
+          })
+        );
+
+        if (res?.unwrap) {
+          await res.unwrap();
+        } else {
+          await Promise.resolve(res);
+        }
+
+        showToast(successMessage, "success");
+      } catch (err) {
+        console.error("[INLINE_PATCH_ERROR]", err);
+        showToast("Não foi possível salvar a alteração.", "error");
+      } finally {
+        setInlineSavingKey(null);
+      }
+    },
+    [dispatch, showToast]
+  );
 
 
   const runBusy = useCallback(async (thunkAction) => {
@@ -994,7 +1044,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         headerName: "Mês Fatura",
         width: 100,
         renderCell: (params) => {
-          const ym = resolveInvoiceYM(params?.row, accountsIndex.accountsById); // ✅ usa params.row
+          const ym = resolveInvoiceYM(params?.row, accountsIndex.accountsById);
           return formatMonthBR(ym || params?.row?.invoiceMonth);
         },
       },
@@ -1012,6 +1062,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
 
       { field: "merchant", headerName: "Loja", flex: 1, minWidth: 180 },
       { field: "description", headerName: "Descrição", flex: 2, minWidth: 260 },
+
       {
         field: "kind",
         headerName: "Tipo",
@@ -1026,17 +1077,109 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           return <Chip size="small" label={info.label} variant={info.variant} />;
         },
       },
+
       {
         field: "categoryId",
         headerName: "Categoria",
-        width: 170,
+        width: 230,
+        sortable: false,
         renderCell: (params) => {
           const row = getRowShape(params?.row);
-          const cat = resolveCategory(row?.categoryId, categoriesBySlug, categoriesById);
-          return <CategoryChip cat={cat} />;
-        },
+          const saving = inlineSavingKey === `${row?.id}:category`;
 
+          const currentCat = resolveCategory(row?.categoryId, categoriesBySlug, categoriesById);
+          const currentValue = currentCat?.id ? String(currentCat.id) : "";
+
+          if (saving) {
+            return (
+              <Box
+                sx={{
+                  width: "100%",
+                  minHeight: 52,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CircularProgress size={18} />
+              </Box>
+            );
+          }
+
+          return (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                width: "100%",
+                mt: 2.2,
+              }}
+            >
+              <TextField
+                select
+                size="small"
+                value={currentValue}
+                onChange={(e) => {
+                  const nextId = Number(e.target.value);
+                  handleInlinePatch(
+                    row,
+                    { category_id: nextId },
+                    "Categoria alterada com sucesso.",
+                    "category"
+                  );
+                }}
+                sx={{
+                  width: "100%",
+                  minWidth: 180,
+                  "& .MuiOutlinedInput-root": {
+                    height: 30,
+                    fontSize: 13,
+                  },
+                  "& .MuiSelect-select": {
+                    display: "flex",
+                    alignItems: "center",
+                    py: 0.5,
+                  },
+                }}
+                SelectProps={{
+                  renderValue: (selected) => {
+                    const cat = resolveCategory(Number(selected), categoriesBySlug, categoriesById);
+                    if (!cat) return <span style={{ opacity: 0.7 }}>Selecionar</span>;
+
+                    return (
+                      <Box sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                        <CategoryOption category={cat} compact />
+                      </Box>
+                    );
+                  },
+                  MenuProps: {
+                    PaperProps: {
+                      sx: {
+                        maxHeight: 360,
+                      },
+                    },
+                  },
+                }}
+              >
+                {(categories || []).map((c) => (
+                  <MenuItem
+                    key={c.id}
+                    value={String(c.id)}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      minHeight: 40,
+                    }}
+                  >
+                    <CategoryOption category={c} compact />
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
+          );
+        },
       },
+
       {
         field: "installment",
         headerName: "Parcela",
@@ -1048,6 +1191,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           return `${inst.current ?? "—"}/${inst.total ?? "—"}`;
         },
       },
+
       {
         field: "amount",
         headerName: "Valor",
@@ -1075,19 +1219,19 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           );
         },
       },
+
       {
         field: "status",
         headerName: "Status",
-        width: 130,
+        width: 150,
         sortable: false,
         renderCell: (params) => {
           const row = getRowShape(params?.row);
           const current = row?.status || "previsto";
           const meta = STATUS_META[current] || STATUS_META.previsto;
-
           const locked = isTxnLocked(row);
+          const saving = inlineSavingKey === `${row?.id}:status`;
 
-          // ✅ quando travado: mostra chip e não deixa editar
           if (locked) {
             return (
               <Tooltip title="Bloqueado: este lançamento está vinculado a uma fatura">
@@ -1096,6 +1240,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
                   label={meta.label}
                   sx={{
                     height: 30,
+                    mt: 1.6,
                     fontWeight: 900,
                     bgcolor: meta.sx.bgcolor,
                     color: meta.sx.color,
@@ -1106,39 +1251,56 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
             );
           }
 
-          // ✅ normal: select editável
+          if (saving) {
+            return (
+              <Box
+                sx={{
+                  width: "100%",
+                  minHeight: 52,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <CircularProgress size={18} />
+              </Box>
+            );
+          }
+
           return (
-            <TextField
-              select
-              size="small"
-              value={current}
-              onChange={(e) =>
-                dispatch(
-                  patchTransactionThunk({
-                    id: row.id,
-                    patch: { status: e.target.value },
-                  })
-                )
-              }
-              SelectProps={{ displayEmpty: true }}
-              sx={{
-                minWidth: 110,
-                "& .MuiOutlinedInput-root": {
-                  height: 30,
-                  marginTop: "15px",
-                  fontSize: 13,
-                  bgcolor: meta.sx.bgcolor,
-                  color: meta.sx.color,
-                },
-                "& .MuiOutlinedInput-notchedOutline": { border: "none" },
-              }}
-            >
-              {Object.entries(STATUS_META).map(([value, m]) => (
-                <MenuItem key={value} value={value}>
-                  {m.label}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
+              <TextField
+                select
+                size="small"
+                value={current}
+                onChange={(e) =>
+                  handleInlinePatch(
+                    row,
+                    { status: e.target.value },
+                    "Status alterado com sucesso.",
+                    "status"
+                  )
+                }
+                SelectProps={{ displayEmpty: true }}
+                sx={{
+                  minWidth: 110,
+                  "& .MuiOutlinedInput-root": {
+                    height: 30,
+                    marginTop: "15px",
+                    fontSize: 13,
+                    bgcolor: meta.sx.bgcolor,
+                    color: meta.sx.color,
+                  },
+                  "& .MuiOutlinedInput-notchedOutline": { border: "none" },
+                }}
+              >
+                {Object.entries(STATUS_META).map(([value, m]) => (
+                  <MenuItem key={value} value={value}>
+                    {m.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
           );
         },
       },
@@ -1221,9 +1383,19 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           );
         },
       },
-
     ],
-    [dispatch, handleEdit, handleDelete, categoriesBySlug, resolveAccountIdFast, accountsIndex.accountsById]
+    [
+      accountsIndex.accountsById,
+      categories,
+      categoriesById,
+      categoriesBySlug,
+      dispatch,
+      handleDelete,
+      handleDuplicate,
+      handleEdit,
+      inlineSavingKey,
+      resolveAccountIdFast,
+    ]
   );
 
   const ultraCompactFiltersSx = {
@@ -1487,31 +1659,35 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
                   if (!val) return "Todas";
                   const cat = categoriesBySlug[val];
                   if (!cat) return String(val);
+
                   return (
-                    <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
-                      <MsIcon name={(cat.icon || "").trim() || "tag"} size={18} />
-                      <span
-                        style={{
-                          fontWeight: 900,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {cat.name}
-                      </span>
-                    </Stack>
+                    <Box sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                      <CategoryOption category={cat} compact />
+                    </Box>
                   );
+                },
+                MenuProps: {
+                  PaperProps: {
+                    sx: {
+                      maxHeight: 360,
+                    },
+                  },
                 },
               }}
             >
               <MenuItem value="">Todas</MenuItem>
+
               {categories.map((c) => (
-                <MenuItem key={c.id} value={c.slug}>
-                  <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
-                    <MsIcon name={(c.icon || "").trim() || "tag"} size={18} />
-                    <span style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{c.name}</span>
-                  </Stack>
+                <MenuItem
+                  key={c.id}
+                  value={c.slug}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    minHeight: 40,
+                  }}
+                >
+                  <CategoryOption category={c} compact />
                 </MenuItem>
               ))}
             </TextField>
@@ -1732,6 +1908,22 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
           busy={busy}   // 👈 adicionar
         />
       ) : null}
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={2500}
+        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+          severity={toast.severity}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
 
     </Box>
   );

@@ -780,7 +780,10 @@ export default function BillsPage() {
     const currentYear = String(now.getFullYear());
     const currentMonth = String(now.getMonth() + 1).padStart(2, "0");
 
-    const [viewMode, setViewMode] = useState("board"); // board | timeline
+    const [viewMode, setViewMode] = useState(() => {
+        const saved = localStorage.getItem("bills:viewMode");
+        return saved || "board";
+    });
     const [filtersOpen, setFiltersOpen] = useState(true);
 
     const [filterKind, setFilterKind] = useState("all");
@@ -828,6 +831,10 @@ export default function BillsPage() {
         });
         return Array.from(set).sort();
     }, [bills, currentYear]);
+
+    useEffect(() => {
+        localStorage.setItem("bills:viewMode", viewMode);
+    }, [viewMode]);
 
     const categoriesById = useMemo(() => {
         const m = new Map();

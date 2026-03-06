@@ -3,6 +3,8 @@ import { createSlice, createAsyncThunk, createSelector } from "@reduxjs/toolkit"
 import { listTransactions, patchTransaction, deleteTransactionApi, createTransactionApi } from "../api/transactionsApi";
 import { txnApiToUi, uiStatusToApi } from "./transactionsAdapter";
 
+
+
 function ensureClientId(v) {
     const s = String(v || "").trim();
     if (s) return s;
@@ -90,6 +92,95 @@ function mapUiToApiPayload(payload) {
     return apiPayload;
 }
 
+function mapUiPatchToApiPayload(patch) {
+    const p = patch || {};
+    const out = {};
+
+    // só manda o que realmente veio no patch
+    if ("client_id" in p || "clientId" in p) {
+        const v = p.client_id ?? p.clientId;
+        if (v !== undefined) out.client_id = v;
+    }
+
+    if ("purchase_date" in p || "purchaseDate" in p) {
+        out.purchase_date = p.purchase_date ?? p.purchaseDate ?? null;
+    }
+
+    if ("charge_date" in p || "chargeDate" in p) {
+        out.charge_date = p.charge_date ?? p.chargeDate ?? null;
+    }
+
+    if ("invoice_month" in p || "invoiceMonth" in p) {
+        const raw = p.invoice_month ?? p.invoiceMonth;
+        out.invoice_month = ymToInvoiceMonthDate(raw);
+    }
+
+    if ("account_id" in p || "accountId" in p) {
+        out.account_id = p.account_id ?? p.accountId ?? null;
+    }
+
+    if ("bill_id" in p || "billId" in p) {
+        out.bill_id = p.bill_id ?? p.billId ?? null;
+    }
+
+    if ("invoice_id" in p || "invoiceId" in p) {
+        out.invoice_id = p.invoice_id ?? p.invoiceId ?? null;
+    }
+
+    if ("merchant" in p) {
+        out.merchant = String(p.merchant ?? "").trim();
+    }
+
+    if ("description" in p) {
+        out.description = String(p.description ?? "").trim();
+    }
+
+    if ("category_id" in p || "categoryId" in p) {
+        out.category_id = p.category_id ?? p.categoryId ?? null;
+    }
+
+    if ("amount" in p) {
+        out.amount = toAmountString(p.amount);
+    }
+
+    if ("currency" in p) {
+        out.currency = p.currency || "BRL";
+    }
+
+    if ("status" in p) {
+        out.status = uiStatusToApi(p.status);
+    }
+
+    if ("direction" in p) {
+        out.direction = p.direction;
+    }
+
+    if ("kind" in p) {
+        out.kind = p.kind;
+    }
+
+    if ("installment_group_id" in p || "installmentGroupId" in p) {
+        out.installment_group_id = p.installment_group_id ?? p.installmentGroupId ?? null;
+    }
+
+    if ("installment_current" in p || "installmentCurrent" in p) {
+        out.installment_current = p.installment_current ?? p.installmentCurrent ?? null;
+    }
+
+    if ("installment_total" in p || "installmentTotal" in p) {
+        out.installment_total = p.installment_total ?? p.installmentTotal ?? null;
+    }
+
+    if ("recurring_rule" in p || "recurringRule" in p) {
+        out.recurring_rule = p.recurring_rule ?? p.recurringRule ?? null;
+    }
+
+    if ("notes" in p) {
+        out.notes = p.notes ?? "";
+    }
+
+    return out;
+}
 
 export const createTransactionThunk = createAsyncThunk(
     "transactions/create",
@@ -118,10 +209,7 @@ export const patchTransactionThunk = createAsyncThunk(
     "transactions/patch",
     async ({ id, patch }, { rejectWithValue }) => {
         try {
-            const out = mapUiToApiPayload(patch);
-            // PATCH parcial: não precisa de tudo
-            // mas não queremos sobrescrever client_id com vazio
-            if (patch?.client_id == null && patch?.clientId == null) delete out.client_id;
+            const out = mapUiPatchToApiPayload(patch);
             const data = await patchTransaction(id, out);
             return data;
         } catch (e) {
@@ -140,6 +228,7 @@ export const deleteTransactionThunk = createAsyncThunk(
         }
     }
 );
+
 
 const transactionsSlice = createSlice({
     name: "transactions",

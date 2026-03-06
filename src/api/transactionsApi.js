@@ -16,7 +16,7 @@ function mapTransactionToApiPayload(t = {}) {
     const chargeDate = t.chargeDate ?? t.charge_date ?? null;
     const invoiceMonth = t.invoiceMonth ?? t.invoice_month ?? null;
 
-    // ✅ suporta parcelas em flat OU dentro de t.installment
+    // suporta parcelas em flat OU dentro de t.installment
     const inst = t.installment || {};
 
     const installment_group_id =
@@ -42,39 +42,117 @@ function mapTransactionToApiPayload(t = {}) {
 
     return {
         client_id: t.clientId ?? t.client_id ?? null,
-
         purchase_date: purchaseDate,
         charge_date: chargeDate,
-
-        // ✅ DRF espera DATE ("YYYY-MM-DD"), e você usa "YYYY-MM" no UI
         invoice_month: ymToInvoiceDate(invoiceMonth),
-
-        // ✅ serializer usa "account_id" (PrimaryKeyRelatedField source="account")
         account_id: t.accountId ?? t.account_id ?? null,
         bill_id: t.billId ?? t.bill_id ?? null,
-
         merchant: t.merchant ?? "",
         description: t.description ?? "",
         category_id: t.categoryId ?? t.category_id ?? "outros",
-
-        // ✅ seu serializer converte "amount" -> amount_cents no validate()
         amount: t.amount ?? undefined,
-
         currency: t.currency ?? "BRL",
         status: t.status ?? "planned",
         direction: t.direction ?? "expense",
         kind: t.kind ?? "one_off",
-
-        // ✅ PARCELAS
         installment_group_id,
         installment_current,
         installment_total,
-
-        // ✅ recorrência
         recurring_rule: t.recurringRule ?? t.recurring_rule ?? null,
-
         notes: t.notes ?? "",
     };
+}
+
+function mapTransactionPatchToApiPayload(patch = {}) {
+    const body = {};
+
+    if ("clientId" in patch || "client_id" in patch) {
+        body.client_id = patch.clientId ?? patch.client_id ?? null;
+    }
+
+    if ("purchaseDate" in patch || "purchase_date" in patch) {
+        body.purchase_date = patch.purchaseDate ?? patch.purchase_date ?? null;
+    }
+
+    if ("chargeDate" in patch || "charge_date" in patch) {
+        body.charge_date = patch.chargeDate ?? patch.charge_date ?? null;
+    }
+
+    if ("invoiceMonth" in patch || "invoice_month" in patch) {
+        const raw = patch.invoiceMonth ?? patch.invoice_month ?? null;
+        body.invoice_month = ymToInvoiceDate(raw);
+    }
+
+    if ("accountId" in patch || "account_id" in patch) {
+        body.account_id = patch.accountId ?? patch.account_id ?? null;
+    }
+
+    if ("billId" in patch || "bill_id" in patch) {
+        body.bill_id = patch.billId ?? patch.bill_id ?? null;
+    }
+
+    if ("invoiceId" in patch || "invoice_id" in patch) {
+        body.invoice_id = patch.invoiceId ?? patch.invoice_id ?? null;
+    }
+
+    if ("merchant" in patch) {
+        body.merchant = patch.merchant ?? "";
+    }
+
+    if ("description" in patch) {
+        body.description = patch.description ?? "";
+    }
+
+    if ("categoryId" in patch || "category_id" in patch) {
+        body.category_id = patch.categoryId ?? patch.category_id ?? null;
+    }
+
+    if ("amount" in patch) {
+        body.amount = patch.amount;
+    }
+
+    if ("currency" in patch) {
+        body.currency = patch.currency ?? "BRL";
+    }
+
+    if ("status" in patch) {
+        body.status = patch.status;
+    }
+
+    if ("direction" in patch) {
+        body.direction = patch.direction;
+    }
+
+    if ("kind" in patch) {
+        body.kind = patch.kind;
+    }
+
+    if ("installment_group_id" in patch || "installmentGroupId" in patch) {
+        body.installment_group_id =
+            patch.installment_group_id ?? patch.installmentGroupId ?? null;
+    }
+
+    if ("installment_current" in patch || "installmentCurrent" in patch) {
+        body.installment_current =
+            patch.installment_current ?? patch.installmentCurrent ?? null;
+    }
+
+    if ("installment_total" in patch || "installmentTotal" in patch) {
+        body.installment_total =
+            patch.installment_total ?? patch.installmentTotal ?? null;
+    }
+
+    if ("recurringRule" in patch || "recurring_rule" in patch) {
+        body.recurring_rule = patch.recurringRule ?? patch.recurring_rule ?? null;
+    }
+
+    if ("notes" in patch) {
+        body.notes = patch.notes ?? "";
+    }
+
+    Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
+
+    return body;
 }
 
 export async function listTransactions() {
@@ -89,11 +167,7 @@ export async function createTransactionApi(payload) {
 }
 
 export async function patchTransaction(id, patch) {
-    const body = mapTransactionToApiPayload(patch);
-
-    // PATCH: não mande campos undefined (DRF às vezes reclama)
-    Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
-
+    const body = mapTransactionPatchToApiPayload(patch);
     const { data } = await http.patch(`/yenomplanner/transactions/${id}/`, body);
     return data;
 }
