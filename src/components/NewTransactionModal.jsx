@@ -617,20 +617,38 @@ export default function NewTransactionModal({ open, onClose }) {
 
   const inputSx = {
     "& .MuiInputLabel-root": { color: "rgba(15,23,42,0.78)", fontWeight: 800 },
-    "& .MuiInputLabel-root.Mui-focused": { color: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)" },
-    "& .MuiInputBase-input": { color: "#0f172a" },
-    "& .MuiOutlinedInput-root": { backgroundColor: "#fff", borderRadius: 10 },
-    "& .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(2,6,23,0.18)" },
+    "& .MuiInputLabel-root.Mui-focused": {
+      color: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)",
+    },
+
+    "& .MuiInputBase-input": {
+      color: "#0f172a",
+      fontSize: isSmDown ? 16 : 15, // ✅ evita zoom no iPhone
+      WebkitTextSizeAdjust: "100%",
+    },
+
+    "& .MuiOutlinedInput-root": {
+      backgroundColor: "#fff",
+      borderRadius: 10,
+    },
+
+    "& .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(2,6,23,0.18)",
+    },
+
     "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
       borderColor: isExpense ? "rgba(211,47,47,0.55)" : "rgba(46,125,50,0.55)",
     },
+
     "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
       borderColor: isExpense ? "rgba(211,47,47,0.85)" : "rgba(46,125,50,0.85)",
       borderWidth: 1,
     },
-    "& .MuiFormHelperText-root": { color: "rgba(15,23,42,0.62)" },
-  };
 
+    "& .MuiFormHelperText-root": {
+      color: "rgba(15,23,42,0.62)",
+    },
+  };
   // ✅ em mobile: deixa actions “grudado” com mais área útil
   const actionsSx = isSmDown
     ? {
@@ -649,19 +667,6 @@ export default function NewTransactionModal({ open, onClose }) {
     }
     : { pb: 2, pr: 2, gap: 1, marginTop: "-20px" };
 
-  useEffect(() => {
-    if (!open) return;
-
-    const prevent = (e) => {
-      // pinch zoom
-      if (e.touches && e.touches.length > 1) e.preventDefault();
-    };
-
-    document.addEventListener("touchmove", prevent, { passive: false });
-
-    return () => document.removeEventListener("touchmove", prevent);
-  }, [open]);
-
   return (
     <Dialog
       open={open}
@@ -669,11 +674,13 @@ export default function NewTransactionModal({ open, onClose }) {
       fullWidth
       maxWidth="sm"
       fullScreen={isSmDown}
+      scroll="paper"
+      disableScrollLock={false}
       slotProps={{
         backdrop: {
           sx: {
-            backgroundColor: "rgba(2,6,23,0.72)",
-            backdropFilter: "blur(10px)",
+            backgroundColor: "rgba(20,20,20,0.30)",
+            backdropFilter: "blur(2px)",
           },
         },
       }}
@@ -682,15 +689,16 @@ export default function NewTransactionModal({ open, onClose }) {
           borderRadius: isSmDown ? 0 : 2,
           border: isSmDown ? "none" : `1.5px solid ${borderColor}`,
           background: `
-            linear-gradient(
-              -180deg,
-              ${gradientAccent} 0%,
-              ${tintBg} 60px,
-              rgba(255,255,255,1) 85%
-            )
-          `,
+        linear-gradient(
+          -180deg,
+          ${gradientAccent} 0%,
+          ${tintBg} 60px,
+          rgba(255,255,255,1) 85%
+        )
+      `,
           boxShadow: isSmDown ? "none" : "0 2px 10px rgba(0,0,0,0.04)",
           overflow: "hidden",
+          maxHeight: isSmDown ? "100dvh" : undefined,
         },
       }}
     >
@@ -715,6 +723,9 @@ export default function NewTransactionModal({ open, onClose }) {
         sx={{
           pt: 1.4,
           pb: 1.6,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
           "& .MuiTextField-root .MuiOutlinedInput-root": {
             borderRadius: 10,
             backgroundColor: "#fff",

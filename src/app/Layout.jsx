@@ -59,7 +59,7 @@ import { Toaster } from "react-hot-toast";
 
 const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
 
-const DRAWER_EXPANDED = 270;
+const DRAWER_EXPANDED = 230;
 const DRAWER_COLLAPSED = 76;
 const TOP_H = 64;
 
@@ -73,7 +73,7 @@ const navItems = [
   { to: "/cadastros", label: "Cadastros", icon: <SettingsRoundedIcon />, color: "#64748b" },
 ];
 
-function NavItem({ to, label, icon, collapsed, color, onClick }) {
+function NavItem({ to, label, icon, collapsed, color, onClick, isMobile }) {
   const theme = useTheme();
   const isRoot = to === "/";
 
@@ -85,8 +85,12 @@ function NavItem({ to, label, icon, collapsed, color, onClick }) {
       style={({ isActive }) => ({
         display: "flex",
         alignItems: "center",
-        gap: collapsed ? 0 : 10,
-        padding: collapsed ? "10px 10px" : "10px 12px",
+        gap: collapsed ? 0 : isMobile ? 8 : 10,
+        padding: collapsed
+          ? "10px 10px"
+          : isMobile
+            ? "9px 10px"
+            : "10px 12px",
         borderRadius: 14,
         color: theme.palette.text.primary,
         textDecoration: "none",
@@ -104,8 +108,9 @@ function NavItem({ to, label, icon, collapsed, color, onClick }) {
             sx={{
               display: "grid",
               placeItems: "center",
-              width: 36,
-              color: color,
+              width: isMobile ? 32 : 36,
+              minWidth: isMobile ? 32 : 36,
+              color,
               transition: "all .18s ease",
               transform: isActive ? "scale(1.15)" : "scale(1)",
               filter: isActive ? "saturate(1.4)" : "saturate(0.9)",
@@ -113,6 +118,9 @@ function NavItem({ to, label, icon, collapsed, color, onClick }) {
                 isActive && theme.palette.mode === "dark"
                   ? `0 0 8px ${color}`
                   : "none",
+              "& .MuiSvgIcon-root": {
+                fontSize: isMobile ? 20 : 22,
+              },
             }}
           >
             {icon}
@@ -123,6 +131,9 @@ function NavItem({ to, label, icon, collapsed, color, onClick }) {
               sx={{
                 fontWeight: isActive ? 800 : 650,
                 transition: "all .18s ease",
+                fontSize: isMobile ? 14 : 15,
+                lineHeight: 1.15,
+                whiteSpace: "nowrap",
               }}
             >
               {label}
@@ -196,7 +207,6 @@ const MONTHS_PT = [
   { value: 12, label: "Dez" },
 ];
 
-
 function usePageTracking() {
   const location = useLocation();
 
@@ -210,7 +220,7 @@ function usePageTracking() {
 }
 
 export default function Layout({ children }) {
-  usePageTracking(); // 👈 chama aqui
+  usePageTracking();
 
   const theme = useTheme();
   const themeMode = useThemeMode();
@@ -229,22 +239,13 @@ export default function Layout({ children }) {
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-
-
-
-
-
   const isPublicRoute = useMemo(() => {
     const PUBLIC_ROUTES = ["/login", "/register", "/reset-password"];
     return PUBLIC_ROUTES.includes(location.pathname);
   }, [location.pathname]);
 
-  // ✅ auto-colapse
   const [collapsed, setCollapsed] = useState(true);
-
-  // ✅ mobile drawer
   const [mobileOpen, setMobileOpen] = useState(false);
-
   const [newOpen, setNewOpen] = useState(false);
 
   const title = useMemo(() => {
@@ -265,15 +266,12 @@ export default function Layout({ children }) {
 
   const activeIcon = location.pathname.startsWith("/cadastros") ? activeNav?.icon : null;
 
-  // ✅ evita re-fetch em loop (Layout re-renderiza bastante)
   const bootstrappedRef = useRef(false);
 
-  // ✅ fecha drawer mobile ao navegar
   useEffect(() => {
     if (!isMdUp) setMobileOpen(false);
   }, [location.pathname, isMdUp]);
 
-  // ✅ valores atuais do filtro
   const { y: selectedYear, m: selectedMonth } = parseYM(month || getDefaultYM());
 
   const years = useMemo(() => {
@@ -281,7 +279,6 @@ export default function Layout({ children }) {
     return [now - 1, now, now + 1];
   }, []);
 
-  // ✅ garante "YYYY-MM" válido (ano atual por padrão)
   useEffect(() => {
     if (isPublicRoute) return;
     if (month) return;
@@ -310,7 +307,6 @@ export default function Layout({ children }) {
     writeStoredYM(month);
   }, [isPublicRoute, month, dispatch]);
 
-  // ✅ Guard de auth + bootstrap do /me + carregar dados
   useEffect(() => {
     if (isPublicRoute) {
       bootstrappedRef.current = false;
@@ -328,9 +324,7 @@ export default function Layout({ children }) {
     if (!currentUser && authStatus !== "loading") {
       dispatch(meThunk())
         .unwrap()
-        .then(() => {
-          // não marca bootstrapped aqui: ainda vamos buscar dados base abaixo
-        })
+        .then(() => { })
         .catch(() => {
           bootstrappedRef.current = false;
           dispatch(logout());
@@ -341,17 +335,13 @@ export default function Layout({ children }) {
     }
 
     if (currentUser) {
-      // ✅ Mobile Lite: não puxa “tudo” de transações no shell.
-      // Deixa cada página puxar o que precisa quando o user entrar.
       const baseFetches = [
         dispatch(fetchAccountsThunk()).unwrap(),
         dispatch(fetchBillsThunk()).unwrap(),
         dispatch(fetchCategoriesThunk()).unwrap(),
       ];
 
-      const heavyFetches = [
-        dispatch(fetchAllTransactionsThunk()).unwrap(),
-      ];
+      const heavyFetches = [dispatch(fetchAllTransactionsThunk()).unwrap()];
 
       const jobs = isMobile ? baseFetches : baseFetches.concat(heavyFetches);
 
@@ -366,6 +356,7 @@ export default function Layout({ children }) {
   }
 
   const drawerW = collapsed ? DRAWER_COLLAPSED : DRAWER_EXPANDED;
+  const effectiveCollapsed = isMdUp ? collapsed : false;
 
   const drawerPaperSx = {
     width: drawerW,
@@ -420,10 +411,10 @@ export default function Layout({ children }) {
       <Box
         sx={{
           height: TOP_H,
-          px: collapsed ? 1 : 2,
+          px: effectiveCollapsed ? 1 : isMobile ? 1.4 : 2,
           display: "flex",
           alignItems: "center",
-          justifyContent: collapsed ? "center" : "space-between",
+          justifyContent: effectiveCollapsed ? "center" : "space-between",
           gap: 1,
           position: "relative",
         }}
@@ -432,20 +423,20 @@ export default function Layout({ children }) {
           sx={{
             display: "flex",
             alignItems: "center",
-            justifyContent: collapsed ? "center" : "flex-start",
+            justifyContent: effectiveCollapsed ? "center" : "flex-start",
             width: "100%",
             minWidth: 0,
           }}
         >
-          {!collapsed ? (
+          {!effectiveCollapsed ? (
             <Box
               component="img"
               src="/assets/image/banner-1.png"
               alt="Yenom Planner"
               sx={{
-                height: 64,
+                height: isMobile ? 58 : 64,
                 width: "100%",
-                maxWidth: 190,
+                maxWidth: isMobile ? 172 : 190,
                 objectFit: "contain",
                 display: "block",
               }}
@@ -507,7 +498,14 @@ export default function Layout({ children }) {
 
       <Divider />
 
-      <Box sx={{ p: collapsed ? 1 : 1.4, display: "flex", flexDirection: "column", gap: 0.8 }}>
+      <Box
+        sx={{
+          p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.4,
+          display: "flex",
+          flexDirection: "column",
+          gap: isMobile ? 0.55 : 0.8,
+        }}
+      >
         {navItems.map((it) => (
           <NavItem
             key={it.to}
@@ -515,7 +513,8 @@ export default function Layout({ children }) {
             label={it.label}
             icon={it.icon}
             color={it.color}
-            collapsed={collapsed}
+            collapsed={effectiveCollapsed}
+            isMobile={isMobile}
             onClick={() => {
               if (!isMdUp) setMobileOpen(false);
             }}
@@ -525,13 +524,18 @@ export default function Layout({ children }) {
 
       <Box sx={{ flex: 1 }} />
 
-      <Box sx={{ p: collapsed ? 1 : 1.6, display: "flex", flexDirection: "column", gap: 1 }}>
-        {!collapsed ? (
+      <Box sx={{ p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.6, display: "flex", flexDirection: "column", gap: 1 }}>
+        {!effectiveCollapsed ? (
           <Button
             fullWidth
             variant="contained"
             onClick={() => setNewOpen(true)}
-            sx={{ borderRadius: 999, height: 40, fontWeight: 800 }}
+            sx={{
+              borderRadius: 999,
+              height: isMobile ? 38 : 40,
+              fontWeight: 800,
+              fontSize: isMobile ? 13 : 14,
+            }}
           >
             + Novo lançamento
           </Button>
@@ -553,16 +557,17 @@ export default function Layout({ children }) {
 
       <Divider sx={{ opacity: 0.8 }} />
 
-      <Box sx={{ p: collapsed ? 1 : 1.6 }}>
-        {!collapsed ? (
+      <Box sx={{ p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.6 }}>
+        {!effectiveCollapsed ? (
           <Button
             fullWidth
             onClick={handleLogout}
             startIcon={<ExitToAppRoundedIcon />}
             sx={{
-              height: 40,
+              height: isMobile ? 38 : 40,
               borderRadius: 999,
               fontWeight: 900,
+              fontSize: isMobile ? 13 : 14,
               justifyContent: "center",
               px: 1.6,
               color: "#dc2626",
@@ -644,6 +649,8 @@ export default function Layout({ children }) {
               width: DRAWER_EXPANDED,
               boxSizing: "border-box",
               borderRight: `1px solid ${theme.palette.divider}`,
+              borderTopLeftRadius: 0,
+              borderBottomLeftRadius: 0
             },
           }}
         >
@@ -667,13 +674,23 @@ export default function Layout({ children }) {
               minHeight: TOP_H,
               display: "flex",
               justifyContent: "space-between",
-              gap: 1.2,
+              gap: { xs: 0.8, sm: 1.2 },
               px: { xs: 1, sm: 2 },
             }}
           >
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+            <Stack
+              direction="row"
+              spacing={{ xs: 0.75, sm: 1 }}
+              alignItems="center"
+              sx={{
+                minWidth: 0,
+                flex: 1,
+                pr: { xs: 1.1, sm: 1.5 },
+                overflow: "hidden",
+              }}
+            >
               {!isMdUp ? (
-                <IconButton onClick={() => setMobileOpen(true)} size="small">
+                <IconButton onClick={() => setMobileOpen(true)} size="small" sx={{ flexShrink: 0 }}>
                   <MenuRoundedIcon />
                 </IconButton>
               ) : null}
@@ -681,39 +698,103 @@ export default function Layout({ children }) {
               {activeIcon ? (
                 <Box
                   sx={(t) => ({
-                    width: 34,
-                    height: 34,
-                    borderRadius: 12,
+                    width: { xs: 30, sm: 34 },
+                    height: { xs: 30, sm: 34 },
+                    borderRadius: { xs: 10, sm: 12 },
                     display: "grid",
                     placeItems: "center",
+                    flexShrink: 0,
                     bgcolor: alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.12 : 0.08),
                     border: `1px solid ${alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.28 : 0.18)}`,
-                    "& .MuiSvgIcon-root": { fontSize: 18 },
+                    "& .MuiSvgIcon-root": { fontSize: { xs: 17, sm: 18 } },
                   })}
                 >
                   {activeIcon}
                 </Box>
               ) : null}
 
-              <Stack spacing={0.2} sx={{ lineHeight: 1.1, minWidth: 0 }}>
-                <Typography variant="body2" sx={{ fontWeight: 600, opacity: 0.75, whiteSpace: "nowrap" }}>
+              <Stack
+                spacing={0.1}
+                sx={{
+                  lineHeight: 1.05,
+                  minWidth: 0,
+                  maxWidth: { xs: "calc(100vw - 220px)", sm: "none" },
+                  overflow: "hidden",
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontWeight: 600,
+                    opacity: 0.72,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    fontSize: { xs: 11, sm: 13 },
+                    lineHeight: 1.05,
+                  }}
+                >
                   Olá, {user?.first_name} 👋
                 </Typography>
 
-                <Typography variant="h6" sx={{ fontWeight: 900, letterSpacing: -0.4, whiteSpace: "nowrap" }}>
+                <Typography
+                  sx={{
+                    fontWeight: 900,
+                    letterSpacing: { xs: -0.25, sm: -0.4 },
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    fontSize: { xs: 16, sm: 20 },
+                    lineHeight: 1.05,
+                  }}
+                >
                   {title}
                 </Typography>
               </Stack>
             </Stack>
 
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {/* Desktop: mantém seletor mês/ano na home.
-                  Mobile: esconde pra simplificar e reduzir “poluição” (você pode depois criar um botão que abre um bottom sheet). */}
-              {location.pathname === "/" && !isMobile && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ display: { xs: "none", sm: "flex" } }}>
-                  <Box sx={{ ...pillSx, minWidth: 120 }}>
+            <Stack
+              direction="row"
+              spacing={{ xs: 0.55, sm: 1 }}
+              alignItems="center"
+              sx={{
+                minWidth: 0,
+                flexShrink: 0,
+                pl: { xs: 0.5, sm: 0 },
+              }}
+            >
+              {location.pathname === "/" && (
+                <Stack
+                  direction="row"
+                  spacing={0.8}
+                  alignItems="center"
+                  sx={{
+                    minWidth: 0,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Box
+                    sx={{
+                      ...pillSx,
+                      minWidth: { xs: 84, sm: 120 },
+                      px: { xs: 0.35, sm: 1 },
+                    }}
+                  >
                     <FormControl size="small" fullWidth>
-                      <Select value={selectedMonth} onChange={(e) => setYM(selectedYear, e.target.value)} sx={selectSx}>
+                      <Select
+                        value={selectedMonth}
+                        onChange={(e) => setYM(selectedYear, e.target.value)}
+                        sx={{
+                          ...selectSx,
+                          "& .MuiSelect-select": {
+                            py: { xs: 0.42, sm: 0.55 },
+                            px: { xs: 0.65, sm: 1 },
+                            fontWeight: 800,
+                            fontSize: { xs: 11.5, sm: 13 },
+                            display: "flex",
+                            alignItems: "center",
+                          },
+                        }}
+                      >
                         {MONTHS_PT.map((mm) => (
                           <MenuItem key={mm.value} value={mm.value}>
                             {mm.label}
@@ -723,9 +804,29 @@ export default function Layout({ children }) {
                     </FormControl>
                   </Box>
 
-                  <Box sx={{ ...pillSx, minWidth: 110 }}>
+                  <Box
+                    sx={{
+                      ...pillSx,
+                      minWidth: { xs: 72, sm: 110 },
+                      px: { xs: 0.35, sm: 1 },
+                    }}
+                  >
                     <FormControl size="small" fullWidth>
-                      <Select value={selectedYear} onChange={(e) => setYM(e.target.value, selectedMonth)} sx={selectSx}>
+                      <Select
+                        value={selectedYear}
+                        onChange={(e) => setYM(e.target.value, selectedMonth)}
+                        sx={{
+                          ...selectSx,
+                          "& .MuiSelect-select": {
+                            py: { xs: 0.42, sm: 0.55 },
+                            px: { xs: 0.65, sm: 1 },
+                            fontWeight: 800,
+                            fontSize: { xs: 11.5, sm: 13 },
+                            display: "flex",
+                            alignItems: "center",
+                          },
+                        }}
+                      >
                         {years.map((yy) => (
                           <MenuItem key={yy} value={yy}>
                             {yy}
@@ -743,9 +844,9 @@ export default function Layout({ children }) {
                 alignItems="center"
                 sx={(t) => ({
                   ...pillSx,
-                  px: 0.6,
+                  px: { xs: 0.35, sm: 0.6 },
                   py: 0.35,
-                  gap: 0.4,
+                  gap: { xs: 0.2, sm: 0.4 },
 
                   "& .hideValuesBtn": {
                     width: 0,
@@ -765,7 +866,6 @@ export default function Layout({ children }) {
                     pointerEvents: "auto",
                   },
 
-                  // touch/mobile não tem hover → deixa sempre visível
                   [t.breakpoints.down("sm")]: {
                     "& .hideValuesBtn": {
                       width: 22,
@@ -778,8 +878,8 @@ export default function Layout({ children }) {
               >
                 {(() => {
                   const btnSx = (t) => ({
-                    width: 32,
-                    height: 32,
+                    width: { xs: 29, sm: 32 },
+                    height: { xs: 29, sm: 32 },
                     borderRadius: 999,
                     color: "text.secondary",
                     transition: "all .16s ease",
@@ -787,24 +887,28 @@ export default function Layout({ children }) {
                       bgcolor: alpha(t.palette.text.primary, t.palette.mode === "dark" ? 0.08 : 0.06),
                       color: "text.primary",
                     },
-                    "& .MuiSvgIcon-root": { fontSize: 18 },
+                    "& .MuiSvgIcon-root": { fontSize: { xs: 17, sm: 18 } },
                   });
 
                   const dangerBtnSx = (t) => ({
-                    width: 32,
-                    height: 32,
+                    width: { xs: 29, sm: 32 },
+                    height: { xs: 29, sm: 32 },
                     borderRadius: 999,
                     color: t.palette.error.main,
                     transition: "all .16s ease",
                     "&:hover": { bgcolor: alpha(t.palette.error.main, t.palette.mode === "dark" ? 0.16 : 0.10) },
-                    "& .MuiSvgIcon-root": { fontSize: 18 },
+                    "& .MuiSvgIcon-root": { fontSize: { xs: 17, sm: 18 } },
                   });
 
                   return (
                     <>
                       <Tooltip title={themeMode.mode === "dark" ? "Modo claro" : "Modo escuro"}>
                         <IconButton onClick={themeMode.toggle} size="small" sx={btnSx}>
-                          {themeMode.mode === "dark" ? <LightModeRoundedIcon fontSize="small" /> : <DarkModeRoundedIcon fontSize="small" />}
+                          {themeMode.mode === "dark" ? (
+                            <LightModeRoundedIcon fontSize="small" />
+                          ) : (
+                            <DarkModeRoundedIcon fontSize="small" />
+                          )}
                         </IconButton>
                       </Tooltip>
 
@@ -815,11 +919,22 @@ export default function Layout({ children }) {
                           sx={btnSx}
                           className="hideValuesBtn"
                         >
-                          {hideValues ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
+                          {hideValues ? (
+                            <VisibilityOffRoundedIcon fontSize="small" />
+                          ) : (
+                            <VisibilityRoundedIcon fontSize="small" />
+                          )}
                         </IconButton>
                       </Tooltip>
 
-                      <Box sx={(t) => ({ width: 1, height: 18, mx: 0.2, bgcolor: alpha(t.palette.divider, 0.9) })} />
+                      <Box
+                        sx={(t) => ({
+                          width: 1,
+                          height: { xs: 16, sm: 18 },
+                          mx: { xs: 0.1, sm: 0.2 },
+                          bgcolor: alpha(t.palette.divider, 0.9),
+                        })}
+                      />
 
                       <Tooltip title="Sair">
                         <IconButton size="small" onClick={handleLogout} sx={dangerBtnSx}>
@@ -848,7 +963,6 @@ export default function Layout({ children }) {
           {children}
         </Box>
 
-        {/* FAB global mobile */}
         {!isPublicRoute && isMobile && !newOpen ? (
           <Fab
             color="primary"
@@ -869,13 +983,6 @@ export default function Layout({ children }) {
             <AddRoundedIcon />
           </Fab>
         ) : null}
-
-        <Suspense fallback={null}>
-          <NewTransactionModal
-            open={newOpen}
-            onClose={() => setNewOpen(false)}
-          />
-        </Suspense>
 
         {newOpen ? (
           <Suspense fallback={null}>
