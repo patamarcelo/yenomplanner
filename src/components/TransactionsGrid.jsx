@@ -1112,7 +1112,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
                 display: "flex",
                 alignItems: "center",
                 width: "100%",
-                mt: 2.2,
+                mt: 3.2,
               }}
             >
               <TextField
