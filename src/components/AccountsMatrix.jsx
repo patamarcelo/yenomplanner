@@ -1180,24 +1180,26 @@ export default function AccountsMatrix() {
 
     const showSumBar = selectedCells.size > 0;
 
-    const allBillsOpen = (billsData?.catRows || []).every((c) => {
-        const catId = String(c.catId || "outros");
-        return openBillCats[catId] === false; // false = aberto (pela sua lógica atual)
-    });
+    const allBillsOpen = (billsData?.catRows || []).length > 0 &&
+        (billsData?.catRows || []).every((c) => {
+            const catId = String(c.catId || "outros");
+            return !!openBillCats[catId];
+        });
 
-    const toggleAllBills = () => {
+    const toggleAllBills = useCallback(() => {
         const cats = (billsData?.catRows || []).map((c) => String(c.catId || "outros"));
+        const shouldOpen = !allBillsOpen;
 
         setOpenBillCats((prev) => {
             const next = { ...prev };
             for (const catId of cats) {
-                next[catId] = allBillsOpen ? true : false;
-                // se tudo aberto → fecha (true)
-                // se não → abre tudo (false)
+                next[catId] = shouldOpen;
             }
             return next;
         });
-    };
+
+        setBillsMode(shouldOpen ? "open" : "closed");
+    }, [billsData?.catRows, allBillsOpen]);
 
     return (
         <Card variant="outlined" sx={{ overflow: "hidden" }}>
