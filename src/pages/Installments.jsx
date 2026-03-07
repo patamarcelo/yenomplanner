@@ -1,5 +1,5 @@
 // src/pages/InstallmentsMatrix.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import {
   Box,
@@ -18,8 +18,11 @@ import {
   Typography,
   useTheme,
   Button,
+  Tooltip,
 } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import KeyboardArrowRightRoundedIcon from "@mui/icons-material/KeyboardArrowRightRounded";
 import { alpha } from "@mui/material/styles";
 
 import { formatBRLNegativeValues as formatBRL } from "../utils/money";
@@ -29,6 +32,8 @@ import { selectAccounts } from "../store/accountsSlice";
 /* =========================
    Helpers
 ========================= */
+const OPEN_CARDS_STORAGE_KEY = "installments-matrix-open-cards-v1";
+
 const ymFromAny = (v) => {
   const s = String(v || "").trim();
   if (!s) return "";
@@ -49,8 +54,10 @@ const ymToParts = (ym) => {
 const ymAddMonths = (ym, add) => {
   const p = ymToParts(ym);
   if (!p) return null;
+
   let y = p.y;
   let m = p.m + add;
+
   while (m > 12) {
     y += 1;
     m -= 12;
@@ -59,6 +66,7 @@ const ymAddMonths = (ym, add) => {
     y -= 1;
     m += 12;
   }
+
   return `${y}-${String(m).padStart(2, "0")}`;
 };
 
@@ -75,7 +83,7 @@ const safeNumber = (v) => {
 };
 
 /* =========================
-   Regra: sai da visão se estiver FATURADO
+   Regras
 ========================= */
 const isInvoiced = (t) => {
   const st = String(t?.status || "").toLowerCase();
@@ -100,6 +108,51 @@ const resolveAccountId = (t) =>
   t?.account?.id ||
   null;
 
+/* =========================
+   UI Delta
+========================= */
+function DeltaMonthInfo({ current, previous, theme }) {
+  const delta = safeNumber(current) - safeNumber(previous);
+  if (!delta) {
+    return (
+      <Typography
+        variant="caption"
+        sx={{
+          display: "block",
+          mt: 0.15,
+          fontSize: 10,
+          lineHeight: 1,
+          color: "text.disabled",
+          opacity: 0.75,
+        }}
+      >
+        —
+      </Typography>
+    );
+  }
+
+  const positive = delta > 0;
+  const color = positive ? theme.palette.info.main : theme.palette.error.main;
+
+  return (
+    <Typography
+      variant="caption"
+      sx={{
+        display: "block",
+        mt: 0.15,
+        fontSize: 10,
+        lineHeight: 1,
+        fontWeight: 900,
+        color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {positive ? "" : ""}
+      {formatBRL(delta)}
+    </Typography>
+  );
+}
+
 export default function InstallmentsMatrix() {
   const theme = useTheme();
   const txns = useSelector(selectTransactionsUi);
@@ -111,6 +164,10 @@ export default function InstallmentsMatrix() {
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState(null);
+
+  // Accordion cartões
+  const [openCards, setOpenCards] = useState({});
+  const didHydrateOpenCardsRef = useRef(false);
 
   const accountsById = useMemo(() => {
     const m = new Map();
@@ -130,7 +187,6 @@ export default function InstallmentsMatrix() {
       if (!gid) return false;
       const ym = ymFromAny(t?.invoiceMonth || t?.invoice_month);
       if (!ym) return false;
-      // if (hideInvoiced && isInvoiced(t)) return false;
       return true;
     });
 
@@ -144,8 +200,8 @@ export default function InstallmentsMatrix() {
 
     const groups = Array.from(groupsMap.entries()).map(([groupId, arr]) => {
       const sorted = arr.slice().sort((a, b) => ymCompare(ymFromAny(a?.invoiceMonth), ymFromAny(b?.invoiceMonth)));
-      const openItems = sorted.filter((x) => !isInvoiced(x)); // ✅ parcelas ainda em aberto
-      const remainingOpen = openItems.length;                // ✅ ESSA é a métrica certa
+      const openItems = sorted.filter((x) => !isInvoiced(x));
+      const remainingOpen = openItems.length;
       const first = sorted[0];
 
       const accountId = resolveAccountId(first);
@@ -156,7 +212,7 @@ export default function InstallmentsMatrix() {
 
       const byMonth = new Map();
       for (const t of sorted) {
-        if (hideInvoiced && isInvoiced(t)) continue; // ✅ agora sim, só para visual
+        if (hideInvoiced && isInvoiced(t)) continue;
         const ym = ymFromAny(t?.invoiceMonth || t?.invoice_month);
         const v = safeNumber(t?.amount);
         if (!ym || !v) continue;
@@ -165,21 +221,19 @@ export default function InstallmentsMatrix() {
 
       const total = sorted.reduce((acc2, x) => acc2 + safeNumber(x?.amount), 0);
 
-
-
       const totalParts =
         first?.installment?.total ??
         first?.installmentTotal ??
         first?.installment_total ??
         sorted.length;
+
       const invoicedCount = arr.reduce((n, x) => n + (isInvoiced(x) ? 1 : 0), 0);
-      // se hideInvoiced=true, invoicedCount vai ser 0 mesmo (porque já filtrou)
       const remainingParts = Math.max(0, safeNumber(totalParts) - safeNumber(invoicedCount));
 
       return {
         groupId,
         accountId,
-        remainingOpen,     // ✅ usado pra ordenar
+        remainingOpen,
         openCount: remainingOpen,
         closedCount: sorted.length - remainingOpen,
         accountName,
@@ -207,18 +261,16 @@ export default function InstallmentsMatrix() {
       const groupsSorted = arr
         .slice()
         .sort((a, b) =>
-          safeNumber(a.remainingOpen) - safeNumber(b.remainingOpen) || // ✅ menos abertas primeiro
-          safeNumber(b.total) - safeNumber(a.total) ||                 // desempate: maior total
-          ymCompare(a.firstMonth, b.firstMonth)                         // desempate: mais antigo
+          safeNumber(a.remainingOpen) - safeNumber(b.remainingOpen) ||
+          safeNumber(b.total) - safeNumber(a.total) ||
+          ymCompare(a.firstMonth, b.firstMonth)
         );
 
       const total = groupsSorted.reduce((acc2, x) => acc2 + safeNumber(x.total), 0);
 
       const accountName = groupsSorted[0]?.accountName || (accountId != null ? String(accountId) : "Cartão");
       const tint = groupsSorted[0]?.tint || "rgba(0,0,0,0.06)";
-
       const groupsCount = groupsSorted.length;
-      const installmentsCount = groupsSorted.reduce((acc2, g) => acc2 + (g.installmentsCount || 0), 0);
 
       const totalsByMonth = new Map();
       for (const g of groupsSorted) {
@@ -240,7 +292,6 @@ export default function InstallmentsMatrix() {
         total,
         minMonth,
         groupsCount,
-        installmentsCount,
         totalsByMonth,
       };
     });
@@ -271,6 +322,55 @@ export default function InstallmentsMatrix() {
     };
   }, [txns, hideInvoiced, accountsById]);
 
+  /* =========================
+     sessionStorage open/close
+  ========================= */
+  useEffect(() => {
+    const cardKeys = model.cardsOut.map((c) => String(c.accountId ?? "—"));
+
+    if (!didHydrateOpenCardsRef.current) {
+      let saved = {};
+      try {
+        const raw = sessionStorage.getItem(OPEN_CARDS_STORAGE_KEY);
+        saved = raw ? JSON.parse(raw) : {};
+      } catch {
+        saved = {};
+      }
+
+      const hydrated = {};
+      for (const key of cardKeys) {
+        hydrated[key] = typeof saved[key] === "boolean" ? saved[key] : true;
+      }
+
+      setOpenCards(hydrated);
+      didHydrateOpenCardsRef.current = true;
+      return;
+    }
+
+    setOpenCards((prev) => {
+      const next = {};
+      for (const key of cardKeys) {
+        next[key] = typeof prev[key] === "boolean" ? prev[key] : true;
+      }
+
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      const sameSize = prevKeys.length === nextKeys.length;
+      const sameValues = sameSize && nextKeys.every((k) => prev[k] === next[k]);
+
+      return sameValues ? prev : next;
+    });
+  }, [model.cardsOut]);
+
+  useEffect(() => {
+    if (!didHydrateOpenCardsRef.current) return;
+    try {
+      sessionStorage.setItem(OPEN_CARDS_STORAGE_KEY, JSON.stringify(openCards));
+    } catch {
+      // noop
+    }
+  }, [openCards]);
+
   const months = useMemo(() => {
     const start = model.globalMinMonth || ymFromAny(new Date().toISOString());
     const out = [];
@@ -285,7 +385,24 @@ export default function InstallmentsMatrix() {
     setActiveGroup(g || null);
     setDrawerOpen(true);
   };
+
   const closeGroupDrawer = () => setDrawerOpen(false);
+
+  const toggleCard = (accountId) => {
+    const key = String(accountId ?? "—");
+    setOpenCards((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const setAllCards = (open) => {
+    const next = {};
+    for (const c of model.cardsOut) {
+      next[String(c.accountId ?? "—")] = open;
+    }
+    setOpenCards(next);
+  };
 
   const drawerSummary = useMemo(() => {
     const g = activeGroup;
@@ -305,15 +422,14 @@ export default function InstallmentsMatrix() {
   /* =========================
      Sticky + grid
   ========================= */
-  const HEADER_ROW_H = 44; // Travamos a altura exata em 44px
+  const HEADER_ROW_H = 44;
   const TOP_ROW1 = 0;
   const TOP_ROW2 = HEADER_ROW_H;
-  const TOP_CARD = HEADER_ROW_H * 2; // O cartão entra exatamente após os 88px dos headers
+  const TOP_CARD = HEADER_ROW_H * 2;
 
   const dividerDot = alpha(theme.palette.divider, theme.palette.mode === "dark" ? 0.75 : 0.95);
   const dashedRight = (isLastMonthCol) => (isLastMonthCol ? "none" : `1px dotted ${dividerDot}`);
 
-  // Helper de fundo opaco
   const solidBg = (overlay) => `linear-gradient(${overlay}, ${overlay}), ${theme.palette.background.paper}`;
 
   const headerMonthsBg = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.35 : 0.16);
@@ -326,7 +442,6 @@ export default function InstallmentsMatrix() {
     zIndex: 120,
     background: solidBg(bg),
     color: headerTextColor,
-    // Removido: backgroundClip: "padding-box" para fechar a fresta na borda
     ...extra,
   });
 
@@ -346,11 +461,11 @@ export default function InstallmentsMatrix() {
   });
 
   const tableViewportH = "calc(100vh - 165px)";
+  const FIRST_COL_W = 280;
 
   return (
     <>
       <Stack spacing={2} sx={{ minHeight: "calc(100vh - 120px)" }}>
-        {/* Header */}
         <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
           <Stack spacing={0.2}>
             <Typography variant="caption" sx={{ color: "text.secondary" }}>
@@ -365,6 +480,22 @@ export default function InstallmentsMatrix() {
               label={hideInvoiced ? "Somente não faturadas" : "Inclui faturadas"}
               variant={hideInvoiced ? "filled" : "outlined"}
               onClick={() => setHideInvoiced((v) => !v)}
+              sx={{ fontWeight: 900 }}
+            />
+
+            <Chip
+              size="small"
+              label="Abrir todos"
+              variant="outlined"
+              onClick={() => setAllCards(true)}
+              sx={{ fontWeight: 900 }}
+            />
+
+            <Chip
+              size="small"
+              label="Fechar todos"
+              variant="outlined"
+              onClick={() => setAllCards(false)}
               sx={{ fontWeight: 900 }}
             />
 
@@ -411,19 +542,23 @@ export default function InstallmentsMatrix() {
                     minWidth: 980,
                     borderCollapse: "separate",
                     borderSpacing: 0,
+                    tableLayout: "auto",
                   }}
                 >
                   <TableHead>
-                    {/* Linha 1: meses */}
                     <TableRow sx={{ height: HEADER_ROW_H }}>
-                      {/* INTERSEÇÃO TOPO-ESQUERDA 1: Header da 1ª coluna sticky */}
                       <TableCell
                         sx={{
-                          ...stickyFirstColSx({ minWidth: 380, fontWeight: 950 }),
+                          ...stickyFirstColSx({
+                            width: FIRST_COL_W,
+                            minWidth: FIRST_COL_W,
+                            maxWidth: FIRST_COL_W,
+                            fontWeight: 950,
+                          }),
                           ...stickyHeaderSx(TOP_ROW1, headerMonthsBg, {
                             borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
                           }),
-                          zIndex: 300, // Força sobreposição nos eixos X e Y
+                          zIndex: 300,
                         }}
                       >
                         Cartão / Parcelamento
@@ -457,23 +592,29 @@ export default function InstallmentsMatrix() {
                       </TableCell>
                     </TableRow>
 
-                    {/* Linha 2: total geral */}
                     <TableRow sx={{ height: HEADER_ROW_H }}>
-                      {/* INTERSEÇÃO TOPO-ESQUERDA 2: Total Geral */}
                       <TableCell
                         sx={{
-                          ...stickyFirstColSx({ fontWeight: 950 }),
+                          ...stickyFirstColSx({
+                            width: FIRST_COL_W,
+                            minWidth: FIRST_COL_W,
+                            maxWidth: FIRST_COL_W,
+                            fontWeight: 950,
+                          }),
                           ...stickyHeaderSx(TOP_ROW2, headerTotalsBg, {
                             borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
                           }),
-                          zIndex: 300, // Força sobreposição nos eixos X e Y
+                          zIndex: 300,
                         }}
                       >
                         TOTAL GERAL
                       </TableCell>
 
                       {months.map((ym, idx) => {
-                        const v = safeNumber(model.globalTotalsByMonth.get(ym) || 0);
+                        const current = safeNumber(model.globalTotalsByMonth.get(ym) || 0);
+                        const previousYm = ymAddMonths(ym, -1);
+                        const previous = safeNumber(model.globalTotalsByMonth.get(previousYm) || 0);
+
                         return (
                           <TableCell
                             key={ym}
@@ -483,9 +624,13 @@ export default function InstallmentsMatrix() {
                               whiteSpace: "nowrap",
                               borderRight: dashedRight(idx === months.length - 1),
                               borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                              verticalAlign: "top",
                             })}
                           >
-                            {v ? formatBRL(v) : ""}
+                            <Typography sx={{ fontWeight: 980, fontSize: 13, lineHeight: 1.1 }}>
+                              {current ? formatBRL(current) : ""}
+                            </Typography>
+                            <DeltaMonthInfo current={current} previous={previous} theme={theme} />
                           </TableCell>
                         );
                       })}
@@ -505,141 +650,103 @@ export default function InstallmentsMatrix() {
                   </TableHead>
 
                   <TableBody>
-                    {model.cardsOut.map((c) => (
-                      <React.Fragment key={String(c.accountId)}>
-                        {/* Linha do cartão sticky ao encostar */}
-                        <TableRow>
-                          {/* INTERSEÇÃO CARTÃO-ESQUERDA: Célula de identificação do cartão */}
-                          <TableCell
-                            sx={{
-                              ...stickyFirstColSx({
-                                minWidth: 380,
-                                // borderTop: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                py: 1.0,
-                              }),
-                              ...stickyCardRowSx(),
-                              zIndex: 250, // Maior que a primeira coluna (200), menor que os cabeçalhos (300)
-                              background: solidBg(alpha(c.tint, theme.palette.mode === "dark" ? 0.30 : 0.18)),
-                            }}
-                          >
-                            <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
-                              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                                <Box
-                                  sx={{
-                                    width: 12,
-                                    height: 12,
-                                    borderRadius: 999,
-                                    background: c.tint,
-                                    border: `1px solid ${alpha(theme.palette.text.primary, 0.16)}`,
-                                  }}
-                                />
-                                <Typography sx={{ fontWeight: 980 }}>{c.accountName}</Typography>
-                                <Chip
-                                  size="small"
-                                  label={`${c.groupsCount} parcelamentos`}
-                                  variant="outlined"
-                                  sx={{ fontWeight: 850, opacity: 0.92 }}
-                                />
-                                <Chip
-                                  size="small"
-                                  label={`${c.installmentsCount} parcelas`}
-                                  variant="outlined"
-                                  sx={{ fontWeight: 850, opacity: 0.92 }}
-                                />
-                              </Stack>
-                            </Stack>
-                          </TableCell>
+                    {model.cardsOut.map((c) => {
+                      const cardKey = String(c.accountId ?? "—");
+                      const isOpen = openCards[cardKey] !== false;
 
-                          {months.map((ym, idx) => {
-                            const v = safeNumber(c.totalsByMonth.get(ym) || 0);
-                            return (
-                              <TableCell
-                                key={ym}
-                                align="right"
-                                sx={{
-                                  ...stickyCardRowSx({
-                                    borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                    borderRight: dashedRight(idx === months.length - 1),
-                                  }),
-                                  fontWeight: 980,
-                                  whiteSpace: "nowrap",
-                                  background: solidBg(alpha(c.tint, theme.palette.mode === "dark" ? 0.24 : 0.14)),
-                                }}
-                              >
-                                {v ? formatBRL(v) : ""}
-                              </TableCell>
-                            );
-                          })}
-
-                          <TableCell
-                            align="right"
-                            sx={{
-                              ...stickyCardRowSx({
-                                borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-                                borderLeft: `1px dotted ${dividerDot}`,
-                              }),
-                              fontWeight: 999,
-                              whiteSpace: "nowrap",
-                              background: solidBg(alpha(c.tint, theme.palette.mode === "dark" ? 0.24 : 0.14)),
-                            }}
-                          >
-                            {formatBRL(c.total)}
-                          </TableCell>
-                        </TableRow>
-
-                        {/* Linhas dos parcelamentos (grupos) */}
-                        {c.groups.map((g) => (
-                          <TableRow
-                            key={g.groupId}
-                            hover
-                            onClick={() => openGroupDrawer(g)}
-                            sx={{
-                              cursor: "pointer",
-                              "&:hover td": { background: alpha(theme.palette.primary.main, 0.03) },
-                            }}
-                          >
-                            {/* COLUNA NOMES STICKY (horizontal padrão) */}
+                      return (
+                        <React.Fragment key={cardKey}>
+                          <TableRow>
                             <TableCell
                               sx={{
-                                ...stickyFirstColSx({ minWidth: 380 }),
+                                ...stickyFirstColSx({
+                                  width: FIRST_COL_W,
+                                  minWidth: FIRST_COL_W,
+                                  maxWidth: FIRST_COL_W,
+                                  borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                  py: 1,
+                                }),
+                                ...stickyCardRowSx(),
+                                zIndex: 250,
+                                background: solidBg(alpha(c.tint, theme.palette.mode === "dark" ? 0.3 : 0.18)),
                               }}
                             >
-                              <Stack spacing={0.2}>
-                                <Typography sx={{ fontWeight: 950, lineHeight: 1.15 }}>
-                                  {g.merchant}{" "}
-                                  <span style={{ opacity: 0.65, fontWeight: 900 }}>• {g.totalParts}x</span>
-                                </Typography>
+                              <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                                <Stack
+                                  direction="row"
+                                  spacing={1}
+                                  alignItems="center"
+                                  sx={{ minWidth: 0, overflow: "hidden" }}
+                                >
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleCard(c.accountId);
+                                    }}
+                                    sx={{ p: 0.25, flexShrink: 0 }}
+                                  >
+                                    {isOpen ? <KeyboardArrowDownRoundedIcon /> : <KeyboardArrowRightRoundedIcon />}
+                                  </IconButton>
+
+                                  <Box
+                                    sx={{
+                                      width: 12,
+                                      height: 12,
+                                      borderRadius: 999,
+                                      background: c.tint,
+                                      border: `1px solid ${alpha(theme.palette.text.primary, 0.16)}`,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+
+                                  <Tooltip title={c.accountName}>
+                                    <Typography
+                                      sx={{
+                                        fontWeight: 980,
+                                        minWidth: 0,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {c.accountName}
+                                    </Typography>
+                                  </Tooltip>
+
+                                  <Chip
+                                    size="small"
+                                    label={`${c.groupsCount} Compras`}
+                                    variant="outlined"
+                                    sx={{ fontWeight: 850, opacity: 0.92, flexShrink: 0 }}
+                                  />
+                                </Stack>
                               </Stack>
                             </TableCell>
 
                             {months.map((ym, idx) => {
-                              const v = safeNumber(g.byMonth.get(ym) || 0);
-                              if (!v) {
-                                return (
-                                  <TableCell
-                                    key={ym}
-                                    align="right"
-                                    sx={{
-                                      opacity: 0.25,
-                                      borderRight: dashedRight(idx === months.length - 1),
-                                    }}
-                                  />
-                                );
-                              }
+                              const current = safeNumber(c.totalsByMonth.get(ym) || 0);
+                              const previousYm = ymAddMonths(ym, -1);
+                              const previous = safeNumber(c.totalsByMonth.get(previousYm) || 0);
+
                               return (
                                 <TableCell
                                   key={ym}
                                   align="right"
                                   sx={{
-                                    fontWeight: 950,
+                                    ...stickyCardRowSx({
+                                      borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                      borderRight: dashedRight(idx === months.length - 1),
+                                    }),
                                     whiteSpace: "nowrap",
-                                    background: alpha(c.tint, 0.10),
-                                    borderBottom: `1px solid ${alpha(theme.palette.divider, 0.65)}`,
-                                    borderRight: dashedRight(idx === months.length - 1),
+                                    background: solidBg(alpha(c.tint, theme.palette.mode === "dark" ? 0.24 : 0.14)),
+                                    verticalAlign: "top",
                                   }}
                                 >
-                                  {formatBRL(v)}
+                                  <Typography sx={{ fontWeight: 980, fontSize: 13, lineHeight: 1.1 }}>
+                                    {current ? formatBRL(current) : ""}
+                                  </Typography>
+                                  <DeltaMonthInfo current={current} previous={previous} theme={theme} />
                                 </TableCell>
                               );
                             })}
@@ -647,31 +754,116 @@ export default function InstallmentsMatrix() {
                             <TableCell
                               align="right"
                               sx={{
-                                fontWeight: 980,
+                                ...stickyCardRowSx({
+                                  borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+                                  borderLeft: `1px dotted ${dividerDot}`,
+                                }),
+                                fontWeight: 999,
                                 whiteSpace: "nowrap",
-                                borderLeft: `1px dotted ${dividerDot}`,
+                                background: solidBg(alpha(c.tint, theme.palette.mode === "dark" ? 0.24 : 0.14)),
                               }}
                             >
-                              {formatBRL(g.total)}
+                              {formatBRL(c.total)}
                             </TableCell>
                           </TableRow>
-                        ))}
 
-                        {/* separador */}
-                        <TableRow>
-                          <TableCell colSpan={months.length + 2} sx={{ p: 0 }}>
-                            <Divider />
-                          </TableCell>
-                        </TableRow>
-                      </React.Fragment>
-                    ))}
+                          {isOpen &&
+                            c.groups.map((g) => (
+                              <TableRow
+                                key={g.groupId}
+                                hover
+                                onClick={() => openGroupDrawer(g)}
+                                sx={{
+                                  cursor: "pointer",
+                                  "&:hover td": { background: alpha(theme.palette.primary.main, 0.03) },
+                                }}
+                              >
+                                <TableCell
+                                  sx={{
+                                    ...stickyFirstColSx({
+                                      width: FIRST_COL_W,
+                                      minWidth: FIRST_COL_W,
+                                      maxWidth: FIRST_COL_W,
+                                    }),
+                                  }}
+                                >
+                                  <Stack spacing={0.2} sx={{ minWidth: 0 }}>
+                                    <Typography
+                                      sx={{
+                                        fontWeight: 950,
+                                        lineHeight: 1.15,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {g.merchant}{" "}
+                                      <span style={{ opacity: 0.65, fontWeight: 900 }}>• {g.totalParts}x</span>
+                                    </Typography>
+                                  </Stack>
+                                </TableCell>
+
+                                {months.map((ym, idx) => {
+                                  const v = safeNumber(g.byMonth.get(ym) || 0);
+
+                                  if (!v) {
+                                    return (
+                                      <TableCell
+                                        key={ym}
+                                        align="right"
+                                        sx={{
+                                          opacity: 0.25,
+                                          borderRight: dashedRight(idx === months.length - 1),
+                                        }}
+                                      />
+                                    );
+                                  }
+
+                                  return (
+                                    <TableCell
+                                      key={ym}
+                                      align="right"
+                                      sx={{
+                                        fontWeight: 950,
+                                        whiteSpace: "nowrap",
+                                        background: alpha(c.tint, 0.1),
+                                        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.65)}`,
+                                        borderRight: dashedRight(idx === months.length - 1),
+                                      }}
+                                    >
+                                      {formatBRL(v)}
+                                    </TableCell>
+                                  );
+                                })}
+
+                                <TableCell
+                                  align="right"
+                                  sx={{
+                                    fontWeight: 980,
+                                    whiteSpace: "nowrap",
+                                    borderLeft: `1px dotted ${dividerDot}`,
+                                  }}
+                                >
+                                  {formatBRL(g.total)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+
+                          <TableRow>
+                            <TableCell colSpan={months.length + 2} sx={{ p: 0 }}>
+                              <Divider />
+                            </TableCell>
+                          </TableRow>
+                        </React.Fragment>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </Box>
 
-              <Box sx={{ px: 2, py: 1.0 }}>
+              <Box sx={{ px: 2, py: 1 }}>
                 <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Headers opacos • coluna de nomes sticky • cartões sticky ao encostar no topo.
+                  Delta mensal exibido nas linhas de totais. Estado aberto/fechado salvo por sessão.
                 </Typography>
               </Box>
             </CardContent>
@@ -679,7 +871,6 @@ export default function InstallmentsMatrix() {
         )}
       </Stack>
 
-      {/* Drawer de detalhes do grupo */}
       <Drawer
         anchor="right"
         open={drawerOpen}

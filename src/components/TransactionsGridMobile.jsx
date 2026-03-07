@@ -1,5 +1,6 @@
 // src/components/TransactionsGridMobile.jsx
 import React, { useMemo, useState, useCallback } from "react";
+import { useEffect } from "react";
 import {
   Box,
   Stack,
@@ -462,6 +463,36 @@ export default function TransactionsGridMobile({
 
   const showToast = useCallback((message, severity = "success") => {
     setToast({ open: true, severity, message });
+  }, []);
+
+  useEffect(() => {
+    const today = new Date();
+
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const fmt = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    setPurchaseFrom(fmt(yesterday));
+    setPurchaseTo(fmt(tomorrow));
+
+    // garante que os outros filtros começam limpos
+    setAccountFilter("");
+    setCategoryFilter("");
+    setKindFilter("");
+    setStatusFilter("");
+    setTipoFilter("");
+    setMerchantQuery("");
+    setDescriptionQuery("");
+    setRemainingMax("");
   }, []);
 
   const categoriesBySlug = useMemo(() => {

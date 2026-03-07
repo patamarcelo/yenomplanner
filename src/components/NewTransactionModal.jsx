@@ -185,6 +185,32 @@ export default function NewTransactionModal({ open, onClose }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
+  const contentRef = useRef(null);
+
+  function scrollToTopOfModal() {
+    const el = contentRef.current;
+    if (!el) return;
+    try {
+      el.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      el.scrollTop = 0;
+    }
+  }
+
+  function failWithFeedback(message) {
+    const msg = String(message || "Verifique os campos e tente novamente.");
+    setErr(msg);
+    scrollToTopOfModal();
+    toast.error(msg);
+    return msg;
+  }
+
+  const savingLabel = useMemo(() => {
+    if (kind === "installment") return `Criando parcelamento (${Math.max(2, Number(nParts || 2))}x)...`;
+    if (kind === "recurring") return "Criando recorrência...";
+    return "Salvando...";
+  }, [kind, nParts]);
+
   // defaults
   const [purchaseDate, setPurchaseDate] = useState(todayISO());
   const [chargeDate, setChargeDate] = useState(todayISO());
@@ -427,17 +453,18 @@ export default function NewTransactionModal({ open, onClose }) {
 
   async function handleSave() {
     setErr("");
+
     const e = validate();
     if (e) {
-      setErr(e);
+      failWithFeedback(e);
       return;
     }
 
     setSaving(true);
+
     try {
       const base = buildBaseTxn();
 
-      // AVULSO
       if (kind === "one_off") {
         await dispatch(
           createTransactionThunk({
@@ -455,7 +482,6 @@ export default function NewTransactionModal({ open, onClose }) {
         return;
       }
 
-      // PARCELADO (principal)
       if (kind === "installment") {
         const n = Math.max(2, Number(nParts));
         const vNum = parseBrlToNumber(base.amount);
@@ -464,31 +490,17 @@ export default function NewTransactionModal({ open, onClose }) {
         const groupId = `inst_${Math.random().toString(16).slice(2, 9)}`;
 
         const acc = selectedAccount;
-        const cutoffDay = acc?.statement?.cutoffDay;
         const dueDay = acc?.statement?.dueDay ?? 10;
 
-        // ✅ compra é fixa (não cresce)
         const purchaseDateFixed = base.purchaseDate;
-
-        // ✅ cobrança base (já vem auto-ajustada pelo cartão quando chargeTouched=false)
         const baseCharge = base.chargeDate || todayISO();
 
-        // dia "desejado" para crescer a cobrança (mantém o dia base da cobrança; no cartão, força dueDay)
         const baseChargeDay = Number(String(baseCharge || "").slice(8, 10)) || 1;
         const wantedChargeDay = acc?.type === "credit_card" ? dueDay : baseChargeDay;
 
         const creates = parts.map((partValue, idx) => {
-          // ✅ mantém compra fixa
           const purchaseDateStr = purchaseDateFixed;
-
-          // ✅ cresce cobrança mês a mês
-          const chargeDateStr =
-            addMonthsToISO(baseCharge, idx, wantedChargeDay) || baseCharge;
-
-          // ✅ invoiceMonth deve acompanhar a cobrança que cresce
-          // - cartão: usa sua regra existente via computeInvoiceMonthFromPurchase,
-          //   mas alimentando com a chargeDate (que cresce)
-          // - conta corrente: usa o mês da chargeDate
+          const chargeDateStr = addMonthsToISO(baseCharge, idx, wantedChargeDay) || baseCharge;
           const invoiceYm = ymFromISODate(chargeDateStr);
 
           return dispatch(
@@ -499,9 +511,9 @@ export default function NewTransactionModal({ open, onClose }) {
               installmentGroupId: groupId,
               installmentCurrent: idx + 1,
               installmentTotal: n,
-              purchaseDate: purchaseDateStr,   // ✅ FIXO
-              chargeDate: chargeDateStr,       // ✅ CRESCE
-              invoiceMonth: invoiceYm,         // ✅ acompanha chargeDate
+              purchaseDate: purchaseDateStr,
+              chargeDate: chargeDateStr,
+              invoiceMonth: invoiceYm,
               amount: formatNumberToBrlInput(partValue),
               status: idx === 0 ? base.status : "planned",
             })
@@ -515,24 +527,25 @@ export default function NewTransactionModal({ open, onClose }) {
         return;
       }
 
-      // RECORRENTE
       if (kind === "recurring") {
         const startYm = ymFromISODate(base.chargeDate);
         const endYm = String(recurringUntilYm || "").trim();
 
         if (!startYm) {
-          setErr("Data de cobrança inválida para recorrência.");
           setSaving(false);
+          failWithFeedback("Data de cobrança inválida para recorrência.");
           return;
         }
+
         if (!/^\d{4}-\d{2}$/.test(endYm)) {
-          setErr("Selecione um mês final válido (YYYY-MM).");
           setSaving(false);
+          failWithFeedback("Selecione um mês final válido (YYYY-MM).");
           return;
         }
+
         if (ymCompare(endYm, startYm) < 0) {
-          setErr("O mês final não pode ser anterior ao mês da cobrança.");
           setSaving(false);
+          failWithFeedback("O mês final não pode ser anterior ao mês da cobrança.");
           return;
         }
 
@@ -553,8 +566,6 @@ export default function NewTransactionModal({ open, onClose }) {
           const safeDay = clampDayToMonth(yy, mm - 1, dayWanted);
           const chargeDateStr = `${yy}-${String(mm).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
 
-          let nextInvoiceMonth = ym; // ym já é monthStart(chargeDateStr)
-
           return dispatch(
             createTransactionThunk({
               ...base,
@@ -562,9 +573,8 @@ export default function NewTransactionModal({ open, onClose }) {
               kind: "recurring",
               recurringRule: "monthly",
               chargeDate: chargeDateStr,
-              // recorrente: mantém seu comportamento atual
               purchaseDate: acc?.type === "credit_card" ? base.purchaseDate : chargeDateStr,
-              invoiceMonth: nextInvoiceMonth,
+              invoiceMonth: ym,
               status: idx === 0 ? base.status : "planned",
             })
           ).unwrap();
@@ -577,7 +587,6 @@ export default function NewTransactionModal({ open, onClose }) {
         return;
       }
 
-      // fallback (não deveria cair aqui)
       toast.success("Salvo!");
       handleClose();
     } catch (ex) {
@@ -586,9 +595,9 @@ export default function NewTransactionModal({ open, onClose }) {
         (typeof ex === "string" ? ex : "") ||
         apiError ||
         "Erro ao salvar. Verifique os campos e tente novamente.";
-      setErr(msg);
-      toast.error(msg);
+
       setSaving(false);
+      failWithFeedback(msg);
     }
   }
 
@@ -710,8 +719,9 @@ export default function NewTransactionModal({ open, onClose }) {
           <ToggleButtonGroup
             exclusive
             value={direction}
-            onChange={(_, v) => v && setDirection(v)}
+            onChange={(_, v) => v && !saving && setDirection(v)}
             size="small"
+            disabled={saving}
             sx={headerToggleSx}
           >
             <ToggleButton value="expense">Despesa</ToggleButton>
@@ -721,6 +731,7 @@ export default function NewTransactionModal({ open, onClose }) {
       </DialogTitle>
 
       <DialogContent
+        ref={contentRef}
         sx={{
           pt: 1.4,
           pb: 1.6,
@@ -757,6 +768,7 @@ export default function NewTransactionModal({ open, onClose }) {
               onChange={(e) => setPurchaseDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
               sx={{ ...inputSx, flex: 1 }}
+              disabled={saving}
             />
 
             <TextField
@@ -769,6 +781,7 @@ export default function NewTransactionModal({ open, onClose }) {
               }}
               InputLabelProps={{ shrink: true }}
               sx={{ ...inputSx, flex: 1 }}
+              disabled={saving}
             // helperText={
             //   selectedAccount?.type === "credit_card"
             //     ? "Auto pelo vencimento do cartão (você pode editar)."
@@ -791,6 +804,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 applyAutoStatusByAccount(next);
               }}
               fullWidth
+              disabled={saving}
             >
               <MenuItem value="">(Sem conta) — Provisionar</MenuItem>
               <Divider />
@@ -813,6 +827,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 setStatus(e.target.value);
               }}
               fullWidth
+              disabled={saving}
             >
               <MenuItem value="planned">Previsto</MenuItem>
               <MenuItem value="confirmed">Confirmado</MenuItem>
@@ -832,6 +847,7 @@ export default function NewTransactionModal({ open, onClose }) {
             onChange={(e, val) => setMerchant(val || "")}
             inputValue={merchant}
             onInputChange={(e, val) => setMerchant(val || "")}
+            disabled={saving}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -860,6 +876,7 @@ export default function NewTransactionModal({ open, onClose }) {
             onChange={(e, val) => setDescription(val || "")}
             inputValue={description}
             onInputChange={(e, val) => setDescription(val || "")}
+            disabled={saving}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -878,7 +895,7 @@ export default function NewTransactionModal({ open, onClose }) {
               fullWidth
               options={categories || []}
               value={selectedCategory || null}
-
+              disabled={saving}
               slotProps={{
                 popper: {
                   placement: "top-start",
@@ -945,6 +962,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 pattern: "[0-9]*[.,]?[0-9]*",
               }}
               fullWidth
+              disabled={saving}
             />
           </Stack>
 
@@ -960,27 +978,37 @@ export default function NewTransactionModal({ open, onClose }) {
               label="Avulso"
               color={kind === "one_off" ? "primary" : "default"}
               variant={kind === "one_off" ? "filled" : "outlined"}
+              disabled={saving}
               onClick={() => {
+                if (saving) return;
                 setKind("one_off");
                 setShowInstallmentsPreview(false);
               }}
               sx={{ fontWeight: 900 }}
             />
+
             <Chip
               label="Mensal"
               color={kind === "recurring" ? "primary" : "default"}
               variant={kind === "recurring" ? "filled" : "outlined"}
+              disabled={saving}
               onClick={() => {
+                if (saving) return;
                 setKind("recurring");
                 setShowInstallmentsPreview(false);
               }}
               sx={{ fontWeight: 900 }}
             />
+
             <Chip
               label="Parcelado"
               color={kind === "installment" ? "primary" : "default"}
               variant={kind === "installment" ? "filled" : "outlined"}
-              onClick={() => setKind("installment")}
+              disabled={saving}
+              onClick={() => {
+                if (saving) return;
+                setKind("installment");
+              }}
               sx={{ fontWeight: 900 }}
             />
           </Stack>
@@ -993,6 +1021,7 @@ export default function NewTransactionModal({ open, onClose }) {
               value={recurringUntilYm}
               onChange={(e) => setRecurringUntilYm(e.target.value)}
               fullWidth
+              disabled={saving}
               helperText="Será criado 1 lançamento por mês, do mês da cobrança até esse mês (inclusive)."
             />
           ) : null}
@@ -1029,7 +1058,11 @@ export default function NewTransactionModal({ open, onClose }) {
               <Box sx={{ mt: 1.0 }}>
                 <Button
                   size="small"
-                  onClick={() => setShowInstallmentsPreview((v) => !v)}
+                  onClick={() => {
+                    if (saving) return;
+                    setShowInstallmentsPreview((v) => !v);
+                  }}
+                  disabled={saving}
                   sx={{ fontWeight: 950, textTransform: "none", borderRadius: 999 }}
                   endIcon={showInstallmentsPreview ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
                 >
@@ -1112,7 +1145,7 @@ export default function NewTransactionModal({ open, onClose }) {
           {saving ? (
             <Stack direction="row" alignItems="center" spacing={1}>
               <CircularProgress size={18} />
-              <span>Salvando...</span>
+              <span>{savingLabel}</span>
             </Stack>
           ) : (
             "Salvar"

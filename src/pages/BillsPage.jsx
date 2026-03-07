@@ -58,7 +58,7 @@ import {
     selectBillsLastGenerateResult,
     payBillThunk,
     deleteBillSeriesThunk,
-    reopenBillThunk, // se não existir no slice, remova o import e o botão “Reabrir”
+    reopenBillThunk,
 } from "../store/billsSlice";
 
 import { fetchAllTransactionsThunk, selectTransactionsApi } from "../store/transactionsSlice";
@@ -75,10 +75,9 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 import { DndContext, DragOverlay, useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import toast from "react-hot-toast";
 
-
+import BillsTimelineTable from '../components/bills/BillsTimelineTable'
 
 const pageSx = { maxWidth: 1180, mx: "auto", px: { xs: 2, md: 3 }, py: 2 };
 
@@ -366,9 +365,6 @@ function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
         }
 
         try {
-            if (isEdit) await dispatch(updateBillThunk({ id: initial.id, patch: payload })).unwrap();
-            else await dispatch(createBillThunk(payload)).unwrap();
-
             const res = isEdit
                 ? await dispatch(updateBillThunk({ id: initial.id, patch: payload })).unwrap()
                 : await dispatch(createBillThunk(payload)).unwrap();
@@ -376,9 +372,13 @@ function BillsFormDialog({ open, onClose, initial, payeeOptions = [] }) {
             if (res?._expanded_created > 1) {
                 dispatch(fetchBillsThunk());
             }
+
+            toast.success(isEdit ? "Despesa atualizada com sucesso." : "Despesa criada com sucesso.");
             onClose();
         } catch (x) {
-            setErr(x?.detail || "Erro ao salvar.");
+            const msg = x?.detail || "Erro ao salvar.";
+            setErr(msg);
+            toast.error(msg);
         } finally {
             setSaving(false);
         }
@@ -563,8 +563,11 @@ function GenerateDialog({ open, onClose, bill }) {
             await dispatch(generateBillThunk({ id: bill.id, body })).unwrap();
             dispatch(fetchBillsThunk());
             dispatch(fetchAllTransactionsThunk());
+            toast.success("Lançamentos gerados com sucesso.");
         } catch (e) {
-            setErr(e?.detail || "Erro ao gerar.");
+            const msg = e?.detail || "Erro ao gerar.";
+            setErr(msg);
+            toast.error(msg);
         }
     }
 
@@ -696,9 +699,12 @@ function PayBillDialog({ open, onClose, bill }) {
             await dispatch(payBillThunk({ id: bill.id, body: { paid_date: paidDate, account_id: accountId, amount: amountToSend || undefined } })).unwrap();
             dispatch(fetchBillsThunk());
             dispatch(fetchAllTransactionsThunk());
+            toast.success("Despesa paga com sucesso.");
             onClose();
         } catch (e) {
-            setErr(e?.detail || "Erro ao pagar.");
+            const msg = e?.detail || "Erro ao pagar.";
+            setErr(msg);
+            toast.error(msg);
         } finally {
             setSaving(false);
         }
@@ -749,8 +755,8 @@ function PayBillDialog({ open, onClose, bill }) {
                 <Button onClick={onClose} variant="outlined" disabled={saving}>
                     Cancelar
                 </Button>
-                <Button onClick={handlePay} variant="contained" disabled={saving} sx={{ fontWeight: 950, minWidth: 140 }} startIcon={<PaidRoundedIcon />}>
-                    {saving ? <CircularProgress size={18} /> : "Pagar"}
+                <Button onClick={handlePay} variant="contained" disabled={saving} sx={{ fontWeight: 950, minWidth: 140 }} startIcon={saving ? <CircularProgress size={18} /> : <PaidRoundedIcon />}>
+                    {saving ? "Pagando..." : "Pagar"}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -775,6 +781,7 @@ export default function BillsPage() {
     const [editBill, setEditBill] = useState(null);
     const [genBill, setGenBill] = useState(null);
     const [payBill, setPayBill] = useState(null);
+    const [reopeningId, setReopeningId] = useState(null);
 
     const now = new Date();
     const currentYear = String(now.getFullYear());
@@ -794,7 +801,7 @@ export default function BillsPage() {
     const [filterYear, setFilterYear] = useState(currentYear);
     const [filterCategory, setFilterCategory] = useState("all");
 
-    const [activeDrag, setActiveDrag] = useState(null); // { bill, dueISO, uiStatus }
+    const [activeDrag, setActiveDrag] = useState(null);
 
     const handleDragStart = (event) => {
         const data = event?.active?.data?.current;
@@ -809,12 +816,10 @@ export default function BillsPage() {
 
         if (!data?.bill) return;
 
-        // Drop na coluna "Pago" => abre confirmação (PayBillDialog)
         if (overId === "drop:paid") {
             setPayBill(data.bill);
         }
     };
-
 
     useEffect(() => {
         dispatch(fetchBillsThunk());
@@ -886,7 +891,6 @@ export default function BillsPage() {
 
     const activeCount = useMemo(() => (bills || []).filter((b) => b.active !== false).length, [bills]);
 
-    // ===== STATUS MAP (inclui due_today) =====
     const billStatusForMonth = useMemo(() => {
         const map = new Map();
         const today = todayISO();
@@ -959,7 +963,6 @@ export default function BillsPage() {
             });
     }, [bills, q, filterKind, filterYear, filterMonth, filterStatuses, billStatusForMonth, filterCategory]);
 
-    // ===== UI status meta (mais chamativo/moderno) =====
     const STATUS_META = useMemo(() => {
         const c = theme.palette;
         return {
@@ -994,42 +997,6 @@ export default function BillsPage() {
         };
     }, [theme]);
 
-    function StatusPill({ st, dense = false }) {
-        const m = STATUS_META[st] || STATUS_META.planned;
-        return (
-            <Chip
-                size="small"
-                variant="outlined"
-                icon={<FiberManualRecordRoundedIcon sx={{ fontSize: 14, color: m.dot }} />}
-                label={m.label}
-                sx={{
-                    fontWeight: 950,
-                    letterSpacing: -0.2,
-                    borderWidth: 1.7,
-                    borderRadius: 999,
-                    height: dense ? 26 : 28,
-                    ...m.chipSx,
-                    "& .MuiChip-icon": { ml: 0.45, mr: -0.2 },
-                }}
-            />
-        );
-    }
-
-    function CategoryChip({ cat, size = "small" }) {
-        if (!cat) return <Chip size={size} label="—" variant="outlined" />;
-        const dot = cat.color || "rgba(2,6,23,0.22)";
-        const iconTxt = (cat.icon || "").trim();
-        return (
-            <Chip
-                size={size}
-                variant="outlined"
-                label={cat.name}
-                icon={iconTxt ? <MsIcon name={iconTxt} size={18} /> : <span style={{ width: 10, height: 10, borderRadius: 6, background: dot, display: "inline-block" }} />}
-                sx={{ fontWeight: 900, borderColor: dot, bgcolor: alpha(dot, 0.10), "& .MuiChip-icon": { marginLeft: 0 } }}
-            />
-        );
-    }
-
     const today = todayISO();
 
     const safeCents = useCallback((bill) => {
@@ -1040,7 +1007,6 @@ export default function BillsPage() {
         return Math.round(n * 100);
     }, []);
 
-    // ===== KPIs do período atual (filtros aplicados) =====
     const kpis = useMemo(() => {
         const out = { paid: 0, due_today: 0, overdue: 0, planned: 0, open: 0, all: 0, count: 0 };
         (filteredBills || []).forEach((b) => {
@@ -1056,7 +1022,6 @@ export default function BillsPage() {
         return out;
     }, [filteredBills, billStatusForMonth, filterYear, filterMonth, today, safeCents]);
 
-    // ===== Board columns =====
     const board = useMemo(() => {
         const cols = { overdue: [], due_today: [], planned: [], paid: [] };
         (filteredBills || []).forEach((b) => {
@@ -1079,7 +1044,6 @@ export default function BillsPage() {
         return cols;
     }, [filteredBills, billStatusForMonth, filterYear, filterMonth, today]);
 
-    // ===== timeline (mantive, mas agora é view secundária) =====
     const timeline = useMemo(() => {
         const buckets = new Map();
         const fallbackYM = `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
@@ -1225,6 +1189,26 @@ export default function BillsPage() {
         }
     }
 
+    const handleReopenBill = useCallback(
+        async (bill) => {
+            const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
+            if (!ok) return;
+
+            setReopeningId(bill.id);
+            try {
+                await dispatch(reopenBillThunk({ id: bill.id })).unwrap();
+                await dispatch(fetchBillsThunk());
+                await dispatch(fetchAllTransactionsThunk());
+                toast.success("Despesa reaberta com sucesso.");
+            } catch (e) {
+                toast.error(e?.detail || "Erro ao reabrir despesa.");
+            } finally {
+                setReopeningId(null);
+            }
+        },
+        [dispatch]
+    );
+
     const clearAllFilters = () => {
         setFilterMonth("all");
         setFilterYear(currentYear);
@@ -1250,7 +1234,6 @@ export default function BillsPage() {
         );
     }, [filterMonth, filterYear, currentYear, filterKind, filterCategory, q, filterStatuses]);
 
-    // ===== UI: Card compacto do Bill =====
     function BoardBillCard({
         b,
         dueISO,
@@ -1263,6 +1246,7 @@ export default function BillsPage() {
         resolveCategoryFromBill,
         STATUS_META,
         theme,
+        reopeningId,
     }) {
         const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useDraggable({
             id: `bill:${b.id}`,
@@ -1276,8 +1260,7 @@ export default function BillsPage() {
         const cat = resolveCategoryFromBill(b);
         const amount = moneySafe(b.defaultAmount);
         const due = formatBRDate(dueISO);
-
-        const showPay = uiStatus !== "paid";
+        const isReopening = reopeningId === b.id;
 
         return (
             <Card
@@ -1298,20 +1281,18 @@ export default function BillsPage() {
                         boxShadow: `0 14px 38px ${alpha(sm.dot, 0.10)}`,
                         transform: "translateY(-1px)",
                     },
-
                     "&:hover .drag-handle": { opacity: 1 },
                     "&:hover .board-actions-wrapper": {
-                        height: 54,        // altura real da área (ajuste se precisar)
+                        height: 54,
                         opacity: 1,
                     },
                     "&:hover .board-actions": {
                         opacity: 1,
                         transform: "translateY(0px)",
-                        pointerEvents: "auto", // ✅ agora clica só no hover
+                        pointerEvents: "auto",
                     },
                 }}
             >
-                {/* faixa lateral sutil */}
                 <Box
                     sx={{
                         position: "absolute",
@@ -1324,14 +1305,12 @@ export default function BillsPage() {
                 />
 
                 <CardContent sx={{ p: 1.35, pl: 1.75 }}>
-                    {/* topo: título + status */}
                     <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}>
                         <Box sx={{ minWidth: 0 }}>
                             <Typography sx={{ fontWeight: 950, lineHeight: 1.15 }} noWrap title={b.name}>
                                 {b.name}
                             </Typography>
 
-                            {/* subline: tipo + parcela (pequeno e discreto) */}
                             <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.45, flexWrap: "wrap" }}>
                                 <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 900 }}>
                                     {meta.label}
@@ -1356,7 +1335,6 @@ export default function BillsPage() {
                             </Stack>
                         </Box>
 
-                        {/* status pill menor e mais clean */}
                         <Box
                             sx={{
                                 display: "inline-flex",
@@ -1378,7 +1356,6 @@ export default function BillsPage() {
                         </Box>
                     </Stack>
 
-                    {/* linha forte: vencimento + valor */}
                     <Stack direction="row" alignItems="baseline" justifyContent="space-between" sx={{ mt: 1 }}>
                         <Typography
                             variant="body2"
@@ -1400,7 +1377,6 @@ export default function BillsPage() {
                         </Typography>
                     </Stack>
 
-                    {/* metadados em linha fina */}
                     <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} sx={{ mt: 0.9 }}>
                         <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0 }}>
                             <Box
@@ -1434,7 +1410,6 @@ export default function BillsPage() {
                             ) : null}
                         </Stack>
 
-                        {/* handle drag discreto */}
                         <Tooltip title="Arrastar (solte em Pago para pagar)">
                             <IconButton
                                 className="drag-handle"
@@ -1456,7 +1431,6 @@ export default function BillsPage() {
                         </Tooltip>
                     </Stack>
 
-                    {/* ações (aparecem no hover) */}
                     <Box
                         className="board-actions-wrapper"
                         sx={{
@@ -1468,11 +1442,7 @@ export default function BillsPage() {
                     >
                         <Divider sx={{ my: 1 }} />
 
-                        <Stack
-                            direction="row"
-                            alignItems="center"
-                            justifyContent="space-between"
-                        >
+                        <Stack direction="row" alignItems="center" justifyContent="space-between">
                             <Stack direction="row" spacing={0.7}>
                                 {uiStatus !== "paid" ? (
                                     <Button
@@ -1488,25 +1458,27 @@ export default function BillsPage() {
                                     <Button
                                         size="small"
                                         variant="outlined"
-                                        startIcon={<ReplayRoundedIcon />}
+                                        startIcon={isReopening ? <CircularProgress size={14} /> : <ReplayRoundedIcon />}
                                         onClick={() => onReopen(b)}
+                                        disabled={isReopening}
                                         sx={{ fontWeight: 950, borderRadius: 999, px: 1.2 }}
                                     >
-                                        Reabrir
+                                        {isReopening ? "Reabrindo..." : "Reabrir"}
                                     </Button>
                                 )}
                             </Stack>
 
                             <Stack direction="row" spacing={0.4}>
-                                <IconButton size="small" onClick={() => onEdit(b)}>
+                                <IconButton size="small" onClick={() => onEdit(b)} disabled={isReopening}>
                                     <EditRoundedIcon fontSize="small" />
                                 </IconButton>
-                                <IconButton size="small" onClick={() => onGenerate(b)}>
+                                <IconButton size="small" onClick={() => onGenerate(b)} disabled={isReopening}>
                                     <PlayArrowRoundedIcon fontSize="small" />
                                 </IconButton>
                                 <IconButton
                                     size="small"
                                     onClick={() => onDelete(b)}
+                                    disabled={isReopening}
                                     sx={{ color: theme.palette.error.main }}
                                 >
                                     <DeleteOutlineRoundedIcon fontSize="small" />
@@ -1566,7 +1538,6 @@ export default function BillsPage() {
     return (
         <Box sx={pageSx}>
             <Stack spacing={1.2}>
-                {/* HEADER */}
                 <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1}>
                     <Box>
                         <Typography variant="h5" sx={{ fontWeight: 950 }}>
@@ -1608,7 +1579,6 @@ export default function BillsPage() {
                     </Stack>
                 </Stack>
 
-                {/* KPIs */}
                 <Card variant="outlined" sx={{ borderRadius: 2 }}>
                     <CardContent sx={{ py: 1.2 }}>
                         <Stack spacing={1}>
@@ -1666,7 +1636,6 @@ export default function BillsPage() {
                     </CardContent>
                 </Card>
 
-                {/* FILTROS (colapsável) */}
                 <Card variant="outlined" sx={{ borderRadius: 2 }}>
                     <CardContent sx={{ py: 1.2 }}>
                         <Stack spacing={1}>
@@ -1835,7 +1804,6 @@ export default function BillsPage() {
                     </CardContent>
                 </Card>
 
-                {/* CONTEÚDO */}
                 {status === "loading" ? (
                     <SpinnerPage status={status} />
                 ) : (
@@ -1859,7 +1827,6 @@ export default function BillsPage() {
                             </Card>
                         ) : null}
 
-                        {/* VIEW: BOARD */}
                         {viewMode === "board" ? (
                             <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
                                 <Box
@@ -1943,16 +1910,8 @@ export default function BillsPage() {
                                                                     resolveCategoryFromBill={resolveCategoryFromBill}
                                                                     STATUS_META={STATUS_META}
                                                                     theme={theme}
-                                                                    onReopen={async (bill) => {
-                                                                        const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
-                                                                        if (!ok) return;
-
-                                                                        try {
-                                                                            await dispatch(reopenBillThunk({ id: bill.id })).unwrap();
-                                                                            await dispatch(fetchBillsThunk());
-                                                                            await dispatch(fetchAllTransactionsThunk());
-                                                                        } catch { }
-                                                                    }}
+                                                                    onReopen={handleReopenBill}
+                                                                    reopeningId={reopeningId}
                                                                 />
                                                             ))}
                                                         </Stack>
@@ -1961,7 +1920,6 @@ export default function BillsPage() {
                                             </Card>
                                         );
 
-                                        // Coluna "Pago" vira área de drop
                                         if (col.droppable) {
                                             return (
                                                 <PaidDropZone key={col.key} theme={theme}>
@@ -2007,141 +1965,32 @@ export default function BillsPage() {
                                 </DragOverlay>
                             </DndContext>
                         ) : null}
-                        {/* VIEW: TIMELINE (secundária) */}
+
                         {viewMode === "timeline" ? (
-                            <Stack spacing={1.2}>
-                                {timeline.map((monthBlock) => {
-                                    const mt = monthBlock.monthTotals || { open: 0, paid: 0, due_today: 0, overdue: 0, planned: 0 };
+                            <BillsTimelineTable
+                                timeline={timeline}
+                                theme={theme}
+                                STATUS_META={STATUS_META}
+                                resolveCategoryFromBill={resolveCategoryFromBill}
+                                onPay={(bill) => setPayBill(bill)}
+                                onEdit={(bill) => setEditBill(bill)}
+                                onDelete={(bill) => handleDeleteBill(bill)}
+                                onGenerate={(bill) => setGenBill(bill)}
+                                onReopen={async (bill) => {
+                                    const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
+                                    if (!ok) return;
 
-                                    const monthChipCandidates = [
-                                        { key: "paid", label: "Pago", cents: mt.paid, dot: STATUS_META.paid.dot },
-                                        { key: "due_today", label: "Vence hoje", cents: mt.due_today, dot: STATUS_META.due_today.dot },
-                                        { key: "overdue", label: "Atrasado", cents: mt.overdue, dot: STATUS_META.overdue.dot },
-                                        { key: "planned", label: "Previsto", cents: mt.planned, dot: STATUS_META.planned.dot },
-                                    ].filter((x) => (x.cents || 0) > 0);
-
-                                    const showMonthChips = monthChipCandidates.length > 1;
-
-                                    return (
-                                        <Box key={monthBlock.monthKey}>
-                                            <Stack
-                                                direction={{ xs: "column", sm: "row" }}
-                                                alignItems={{ xs: "flex-start", sm: "center" }}
-                                                justifyContent="space-between"
-                                                sx={{ mt: 1.2, mb: 0.8 }}
-                                                gap={1}
-                                            >
-                                                <Typography variant="h6" sx={{ fontWeight: 950, textTransform: "capitalize" }}>
-                                                    {monthBlock.monthLabel}
-                                                </Typography>
-
-                                                {showMonthChips ? (
-                                                    <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                                        {monthChipCandidates.map((c) => (
-                                                            <Chip
-                                                                key={c.key}
-                                                                size="small"
-                                                                label={`${c.label}: ${formatBRL((c.cents || 0) / 100)}`}
-                                                                variant="outlined"
-                                                                sx={{
-                                                                    fontWeight: 950,
-                                                                    borderRadius: 999,
-                                                                    bgcolor: alpha(c.dot, 0.12),
-                                                                    border: `1px solid ${alpha(c.dot, 0.30)}`,
-                                                                }}
-                                                            />
-                                                        ))}
-                                                    </Stack>
-                                                ) : null}
-                                            </Stack>
-
-                                            <Divider sx={{ mb: 1.2 }} />
-
-                                            {monthBlock.days.map((dayBlock) => {
-                                                const t = dayBlock.totals || { paid: 0, due_today: 0, overdue: 0, planned: 0 };
-
-                                                const dayChips = [
-                                                    { key: "paid", label: "Pago", cents: t.paid, dot: STATUS_META.paid.dot },
-                                                    { key: "due_today", label: "Vence hoje", cents: t.due_today, dot: STATUS_META.due_today.dot },
-                                                    { key: "overdue", label: "Atrasado", cents: t.overdue, dot: STATUS_META.overdue.dot },
-                                                    { key: "planned", label: "Previsto", cents: t.planned, dot: STATUS_META.planned.dot },
-                                                ].filter((x) => (x.cents || 0) > 0);
-
-                                                return (
-                                                    <Box key={dayBlock.dayKey} sx={{ mb: 1.4 }}>
-                                                        {/* header do dia */}
-                                                        <Stack direction="row" alignItems="center" gap={1} sx={{ my: 1 }}>
-                                                            <Divider sx={{ flex: 1 }} />
-                                                            <Stack
-                                                                direction="row"
-                                                                alignItems="center"
-                                                                justifyContent="space-between"
-                                                                sx={{ px: 0.5, minWidth: { xs: "auto", sm: 520 }, width: "100%" }}
-                                                                gap={1}
-                                                            >
-                                                                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 950, whiteSpace: "nowrap" }}>
-                                                                    {dayBlock.dayLabel}
-                                                                </Typography>
-
-                                                                <Stack direction="row" gap={0.8} sx={{ flexWrap: "wrap", justifyContent: "flex-end", ml: "auto" }}>
-                                                                    {dayChips.map((c) => (
-                                                                        <Chip
-                                                                            key={c.key}
-                                                                            size="small"
-                                                                            label={`${c.label}: ${formatBRL((c.cents || 0) / 100)}`}
-                                                                            variant="outlined"
-                                                                            sx={{
-                                                                                fontWeight: 950,
-                                                                                borderRadius: 999,
-                                                                                bgcolor: alpha(c.dot, 0.12),
-                                                                                border: `1px solid ${alpha(c.dot, 0.32)}`,
-                                                                            }}
-                                                                        />
-                                                                    ))}
-                                                                </Stack>
-                                                            </Stack>
-                                                            <Divider sx={{ flex: 1 }} />
-                                                        </Stack>
-
-                                                        <Stack spacing={1.1}>
-                                                            {dayBlock.items.map(({ bill: b, dueISO, uiStatus }) => (
-                                                                <BoardBillCard
-                                                                    key={b.id}
-                                                                    b={b}
-                                                                    dueISO={dueISO}
-                                                                    uiStatus={uiStatus}
-                                                                    onPay={(bill) => setPayBill(bill)}
-                                                                    onEdit={(bill) => setEditBill(bill)}
-                                                                    onDelete={(bill) => handleDeleteBill(bill)}
-                                                                    onGenerate={(bill) => setGenBill(bill)}
-                                                                    resolveCategoryFromBill={resolveCategoryFromBill}
-                                                                    STATUS_META={STATUS_META}
-                                                                    theme={theme}
-                                                                    onReopen={async (bill) => {
-                                                                        const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
-                                                                        if (!ok) return;
-
-                                                                        try {
-                                                                            await dispatch(reopenBillThunk({ id: bill.id })).unwrap();
-                                                                            await dispatch(fetchBillsThunk());
-                                                                            await dispatch(fetchAllTransactionsThunk());
-                                                                        } catch { }
-                                                                    }}
-                                                                />
-                                                            ))}
-                                                        </Stack>
-                                                    </Box>
-                                                );
-                                            })}
-                                        </Box>
-                                    );
-                                })}
-                            </Stack>
+                                    try {
+                                        await dispatch(reopenBillThunk({ id: bill.id })).unwrap();
+                                        await dispatch(fetchBillsThunk());
+                                        await dispatch(fetchAllTransactionsThunk());
+                                    } catch { }
+                                }}
+                            />
                         ) : null}
                     </>
                 )}
 
-                {/* dialogs */}
                 <BillsFormDialog open={openNew} onClose={() => setOpenNew(false)} initial={null} payeeOptions={payeeOptions} />
                 <BillsFormDialog open={!!editBill} onClose={() => setEditBill(null)} initial={editBill} payeeOptions={payeeOptions} />
                 <GenerateDialog open={!!genBill} onClose={() => setGenBill(null)} bill={genBill} />
