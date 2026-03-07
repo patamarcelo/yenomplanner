@@ -205,11 +205,7 @@ export default function NewTransactionModal({ open, onClose }) {
     return msg;
   }
 
-  const savingLabel = useMemo(() => {
-    if (kind === "installment") return `Criando parcelamento (${Math.max(2, Number(nParts || 2))}x)...`;
-    if (kind === "recurring") return "Criando recorrência...";
-    return "Salvando...";
-  }, [kind, nParts]);
+  
 
   // defaults
   const [purchaseDate, setPurchaseDate] = useState(todayISO());
@@ -232,6 +228,12 @@ export default function NewTransactionModal({ open, onClose }) {
 
   const [kind, setKind] = useState("one_off"); // one_off | recurring | installment
   const [nParts, setNParts] = useState(2);
+
+  const savingLabel = useMemo(() => {
+    if (kind === "installment") return `Criando parcelamento (${Math.max(2, Number(nParts || 2))}x)...`;
+    if (kind === "recurring") return "Criando recorrência...";
+    return "Salvando...";
+  }, [kind, nParts]);
 
   const [direction, setDirection] = useState("expense");
 
