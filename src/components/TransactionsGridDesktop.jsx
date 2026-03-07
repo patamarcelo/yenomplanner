@@ -1187,7 +1187,7 @@ export default function TransactionsGrid({ rows, month, onMonthFilterChange, sta
         renderCell: (params) => {
           const row = getRowShape(params?.row);
           const inst = row?.installment;
-          if (!inst) return "—";
+          if (!inst) return "";
           return `${inst.current ?? "—"}/${inst.total ?? "—"}`;
         },
       },
