@@ -205,7 +205,7 @@ export default function NewTransactionModal({ open, onClose }) {
     return msg;
   }
 
-  
+
 
   // defaults
   const [purchaseDate, setPurchaseDate] = useState(todayISO());
@@ -603,6 +603,29 @@ export default function NewTransactionModal({ open, onClose }) {
     }
   }
 
+  function recomputeChargeDate(nextPurchaseDate, nextAccountId) {
+    const today = todayISO();
+    const acc = nextAccountId ? accounts.find((a) => a.id === nextAccountId) : null;
+    const purchase = nextPurchaseDate || today;
+
+    if (!acc) {
+      setChargeDate(today);
+      return;
+    }
+
+    if (acc.type === "checking") {
+      setChargeDate(purchase);
+      return;
+    }
+
+    const dueDay = acc?.statement?.dueDay ?? 10;
+    const cutoffDay = acc?.statement?.cutoffDay;
+    const ym = computeInvoiceMonthFromPurchase(purchase, cutoffDay);
+    const nextCharge = makeChargeDateFromYM(ym, dueDay);
+
+    setChargeDate(nextCharge || today);
+  }
+
   // ======= estilo / cores (seu padrão) =======
   const isExpense = direction === "expense";
   const borderColor = isExpense ? "rgba(211,47,47,0.45)" : "rgba(46,125,50,0.45)";
@@ -767,10 +790,14 @@ export default function NewTransactionModal({ open, onClose }) {
               label="Data compra"
               type="date"
               value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPurchaseDate(next);
+                setChargeTouched(false);
+                recomputeChargeDate(next, accountId);
+              }}
               InputLabelProps={{ shrink: true }}
               sx={{ ...inputSx, flex: 1 }}
-              disabled={saving}
             />
 
             <TextField
@@ -804,6 +831,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 setChargeTouched(false);
                 statusTouchedRef.current = false;
                 applyAutoStatusByAccount(next);
+                recomputeChargeDate(purchaseDate, next);
               }}
               fullWidth
               disabled={saving}
