@@ -803,6 +803,9 @@ export default function BillsPage() {
 
     const [activeDrag, setActiveDrag] = useState(null);
 
+    const [selectedValues, setSelectedValues] = useState([]);
+    const [selectedBillIds, setSelectedBillIds] = useState([]);
+
     const handleDragStart = (event) => {
         const data = event?.active?.data?.current;
         if (data?.bill) setActiveDrag(data);
@@ -1140,6 +1143,36 @@ export default function BillsPage() {
         const v = e.target.value;
         setFilterStatuses(Array.isArray(v) ? v : String(v).split(","));
     };
+
+    function toggleSelectedBill(bill) {
+        setSelectedBillIds((prev) => {
+            const exists = prev.includes(bill.id);
+            if (exists) return prev.filter((id) => id !== bill.id);
+            return [...prev, bill.id];
+        });
+    }
+
+    function toggleValue(v) {
+        setSelectedValues((prev) => {
+            const idx = prev.indexOf(v);
+
+            if (idx >= 0) {
+                const copy = [...prev];
+                copy.splice(idx, 1);
+                return copy;
+            }
+
+            return [...prev, v];
+        });
+    }
+
+    const sumSelected = useMemo(() => {
+        const selectedSet = new Set(selectedBillIds);
+        return (filteredBills || []).reduce((acc, b) => {
+            if (!selectedSet.has(b.id)) return acc;
+            return acc + Number(b.defaultAmount || 0);
+        }, 0);
+    }, [filteredBills, selectedBillIds]);
 
     async function handleDeleteBill(b) {
         const isSeries = !!b.installmentGroupId && (b.kind === "installment" || b.kind === "recurring");
@@ -1965,6 +1998,38 @@ export default function BillsPage() {
                                 </DragOverlay>
                             </DndContext>
                         ) : null}
+                        {
+                            sumSelected ?
+                                <Box
+                                    sx={{
+                                        position: "fixed",
+                                        top: 75,
+                                        left: 590,
+                                        bgcolor: alpha(theme.palette.warning.light, 0.55),
+                                        border: "1px solid",
+                                        borderColor: "divider",
+                                        borderRadius: 1,
+                                        px: 2,
+                                        py: 1,
+                                        boxShadow: 3,
+                                        zIndex: 999
+                                    }}
+                                >
+                                    <Stack direction="row" spacing={2} alignItems="center">
+                                        <Typography sx={{ fontWeight: 900 }}>
+                                            Soma: {formatBRL(sumSelected)}
+                                        </Typography>
+
+                                        <Button
+                                            size="small"
+                                            onClick={() => setSelectedBillIds([])}
+                                        >
+                                            Fechar
+                                        </Button>
+                                    </Stack>
+                                </Box>
+                                : null
+                        }
 
                         {viewMode === "timeline" ? (
                             <BillsTimelineTable
@@ -1976,6 +2041,8 @@ export default function BillsPage() {
                                 onEdit={(bill) => setEditBill(bill)}
                                 onDelete={(bill) => handleDeleteBill(bill)}
                                 onGenerate={(bill) => setGenBill(bill)}
+                                toggleValue={toggleSelectedBill}
+                                selectedBillIds={selectedBillIds}
                                 onReopen={async (bill) => {
                                     const ok = window.confirm(`Reabrir "${bill.name}"? Isso remove a transação de pagamento.`);
                                     if (!ok) return;

@@ -106,6 +106,8 @@ export default function BillsTimelineTable({
     onDelete,
     onGenerate,
     onReopen,
+    toggleValue,
+    selectedBillIds = []
 }) {
     if (!timeline.length) return null;
 
@@ -251,7 +253,7 @@ export default function BillsTimelineTable({
                                                                         size="small"
                                                                         label={`Pago: ${formatBRL((dayBlock.totals.paid || 0) / 100)}`}
                                                                         variant="outlined"
-                                                                        sx={{ fontWeight: 900, borderRadius: 999, color: 'white' , bgcolor: alpha(theme.palette.success.main, 0.98),}}
+                                                                        sx={{ fontWeight: 900, borderRadius: 999, color: 'white', bgcolor: alpha(theme.palette.success.main, 0.98), }}
                                                                     />
                                                                 ) : null}
 
@@ -302,14 +304,23 @@ export default function BillsTimelineTable({
 
                                                 {dayBlock.items.map(({ bill: b, dueISO, uiStatus }) => {
                                                     const cat = resolveCategoryFromBill ? resolveCategoryFromBill(b) : null;
-
+                                                    const isSelected = selectedBillIds.includes(b.id);
                                                     return (
                                                         <TableRow
                                                             key={b.id}
                                                             hover
                                                             sx={{
+                                                                bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.10) : "transparent",
+                                                                transition: "background-color 140ms ease",
                                                                 "&:hover": {
-                                                                    bgcolor: alpha(theme.palette.primary.main, 0.025),
+                                                                    bgcolor: isSelected
+                                                                        ? alpha(theme.palette.primary.main, 0.16)
+                                                                        : alpha(theme.palette.primary.main, 0.025),
+                                                                },
+                                                                "& td": {
+                                                                    borderBottomColor: isSelected
+                                                                        ? alpha(theme.palette.primary.main, 0.28)
+                                                                        : alpha(theme.palette.divider, 0.8),
                                                                 },
                                                             }}
                                                         >
@@ -368,7 +379,32 @@ export default function BillsTimelineTable({
                                                                     fontSize: 14,
                                                                 }}
                                                             >
-                                                                {moneySafe(b.defaultAmount)}
+                                                                <Typography
+                                                                    onClick={() => toggleValue?.(b)}
+                                                                    sx={{
+                                                                        display: "inline-flex",
+                                                                        alignItems: "center",
+                                                                        justifyContent: "flex-end",
+                                                                        px: 1,
+                                                                        py: 0.35,
+                                                                        borderRadius: 1,
+                                                                        fontWeight: 950,
+                                                                        cursor: "pointer",
+                                                                        userSelect: "none",
+                                                                        color: isSelected ? theme.palette.primary.contrastText : "inherit",
+                                                                        bgcolor: isSelected ? theme.palette.primary.main : "transparent",
+                                                                        boxShadow: isSelected ? `0 0 0 1px ${alpha(theme.palette.primary.main, 0.25)}` : "none",
+                                                                        transition: "all 140ms ease",
+                                                                        "&:hover": {
+                                                                            color: isSelected ? theme.palette.primary.contrastText : theme.palette.primary.main,
+                                                                            bgcolor: isSelected
+                                                                                ? theme.palette.primary.dark
+                                                                                : alpha(theme.palette.primary.main, 0.08),
+                                                                        },
+                                                                    }}
+                                                                >
+                                                                    {moneySafe(b.defaultAmount)}
+                                                                </Typography>
                                                             </TableCell>
 
                                                             <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
