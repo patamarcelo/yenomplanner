@@ -33,6 +33,19 @@ export function mapAccountFromApi(a) {
         openingBalance: centsToMoney(a.opening_balance_cents) || 0,
         limit: centsToMoney(a.limit_cents),
 
+        // novos campos calculados no backend
+        limitCents: a.limit_cents ?? 0,
+        usedLimitCents: a.used_limit_cents ?? 0,
+        availableLimitCents: a.available_limit_cents ?? 0,
+        openTxNotInvoicedCents: a.open_tx_not_invoiced_cents ?? 0,
+        closedInvoicesCents: a.closed_invoices_cents ?? 0,
+
+        // opcionais em unidade monetária, caso queira usar em algum lugar
+        usedLimit: centsToMoney(a.used_limit_cents) || 0,
+        availableLimit: centsToMoney(a.available_limit_cents) || 0,
+        openTxNotInvoiced: centsToMoney(a.open_tx_not_invoiced_cents) || 0,
+        closedInvoices: centsToMoney(a.closed_invoices_cents) || 0,
+
         statement:
             a.type === "credit_card"
                 ? {

@@ -236,6 +236,11 @@ export default function Layout({ children }) {
   const currentUser = useSelector((s) => s.user.user);
   const authStatus = useSelector((s) => s.user.status);
 
+  const accountsStatus = useSelector((s) => s.accounts.status);
+  const billsStatus = useSelector((s) => s.bills.status);
+  const categoriesStatus = useSelector((s) => s.categories.status);
+  const transactionsStatus = useSelector((s) => s.transactions.status);
+
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -319,12 +324,13 @@ export default function Layout({ children }) {
       return;
     }
 
-    if (bootstrappedRef.current) return;
+    if (!currentUser && authStatus === "loading") return;
 
     if (!currentUser && authStatus !== "loading") {
+      bootstrappedRef.current = false;
+
       dispatch(meThunk())
         .unwrap()
-        .then(() => { })
         .catch(() => {
           bootstrappedRef.current = false;
           dispatch(logout());
@@ -334,22 +340,48 @@ export default function Layout({ children }) {
       return;
     }
 
-    if (currentUser) {
-      const baseFetches = [
-        dispatch(fetchAccountsThunk()).unwrap(),
-        dispatch(fetchBillsThunk()).unwrap(),
-        dispatch(fetchCategoriesThunk()).unwrap(),
-      ];
+    if (!currentUser) return;
+    if (bootstrappedRef.current) return;
 
-      const heavyFetches = [dispatch(fetchAllTransactionsThunk()).unwrap()];
+    const jobs = [];
 
-      const jobs = isMobile ? baseFetches : baseFetches.concat(heavyFetches);
-
-      Promise.allSettled(jobs).finally(() => {
-        bootstrappedRef.current = true;
-      });
+    if (accountsStatus !== "succeeded") {
+      jobs.push(dispatch(fetchAccountsThunk()).unwrap());
     }
-  }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate, isMobile]);
+
+    if (billsStatus !== "succeeded") {
+      jobs.push(dispatch(fetchBillsThunk()).unwrap());
+    }
+
+    if (categoriesStatus !== "succeeded") {
+      jobs.push(dispatch(fetchCategoriesThunk()).unwrap());
+    }
+
+    if (!isMobile && transactionsStatus !== "succeeded") {
+      jobs.push(dispatch(fetchAllTransactionsThunk()).unwrap());
+    }
+
+    if (jobs.length === 0) {
+      bootstrappedRef.current = true;
+      return;
+    }
+
+    Promise.allSettled(jobs).finally(() => {
+      bootstrappedRef.current = true;
+    });
+  }, [
+    isPublicRoute,
+    token,
+    currentUser,
+    authStatus,
+    dispatch,
+    navigate,
+    isMobile,
+    accountsStatus,
+    billsStatus,
+    categoriesStatus,
+    transactionsStatus,
+  ]);
 
   if (isPublicRoute) {
     return <Box sx={{ minHeight: "100vh" }}>{children}</Box>;
@@ -650,7 +682,7 @@ export default function Layout({ children }) {
               boxSizing: "border-box",
               borderRight: `1px solid ${theme.palette.divider}`,
               borderTopLeftRadius: 0,
-              borderBottomLeftRadius: 0
+              borderBottomLeftRadius: 0,
             },
           }}
         >

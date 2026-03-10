@@ -1,6 +1,6 @@
 // src/pages/Dashboard.jsx
-import React, { useMemo, useEffect, useState } from "react";
-import { useSelector, useDispatch } from "react-redux";
+import React, { useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { Box, Card, CardContent, Stack, Typography, LinearProgress, Divider } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 
@@ -14,10 +14,7 @@ import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
 import { formatBRL } from "../utils/money";
 import { selectHideValues } from "../store/uiSlice";
 import { selectTransactionsUi } from "../store/transactionsSlice";
-import { bootstrapThunk } from "../store/bootstrapThunk";
 import Spinner from "../components/ui/Spinner";
-
-
 
 import AccountsMatrix from "../components/AccountsMatrix";
 
@@ -30,7 +27,6 @@ import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 
 import DashboardChart from "../components/DashboardChart";
 import DashboardChartNivo from "../components/DashboardChartNivo";
-
 
 // =============================
 // DEBUG
@@ -56,7 +52,6 @@ const dbgGroup = (title, fn) => {
 function normalizeISODate(d) {
   if (!d) return "";
   if (d instanceof Date && !isNaN(d.getTime())) {
-    // ✅ usa UTC para não “voltar 1 dia” no Brasil quando vier meia-noite UTC
     const y = d.getUTCFullYear();
     const m = String(d.getUTCMonth() + 1).padStart(2, "0");
     const dd = String(d.getUTCDate()).padStart(2, "0");
@@ -106,7 +101,6 @@ function normalizeDirectionFromTxn(t) {
 }
 
 function signedAmountNormalized(t) {
-  // aceita amount positivo/negativo; se vier positivo, aplica direction
   const v = Number(t?.amount ?? t?.value ?? 0);
   const abs = Math.abs(v);
   if (v < 0) return v;
@@ -198,8 +192,14 @@ function addMonthsClampDay(ymd, add) {
 
   let y = p.y;
   let m = p.m + Number(add || 0);
-  while (m > 12) { m -= 12; y += 1; }
-  while (m < 1) { m += 12; y -= 1; }
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  while (m < 1) {
+    m += 12;
+    y -= 1;
+  }
 
   const dim = daysInMonthUTC(y, m);
   const d = Math.min(p.d, dim);
@@ -239,14 +239,10 @@ function getInstallmentsTotal(t) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/**
- * Data de competência (YYYY-MM-DD):
- * - Se tiver invoiceMonth: ajusta o mês da purchaseDate para invoiceMonth (mantendo o dia, clamp)
- * - Senão, se for parcelado: compra + (idx-1) meses
- * - Senão: compra
- */
 function resolveCompetenceDateYMD(t) {
-  const purchase = normalizeISODate(t?.purchaseDate ?? t?.purchase_date ?? t?.chargeDate ?? t?.charge_date ?? "");
+  const purchase = normalizeISODate(
+    t?.purchaseDate ?? t?.purchase_date ?? t?.chargeDate ?? t?.charge_date ?? ""
+  );
   if (!purchase) return "";
 
   const pYM = ymFromISODate(purchase);
@@ -265,36 +261,24 @@ function resolveCompetenceDateYMD(t) {
   return purchase;
 }
 
-/**
- * Valor (despesa) a usar na visualização:
- * - Não-parcelado: valor normal (positivo)
- * - Parcelado:
- *    - se o backend já traz a parcela como txn separada (amount == parcela), ok.
- *    - se o backend traz um "total" com installmentsTotal, dividimos em modo "parcela".
- * Obs: sempre retorna despesa positiva (>=0).
- */
-function resolveInstallmentAmount(t, mode /* "parts" | "consolidate_purchase" */) {
+function resolveInstallmentAmount(t, mode) {
   const raw = Math.abs(Math.min(0, signedAmountNormalized(t)));
   if (!raw) return 0;
 
   if (!isInstallment(t)) return raw;
 
   if (mode === "consolidate_purchase") {
-    // consolidado = mostra o "total" do que veio no txn (normalmente já é a soma, ou o valor do lançamento)
     return raw;
   }
 
-  // parts = parcela
-  // Se existir um campo explícito de valor da parcela, usa.
-  const explicitPart =
-    Number(t?.installmentAmount ?? t?.installment_amount ?? t?.perInstallment ?? t?.per_installment ?? NaN);
+  const explicitPart = Number(
+    t?.installmentAmount ?? t?.installment_amount ?? t?.perInstallment ?? t?.per_installment ?? NaN
+  );
   if (Number.isFinite(explicitPart) && explicitPart > 0) return explicitPart;
 
-  // Se existir total e totalParcelas, divide (fallback)
   const totalN = getInstallmentsTotal(t);
   if (totalN > 1) return Number((raw / totalN).toFixed(2));
 
-  // Sem info: assume que raw já é a parcela
   return raw;
 }
 
@@ -370,13 +354,11 @@ function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
   );
 }
 
-function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizRef }) {
+function StackedDayTooltip({ active, payload, catMeta, money, theme }) {
   if (!active || !payload || payload.length === 0) return null;
 
   const row = payload?.[0]?.payload || {};
   const sp = row.__samplePurchase ? row.__samplePurchase : "";
-  const sc = row.__sampleCompetence ? row.__sampleCompetence : "";
-  const mixed = Number(row.__mixCount || 0) > 0;
 
   const items = (payload || [])
     .filter((p) => p && p.dataKey && p.dataKey !== "total" && Number(p.value) > 0)
@@ -385,7 +367,7 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
   const total = (payload || []).find((p) => p?.dataKey === "total")?.value || 0;
 
   function brFromISO(iso) {
-    const s = String(iso || "").slice(0, 10); // "YYYY-MM-DD"
+    const s = String(iso || "").slice(0, 10);
     const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) return "—";
     return `${m[3]}/${m[2]}/${m[1]}`;
@@ -407,7 +389,7 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
           direction="row"
           justifyContent="space-between"
           alignItems="baseline"
-          sx={{ my: 3 }} // Adiciona margem em cima e embaixo (margin-y)
+          sx={{ my: 3 }}
         >
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>Dia {brFromISO(sp)}</Typography>
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>{money(total)}</Typography>
@@ -433,7 +415,10 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
                     borderRadius: 999,
                     background: meta.color || pickFallbackColor(theme, it.dataKey),
                     flexShrink: 0,
-                    boxShadow: `0 0 0 3px ${alpha(meta.color || pickFallbackColor(theme, it.dataKey), 0.12)}`,
+                    boxShadow: `0 0 0 3px ${alpha(
+                      meta.color || pickFallbackColor(theme, it.dataKey),
+                      0.12
+                    )}`,
                   }}
                 />
                 <Typography sx={{ fontSize: 12, fontWeight: 850 }} noWrap>
@@ -456,9 +441,8 @@ function StackedDayTooltip({ active, payload, label, catMeta, money, theme, vizR
 // =============================
 export default function Dashboard() {
   const theme = useTheme();
-  const dispatch = useDispatch();
 
-  const month = useSelector((s) => s.finance.month); // "YYYY-MM"
+  const month = useSelector((s) => s.finance.month);
   const txns = useSelector(selectTransactionsUi);
   const accounts = useSelector((s) => s.accounts.accounts);
 
@@ -469,39 +453,22 @@ export default function Dashboard() {
   const bootstrapStatus = useSelector((s) => s.bootstrap.status);
   const isBootLoading = bootstrapStatus === "loading";
 
-
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [showAllCards, setShowAllCards] = useState(false);
 
   const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
 
-  // “tem dados?” (define o que é “dado suficiente” no seu caso)
   const hasAnyData =
     (accounts?.length || 0) > 0 ||
     (txns?.length || 0) > 0 ||
     (categories?.length || 0) > 0;
 
-  // -----------------------------
-  // ✅ Filtros da visualização (Gráfico + Categorias)
-  // -----------------------------
-  const [vizRef, setVizRef] = useState("purchase"); // "purchase" | "competence"
-  // parts = parcela (competência real), consolidate_purchase = consolidado na compra, hide = oculta parcelados
-  const [vizInstallments, setVizInstallments] = useState("consolidate_purchase"); // "parts" | "consolidate_purchase" | "hide"
-
-
-  const [chartLib, setChartLib] = useState("recharts"); // "nivo" | "recharts"
-
-
-  useEffect(() => {
-    const alreadyLoaded = accountsStatus === "succeeded" && txStatus === "succeeded";
-    if (alreadyLoaded) return;
-    dispatch(bootstrapThunk());
-  }, [dispatch, accountsStatus, txStatus]);
-
+  const [vizRef, setVizRef] = useState("purchase");
+  const [vizInstallments, setVizInstallments] = useState("consolidate_purchase");
+  const [chartLib, setChartLib] = useState("recharts");
 
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
-
 
   const categoriesById = useMemo(() => {
     const m = new Map();
@@ -522,12 +489,6 @@ export default function Dashboard() {
     setVizInstallments(v);
   };
 
-
-
-
-  // -----------------------------
-  // Índices mínimos
-  // -----------------------------
   const accountsById = useMemo(() => {
     const m = {};
     for (const a of accounts || []) {
@@ -550,36 +511,25 @@ export default function Dashboard() {
     };
   }, []);
 
-  // -----------------------------
-  // ✅ Somente transações de CARTÃO (pra gráfico + categorias)
-  // Regra:
-  // - Se tiver invoiceMonth => é cartão
-  // - Senão: olha o account.type === "credit_card"
-  // -----------------------------
   function isBillFromInvoice(b) {
     const notes = String(b?.notes || "").trim().toLowerCase();
 
-    // ✅ assinatura do backend (não usa categoria)
     return (
       notes.startsWith("auto-gerado ao fechar fatura") ||
       (notes.includes("auto-gerado") && notes.includes("fechar fatura"))
     );
   }
 
-  
   const isCardTxn = useMemo(() => {
     return (t) => {
       if (!t) return false;
 
-      // ✅ REGRA NOVA: se veio de bill, remove sempre
       const billId = (t?.billId ?? t?.bill_id ?? "").toString().trim();
       if (billId) return false;
 
-      // ✅ invoiceMonth => cartão
       const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
       if (invYM) return true;
 
-      // ✅ fallback: pelo tipo da conta
       const accId = resolveAccountIdFromTxn(t);
       if (!accId) return false;
 
@@ -588,11 +538,6 @@ export default function Dashboard() {
     };
   }, [resolveAccountIdFromTxn, accountsById]);
 
-  // -----------------------------
-  // ✅ Regra ÚNICA do mês do Dashboard (KPI)
-  // - cartão: invoiceMonth
-  // - demais: purchaseDate (fallback: chargeDate)
-  // -----------------------------
   const getTxnMonthKey = useMemo(() => {
     return (t) => {
       const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
@@ -604,12 +549,12 @@ export default function Dashboard() {
     };
   }, []);
 
+  const targetInvoiceYM = useMemo(() => addMonthsYM(month, 1), [month]);
+
   const monthTx = useMemo(() => {
     if (!month) return [];
-    const targetInvoiceYM = addMonthsYM(month, 1);
 
     const out = (txns || []).filter((t) => {
-      // ✅ NÃO contar transações geradas por bills (inclui pagamento de fatura / cc_invoice)
       const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
       if (billId) return false;
 
@@ -618,12 +563,9 @@ export default function Dashboard() {
       return k.ym === month;
     });
 
-    // ... resto igual
     return out;
-  }, [txns, month, getTxnMonthKey]);
-  // -----------------------------
-  // KPIs
-  // -----------------------------
+  }, [txns, month, targetInvoiceYM, getTxnMonthKey]);
+
   const totalEntradaMes = useMemo(() => {
     if (!month) return 0;
 
@@ -660,15 +602,10 @@ export default function Dashboard() {
     return (bills || [])
       .filter((b) => {
         if (!b?.active) return false;
-        if (isBillFromInvoice(b)) return false; // ✅ aqui
+        if (isBillFromInvoice(b)) return false;
 
-
-        // ✅ NÃO contar bills que são "fatura de cartão"
         const kind = String(b?.kind || "").toLowerCase();
         if (kind === "cc_invoice" || kind === "credit_card_invoice") return false;
-
-        // (opcional) se você também não quer somar "one_off" aqui, descomente:
-        // if (kind === "one_off") return false;
 
         const start = String(b?.startMonth || "").slice(0, 7);
         const end = String(b?.endMonth || "").slice(0, 7) || start;
@@ -697,19 +634,16 @@ export default function Dashboard() {
     );
   }, [monthTx]);
 
-  // -----------------------------
-  // ✅ Visualização: data + valor (Gráfico + Categorias)
-  // -----------------------------
   const resolveVizDateYMD = useMemo(() => {
     return (t) => {
-      const purchase = normalizeISODate(t?.purchaseDate ?? t?.purchase_date ?? t?.chargeDate ?? t?.charge_date ?? "");
+      const purchase = normalizeISODate(
+        t?.purchaseDate ?? t?.purchase_date ?? t?.chargeDate ?? t?.charge_date ?? ""
+      );
       if (!purchase) return "";
 
       if (vizRef === "purchase") return purchase;
 
-      // competência
       if (vizInstallments === "consolidate_purchase" && isInstallment(t)) {
-        // consolidado = aparece na compra mesmo em modo competência
         return purchase;
       }
 
@@ -719,15 +653,15 @@ export default function Dashboard() {
 
   const resolveVizAmountExpense = useMemo(() => {
     return (t) => {
-      // sempre despesa positiva
       if (normalizeDirectionFromTxn(t) !== "expense") return 0;
 
-      // ocultar parcelados
       if (vizInstallments === "hide" && isInstallment(t)) return 0;
 
-      // parcela vs consolidado
       if (isInstallment(t)) {
-        return resolveInstallmentAmount(t, vizInstallments === "consolidate_purchase" ? "consolidate_purchase" : "parts");
+        return resolveInstallmentAmount(
+          t,
+          vizInstallments === "consolidate_purchase" ? "consolidate_purchase" : "parts"
+        );
       }
 
       return Math.abs(Math.min(0, signedAmountNormalized(t)));
@@ -737,15 +671,12 @@ export default function Dashboard() {
   const monthVizTx = useMemo(() => {
     if (!month) return [];
 
-    // mode consolidado: precisamos evitar duplicar a mesma compra parcelada.
-    // Tentativa de dedupe pelo installmentGroupId / groupId / parentId / originalId. Fallback: description+purchaseDate+amount.
     const seenConsolidated = new Set();
-
     const out = [];
 
     for (const t of txns || []) {
       if (!t) continue;
-      if (!isCardTxn(t)) continue; // ✅ só cartão (remove bills/conta corrente)
+      if (!isCardTxn(t)) continue;
       if (normalizeDirectionFromTxn(t) !== "expense") continue;
 
       const refYMD = resolveVizDateYMD(t);
@@ -755,22 +686,24 @@ export default function Dashboard() {
       if (vizInstallments === "hide" && isInstallment(t)) continue;
 
       if (vizInstallments === "consolidate_purchase" && isInstallment(t)) {
-        const gid =
-          String(
-            t?.installmentGroupId ??
-            t?.installment_group_id ??
-            t?.groupId ??
-            t?.group_id ??
-            t?.parentId ??
-            t?.parent_id ??
-            t?.originalId ??
-            t?.original_id ??
-            ""
-          ).trim();
+        const gid = String(
+          t?.installmentGroupId ??
+          t?.installment_group_id ??
+          t?.groupId ??
+          t?.group_id ??
+          t?.parentId ??
+          t?.parent_id ??
+          t?.originalId ??
+          t?.original_id ??
+          ""
+        ).trim();
 
         const purchase = normalizeISODate(t?.purchaseDate ?? t?.purchase_date ?? "");
         const raw = Math.abs(Math.min(0, signedAmountNormalized(t)));
-        const fallbackKey = `${purchase}::${String(t?.description || t?.merchant || "").slice(0, 80)}::${raw}`;
+        const fallbackKey = `${purchase}::${String(t?.description || t?.merchant || "").slice(
+          0,
+          80
+        )}::${raw}`;
 
         const key = gid ? `gid:${gid}` : `fb:${fallbackKey}`;
         if (seenConsolidated.has(key)) continue;
@@ -807,7 +740,9 @@ export default function Dashboard() {
     const catKeysSet = new Set();
 
     for (const t of monthVizTx || []) {
-      const purchase = normalizeISODate(t?.purchaseDate ?? t?.purchase_date ?? t?.chargeDate ?? t?.charge_date ?? "");
+      const purchase = normalizeISODate(
+        t?.purchaseDate ?? t?.purchase_date ?? t?.chargeDate ?? t?.charge_date ?? ""
+      );
       if (!purchase) continue;
 
       const competence = resolveCompetenceDateYMD(t);
@@ -835,7 +770,6 @@ export default function Dashboard() {
 
       const row = byDay.get(day);
 
-      // amostra pro tooltip
       if (!row.__samplePurchase) row.__samplePurchase = purchase;
       if (!row.__sampleCompetence) row.__sampleCompetence = competence;
       if (row.__samplePurchase && row.__samplePurchase !== purchase) row.__mixCount += 1;
@@ -901,12 +835,9 @@ export default function Dashboard() {
     return { rows, totalGastoMes: Number(totalGastoMes.toFixed(2)) };
   }, [monthVizTx, categoriesById, resolveVizAmountExpense]);
 
-  // -----------------------------
-  // Faturas por cartão (mantém sua base KPI monthTx)
-  // -----------------------------
   const invoicesByCard = useMemo(() => {
-    const sums = new Map();        // accId -> total
-    const invYMByAcc = new Map();  // accId -> invYM (YYYY-MM)
+    const sums = new Map();
+    const invYMByAcc = new Map();
 
     const pad2 = (n) => String(n).padStart(2, "0");
 
@@ -918,8 +849,7 @@ export default function Dashboard() {
       const dueDay = Number(day);
       if (!Number.isFinite(dueDay) || dueDay < 1) return "—";
 
-      // garante último dia do mês (ex: vencimento 31 em fevereiro)
-      const lastDay = new Date(yy, mm, 0).getDate(); // mm é 1..12 aqui
+      const lastDay = new Date(yy, mm, 0).getDate();
       const dd = Math.min(dueDay, lastDay);
 
       return `${pad2(dd)}/${pad2(mm)}/${yy}`;
@@ -956,8 +886,6 @@ export default function Dashboard() {
 
       sums.set(k, (sums.get(k) || 0) + v);
 
-      // guarda o invoiceMonth daquele cartão (normalmente será único no monthTx)
-      // se por algum motivo vier mais de um, pegamos o maior (mais recente)
       const prev = invYMByAcc.get(k);
       if (!prev || String(invYM).localeCompare(String(prev)) > 0) {
         invYMByAcc.set(k, invYM);
@@ -977,17 +905,19 @@ export default function Dashboard() {
           name: a?.name || "Cartão",
           color: a?.color || null,
           total: Number((total || 0).toFixed(2)),
-          dueLabel, // ✅ agora calcula de verdade
+          dueLabel,
         };
       })
       .sort((a, b) => (b.total || 0) - (a.total || 0));
   }, [monthTx, accountsById]);
 
   const totalInvoicesMonth = useMemo(() => {
-    return Number((invoicesByCard || []).reduce((acc, r) => acc + Number(r.total || 0), 0).toFixed(2));
+    return Number(
+      (invoicesByCard || []).reduce((acc, r) => acc + Number(r.total || 0), 0).toFixed(2)
+    );
   }, [invoicesByCard]);
 
-  if (isBootLoading && !hasAnyData) {
+  if ((isBootLoading || accountsStatus === "loading" || txStatus === "loading") && !hasAnyData) {
     return <Spinner status="loading" />;
   }
 
@@ -1000,12 +930,12 @@ export default function Dashboard() {
 
   return (
     <Stack spacing={2.25} sx={{ width: "100%" }}>
-      {/* KPIs */}
       {isBootLoading && hasAnyData ? (
         <Box sx={{ width: "100%" }}>
           <LinearProgress />
         </Box>
       ) : null}
+
       <Box
         sx={{
           display: "grid",
@@ -1027,8 +957,15 @@ export default function Dashboard() {
         <KpiCard title="Total parcelamento" value={money(totalParcelamento)} icon={ViewWeekRoundedIcon} tone="info" />
       </Box>
 
-      {/* Chart */}
-      <Box sx={{ width: "100%", display: "grid", gap: 2, alignItems: "stretch", gridTemplateColumns: { xs: "1fr" } }}>
+      <Box
+        sx={{
+          width: "100%",
+          display: "grid",
+          gap: 2,
+          alignItems: "stretch",
+          gridTemplateColumns: { xs: "1fr" },
+        }}
+      >
         <Card sx={(t) => cardBg(t, "primary")}>
           <CardContent sx={{ p: 2.25 }}>
             <Stack spacing={1.2}>
@@ -1073,29 +1010,11 @@ export default function Dashboard() {
                     <ToggleButton value="parts">Parcelados: parcela</ToggleButton>
                     <ToggleButton value="consolidate_purchase">Consolidado na compra</ToggleButton>
                     <ToggleButton value="hide">Ocultar</ToggleButton>
-                    {/* <ToggleButtonGroup
-                      size="small"
-                      exclusive
-                      value={chartLib}
-                      onChange={(_, v) => v && setChartLib(v)}
-                      sx={{
-                        "& .MuiToggleButton-root": {
-                          px: 1.1,
-                          py: 0.55,
-                          fontWeight: 900,
-                          textTransform: "none"
-                        },
-                      }}
-                    >
-                      <ToggleButton value="recharts">Recharts</ToggleButton>
-                      <ToggleButton value="nivo">Nivo</ToggleButton>
-                    </ToggleButtonGroup> */}
                   </ToggleButtonGroup>
                 </Stack>
               </Stack>
 
               <Box sx={{ width: "100%", height: 360, minHeight: 360 }}>
-
                 {chartLib === "nivo" ? (
                   <DashboardChartNivo
                     data={chartStack.data}
@@ -1126,15 +1045,12 @@ export default function Dashboard() {
                 )}
               </Box>
 
-
-
               <Divider />
             </Stack>
           </CardContent>
         </Card>
       </Box>
 
-      {/* Categorias + Faturas */}
       <Box
         sx={{
           width: "100%",
@@ -1224,10 +1140,10 @@ export default function Dashboard() {
 
                       return (
                         <>
-                          {/* top 6 sempre */}
-                          {first.map((row, i) => renderRow(row, i, i === first.length - 1 && rest.length === 0 && !showAllCategories))}
+                          {first.map((row, i) =>
+                            renderRow(row, i, i === first.length - 1 && rest.length === 0 && !showAllCategories)
+                          )}
 
-                          {/* botão / accordion */}
                           {rest.length > 0 ? (
                             <>
                               <Box sx={{ py: 0.75, display: "flex", justifyContent: "center" }}>
@@ -1243,12 +1159,8 @@ export default function Dashboard() {
 
                               <Collapse in={showAllCategories} timeout={180} unmountOnExit>
                                 <Stack spacing={0}>
-                                  {/* divisor “limpo” pra separar top/resto */}
                                   <Divider sx={{ opacity: 0.5, mb: 0.5 }} />
-
-                                  {rest.map((row, i) =>
-                                    renderRow(row, i, i === rest.length - 1)
-                                  )}
+                                  {rest.map((row, i) => renderRow(row, i, i === rest.length - 1))}
                                 </Stack>
                               </Collapse>
                             </>
@@ -1401,7 +1313,16 @@ export default function Dashboard() {
         </Card>
       </Box>
 
-      <Box sx={{ width: "100%", display: "grid", gap: 2, minHeight: "350px", alignItems: "stretch", gridTemplateColumns: { xs: "1fr", md: "1fr" } }}>
+      <Box
+        sx={{
+          width: "100%",
+          display: "grid",
+          gap: 2,
+          minHeight: "350px",
+          alignItems: "stretch",
+          gridTemplateColumns: { xs: "1fr", md: "1fr" },
+        }}
+      >
         <AccountsMatrix />
       </Box>
     </Stack>

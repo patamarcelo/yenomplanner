@@ -1,4 +1,3 @@
-// src/pages/AccountsPage.jsx
 import React, { useMemo, useState, useEffect } from "react";
 import {
   Box,
@@ -129,6 +128,32 @@ function moneyBRL(v) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function centsToUnit(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return 0;
+  return n / 100;
+}
+
+function getAccountLimitCents(a) {
+  return Number(a?.limitCents ?? a?.limit_cents ?? 0);
+}
+
+function getAccountUsedLimitCents(a) {
+  return Number(a?.usedLimitCents ?? a?.used_limit_cents ?? 0);
+}
+
+function getAccountAvailableLimitCents(a) {
+  return Number(a?.availableLimitCents ?? a?.available_limit_cents ?? 0);
+}
+
+function getAccountOpenTxCents(a) {
+  return Number(a?.openTxNotInvoicedCents ?? a?.open_tx_not_invoiced_cents ?? 0);
+}
+
+function getAccountClosedInvoicesCents(a) {
+  return Number(a?.closedInvoicesCents ?? a?.closed_invoices_cents ?? 0);
+}
+
 function signedAmount(tx) {
   const v = Math.abs(Number(tx?.amount || 0));
   if (!Number.isFinite(v)) return 0;
@@ -217,56 +242,6 @@ function resolveTxnAccountId(tx, accounts) {
       String(a?.externalId || a?.external_id || "").endsWith(`_${legacy}`)
   );
   return found?.id || "";
-}
-
-function isLikelyInvoicePayment(tx) {
-  const k = String(tx?.kind || "").toLowerCase();
-  if (k.includes("bill_payment") || k.includes("invoice_payment") || k === "payment") return true;
-
-  const desc = String(tx?.description || tx?.memo || tx?.title || "").toLowerCase();
-  if (
-    desc.includes("pagamento de fatura") ||
-    desc.includes("pgto fatura") ||
-    desc.includes("fatura paga")
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function isInvoiceLike(tx) {
-  if (tx?.invoice || tx?.invoiceId || tx?.invoice_id) return true;
-
-  const k = String(tx?.kind || "").toLowerCase();
-  if (k.includes("invoice") || k.includes("bill")) return true;
-
-  return false;
-}
-
-function calcCardOpenUsedForLimit(cardId, txns, accounts) {
-  let used = 0;
-
-  for (const t of txns || []) {
-    const accId = resolveTxnAccountId(t, accounts);
-    if (!accId || String(accId) !== String(cardId)) continue;
-
-    if (isInvoiceLike(t)) continue;
-    if (isLikelyInvoicePayment(t)) continue;
-    if (String(t?.status || "").toLowerCase() === "paid") continue;
-
-    const dir = String(t?.direction || "").toLowerCase();
-    const amt = Number(t?.amount || 0);
-    if (!Number.isFinite(amt) || amt === 0) continue;
-
-    if (dir === "income") {
-      used -= Math.abs(amt);
-    } else {
-      used += Math.abs(amt);
-    }
-  }
-
-  return Math.max(0, used);
 }
 
 function emptyCheckingBankDetails() {
@@ -790,21 +765,25 @@ export default function AccountsPage() {
 
   const { totalCardLimit, totalCardOpen, totalCardAvailable } = useMemo(() => {
     const activeCards = (cardsOnly || []).filter((a) => safeActive(a));
-    const limitTotal = activeCards.reduce((acc, a) => acc + Number(a?.limit || 0), 0);
 
-    let openTotal = 0;
-    for (const c of activeCards) {
-      openTotal += calcCardOpenUsedForLimit(c.id, txns, accounts);
-    }
+    const limitTotal = activeCards.reduce((acc, a) => {
+      return acc + centsToUnit(getAccountLimitCents(a));
+    }, 0);
 
-    const available = limitTotal - openTotal;
+    const openTotal = activeCards.reduce((acc, a) => {
+      return acc + centsToUnit(getAccountUsedLimitCents(a));
+    }, 0);
+
+    const availableTotal = activeCards.reduce((acc, a) => {
+      return acc + centsToUnit(getAccountAvailableLimitCents(a));
+    }, 0);
 
     return {
       totalCardLimit: limitTotal,
       totalCardOpen: openTotal,
-      totalCardAvailable: available,
+      totalCardAvailable: availableTotal,
     };
-  }, [accounts, cardsOnly, txns]);
+  }, [cardsOnly]);
 
   const totalCheckingBalance = useMemo(() => {
     return (checkingOnly || []).reduce((acc, a) => {
@@ -893,8 +872,11 @@ export default function AccountsPage() {
             />
           ) : (
             cardsOnly.map((a) => {
-              const openUsed = calcCardOpenUsedForLimit(a.id, txns, accounts);
-              const available = Number(a?.limit || 0) - openUsed;
+              const limitValue = centsToUnit(getAccountLimitCents(a));
+              const openUsed = centsToUnit(getAccountUsedLimitCents(a));
+              const available = centsToUnit(getAccountAvailableLimitCents(a));
+              const openTxOnly = centsToUnit(getAccountOpenTxCents(a));
+              const closedInvoicesOnly = centsToUnit(getAccountClosedInvoicesCents(a));
 
               return (
                 <Card
@@ -924,9 +906,14 @@ export default function AccountsPage() {
                           </Stack>
 
                           <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                            Limite: <b>{maskMoney(moneyBRL(a.limit))}</b>
+                            Limite: <b>{maskMoney(moneyBRL(limitValue))}</b>
                             {"  "}•{"  "}Em aberto: <b>{maskMoney(moneyBRL(openUsed))}</b>
                             {"  "}•{"  "}Disponível: <b>{maskMoney(moneyBRL(available))}</b>
+                          </Typography>
+
+                          <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                            Em aberto sem faturar: <b>{maskMoney(moneyBRL(openTxOnly))}</b>
+                            {"  "}•{"  "}Faturas fechadas em aberto: <b>{maskMoney(moneyBRL(closedInvoicesOnly))}</b>
                           </Typography>
 
                           <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -1041,10 +1028,6 @@ export default function AccountsPage() {
                             <Typography variant="body2" sx={{ color: "text.secondary" }}>
                               Saldo atual: <b>{maskMoney(moneyBRL(balance))}</b>
                             </Typography>
-
-                            {/* <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                              external_id: <b>{a.externalId || a.external_id || "—"}</b>
-                            </Typography> */}
                           </Stack>
                         </Stack>
 
@@ -1106,8 +1089,8 @@ export default function AccountsPage() {
                             minHeight: 52,
                             "& .MuiAccordionSummary-content": {
                               my: 1,
-                              display: 'flex',
-                              justifyContent: 'space-around'
+                              display: "flex",
+                              justifyContent: "space-around",
                             },
                           }}
                         >
@@ -1128,36 +1111,30 @@ export default function AccountsPage() {
                             </b>
                           </Typography>
                           <Typography variant="body2" sx={{ color: "text.secondary", pr: 2 }}>
-                              Tipo:{" "}
-                              <b>
-                                {bank.accountKind === "payment"
-                                  ? "Conta pagamento"
-                                  : bank.accountKind === "savings"
-                                    ? "Conta poupança"
-                                    : "Conta corrente"}
-                              </b>
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: "text.secondary" , pr: 2}}>
-                              Documento:{" "}
-                              <b>
-                                {bank.documentType === "cnpj"
-                                  ? formatCNPJ(bank.documentNumber)
-                                  : formatCPF(bank.documentNumber)}
-                              </b>
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                              Nome: <b>{bank.holderName || "—"}</b>
-                            </Typography>
+                            Tipo:{" "}
+                            <b>
+                              {bank.accountKind === "payment"
+                                ? "Conta pagamento"
+                                : bank.accountKind === "savings"
+                                  ? "Conta poupança"
+                                  : "Conta corrente"}
+                            </b>
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: "text.secondary", pr: 2 }}>
+                            Documento:{" "}
+                            <b>
+                              {bank.documentType === "cnpj"
+                                ? formatCNPJ(bank.documentNumber)
+                                : formatCPF(bank.documentNumber)}
+                            </b>
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                            Nome: <b>{bank.holderName || "—"}</b>
+                          </Typography>
                         </AccordionSummary>
 
                         <AccordionDetails sx={{ pt: 0, pb: 1.5 }}>
                           <Stack spacing={0.7}>
-                            
-
-                            
-
-  
-
                             <Box
                               sx={{
                                 mt: 0.8,

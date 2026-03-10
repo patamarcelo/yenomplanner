@@ -128,3 +128,26 @@ export const selectCreditCardAccounts = (s) =>
 
 export const selectAccountById = (id) => (s) =>
   s.accounts.accounts.find((a) => a.id === id) || null;
+
+// novos selectors úteis
+export const selectCreditCardLimitTotals = (s) => {
+  const cards = s.accounts.accounts.filter((a) => a.type === "credit_card" && a.active !== false);
+
+  return cards.reduce(
+    (acc, a) => {
+      acc.limitCents += Number(a.limitCents ?? 0);
+      acc.usedLimitCents += Number(a.usedLimitCents ?? 0);
+      acc.availableLimitCents += Number(a.availableLimitCents ?? 0);
+      acc.openTxNotInvoicedCents += Number(a.openTxNotInvoicedCents ?? 0);
+      acc.closedInvoicesCents += Number(a.closedInvoicesCents ?? 0);
+      return acc;
+    },
+    {
+      limitCents: 0,
+      usedLimitCents: 0,
+      availableLimitCents: 0,
+      openTxNotInvoicedCents: 0,
+      closedInvoicesCents: 0,
+    }
+  );
+};
