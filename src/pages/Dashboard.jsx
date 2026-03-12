@@ -49,6 +49,8 @@ const dbgGroup = (title, fn) => {
 // Helpers minimalistas
 // =============================
 
+
+
 function normalizeISODate(d) {
   if (!d) return "";
   if (d instanceof Date && !isNaN(d.getTime())) {
@@ -470,6 +472,8 @@ export default function Dashboard() {
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
 
+
+
   const categoriesById = useMemo(() => {
     const m = new Map();
     (categories || []).forEach((c) => {
@@ -478,6 +482,20 @@ export default function Dashboard() {
     });
     return m;
   }, [categories]);
+
+  const isTransferCategory = useMemo(() => {
+    return (t) => {
+      const catId = String(t?.categoryId ?? t?.category_id ?? t?.category ?? "");
+      const cat = categoriesById?.get?.(catId);
+
+      const catName = String(cat?.name || catId || "")
+        .trim()
+        .toLowerCase();
+
+      return catName === "transferencia" || catName === "transferência";
+    };
+  }, [categoriesById]);
+
 
   const onChangeVizRef = (_, v) => {
     if (!v) return;
@@ -557,14 +575,15 @@ export default function Dashboard() {
     const out = (txns || []).filter((t) => {
       const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
       if (billId) return false;
-
+      if (isTransferCategory(t)) return false;
       const k = getTxnMonthKey(t);
       if (k.kind === "card") return k.ym === targetInvoiceYM;
       return k.ym === month;
     });
 
     return out;
-  }, [txns, month, targetInvoiceYM, getTxnMonthKey]);
+  }, [txns, month, targetInvoiceYM, getTxnMonthKey, isTransferCategory]);
+  
 
   const totalEntradaMes = useMemo(() => {
     if (!month) return 0;
@@ -678,6 +697,7 @@ export default function Dashboard() {
       if (!t) continue;
       if (!isCardTxn(t)) continue;
       if (normalizeDirectionFromTxn(t) !== "expense") continue;
+      if (isTransferCategory(t)) continue;
 
       const refYMD = resolveVizDateYMD(t);
       if (!refYMD) continue;
@@ -717,7 +737,7 @@ export default function Dashboard() {
     }
 
     return out;
-  }, [txns, month, vizInstallments, resolveVizDateYMD, resolveVizAmountExpense, isCardTxn]);
+  }, [txns, month, vizInstallments, resolveVizDateYMD, resolveVizAmountExpense, isCardTxn, isTransferCategory]);
 
   const chartStack = useMemo(() => {
     if (!month) return { data: [], catKeys: [], catMeta: new Map() };
