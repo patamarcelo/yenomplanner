@@ -23,6 +23,8 @@ import LockRoundedIcon from "@mui/icons-material/LockRounded";
 
 import { signupThunk, meThunk, selectAuthStatus, selectAuthError } from "../store/authSlice";
 
+import { trackEvent } from "../utils/analytics";
+
 function normalizePhoneBR(v) {
     return String(v || "").replace(/\D/g, "").slice(0, 11);
 }
@@ -72,6 +74,8 @@ export default function RegisterPage() {
     async function handleSubmit(e) {
         e.preventDefault();
         setLocalError("");
+        trackEvent("cta_register_subnit_clicked", { location: "register_page" })
+        
 
         const msg = validate();
         if (msg) {

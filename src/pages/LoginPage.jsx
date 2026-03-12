@@ -111,6 +111,7 @@ export default function LoginPage() {
         // preenche visualmente para o usuário ver o que entrou
         setEmail(TOUR_EMAIL);
         setPassword(TOUR_PASS);
+        trackEvent("tour_login_clicked", { method: "login" });
         await doLogin(TOUR_EMAIL, TOUR_PASS);
     }
 
@@ -253,6 +254,7 @@ export default function LoginPage() {
                                 to="/register"
                                 variant="body2"
                                 sx={{ fontWeight: 900, textDecoration: "none" }}
+                                onClick={() => trackEvent("cta_register_clicked", { location: "login_page" })}
                             >
                                 Criar conta
                             </Typography>

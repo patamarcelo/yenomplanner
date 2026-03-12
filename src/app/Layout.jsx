@@ -57,6 +57,8 @@ import { fetchBillsThunk } from "../store/billsSlice.js";
 
 import { Toaster } from "react-hot-toast";
 
+import { trackEvent } from "../utils/analytics.js";
+
 const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
 
 const DRAWER_EXPANDED = 230;
@@ -410,6 +412,8 @@ export default function Layout({ children }) {
 
     dispatch(logout());
     dispatch({ type: "app/reset" });
+
+    trackEvent("logout_clicked");
 
     navigate("/login", { replace: true });
   }

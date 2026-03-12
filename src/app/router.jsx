@@ -1,4 +1,3 @@
-// src/routes/router.jsx
 import React, { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "./App";
@@ -16,8 +15,8 @@ const BillsPage = lazy(() => import("../pages/BillsPage"));
 
 const CadastrosPage = lazy(() => import("../pages/CadastrosPage"));
 const CategoriasPage = lazy(() => import("../pages/CategoriasPage"));
+const SupportPage = lazy(() => import("../pages/SupportPage"));
 
-// ✅ NOVO: reset password page
 const ResetPasswordPage = lazy(() => import("../pages/ResetPasswordPage"));
 
 const wrap = (el) => <Suspense fallback={null}>{el}</Suspense>;
@@ -27,9 +26,6 @@ export const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
-      // -------------------------
-      // Private / App routes
-      // -------------------------
       { index: true, element: wrap(<Dashboard />) },
       { path: "lancamentos", element: wrap(<Transactions />) },
       { path: "faturas", element: wrap(<Invoices />) },
@@ -39,24 +35,17 @@ export const router = createBrowserRouter([
 
       { path: "cadastros", element: wrap(<CadastrosPage />) },
       { path: "cadastros/categorias", element: wrap(<CategoriasPage />) },
+      { path: "cadastros/suporte", element: wrap(<SupportPage />) },
 
-      // -------------------------
-      // Public routes (AuthShell)
-      // -------------------------
       {
         element: <AuthShell />,
         children: [
           { path: "login", element: <LoginPage /> },
           { path: "register", element: <RegisterPage /> },
-
-          // ✅ link do e-mail: /reset-password?uid=...&token=...
           { path: "reset-password", element: wrap(<ResetPasswordPage />) },
         ],
       },
 
-      // -------------------------
-      // Fallback
-      // -------------------------
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

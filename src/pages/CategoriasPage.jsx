@@ -1,5 +1,4 @@
-// src/pages/CategoriasPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Stack,
@@ -19,10 +18,12 @@ import {
 import Autocomplete from "@mui/material/Autocomplete";
 import { DataGrid } from "@mui/x-data-grid";
 import { alpha } from "@mui/material/styles";
+import { useNavigate } from "react-router-dom";
 
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 
 import { useDispatch, useSelector } from "react-redux";
 import Swal from "sweetalert2";
@@ -41,8 +42,6 @@ import {
   selectCategoriesDeleting,
 } from "../store/categoriesSlice";
 import CategorySuggestions from "../components/categories/CategorySuggestions";
-
-// ✅ catálogo compatível com Google Fonts (Material Symbols Rounded)
 import ICONS from "../data/materialSymbols.font.ptBR.json";
 
 function MsIcon({ name, size = 18, color = "inherit" }) {
@@ -73,7 +72,6 @@ function MsIcon({ name, size = 18, color = "inherit" }) {
   );
 }
 
-// ranking: começa-com (name/tags) > contém (name/tags) > tokens
 function scoreOpt(q, opt) {
   const query = String(q || "").trim().toLowerCase();
   if (!query) return 0;
@@ -258,13 +256,13 @@ function CategoryDialog({ open, onClose, initial }) {
           fontWeight: 950,
           color: "whitesmoke",
           p: 2,
-          // bgcolor: "blue",
           borderTopLeftRadius: 16,
           borderTopRightRadius: 16,
-          "& .MuiTypography-root": { fontWeight: 950, lineHeight: 1.15, p:2 },
+          "& .MuiTypography-root": { fontWeight: 950, lineHeight: 1.15, p: 2 },
         }}
-
-      >{isEdit ? "Editar categoria" : "Nova categoria"}</DialogTitle>
+      >
+        {isEdit ? "Editar categoria" : "Nova categoria"}
+      </DialogTitle>
 
       <DialogContent>
         <Stack spacing={1.2} sx={{ mt: 2 }}>
@@ -287,7 +285,7 @@ function CategoryDialog({ open, onClose, initial }) {
               setIconQuery(v);
             }}
             getOptionLabel={(opt) => (typeof opt === "string" ? opt : opt?.name || "")}
-            filterOptions={(x) => x} // já filtramos (top 40)
+            filterOptions={(x) => x}
             ListboxProps={{ style: { maxHeight: 420 } }}
             renderOption={(props, opt) => {
               const o = typeof opt === "string" ? { name: opt, tags: [] } : opt;
@@ -358,7 +356,7 @@ function CategoryDialog({ open, onClose, initial }) {
 
           {isEdit ? (
             <Alert severity="info">
-              O <b>slug</b> não será alterado (Bills usam slug como categoryId).
+              O <b>slug</b> não será alterado.
             </Alert>
           ) : null}
         </Stack>
@@ -378,6 +376,8 @@ function CategoryDialog({ open, onClose, initial }) {
 
 export default function CategoriasPage() {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
+
   const rows = useSelector(selectCategories);
   const status = useSelector(selectCategoriesStatus);
   const error = useSelector(selectCategoriesError);
@@ -385,6 +385,8 @@ export default function CategoriasPage() {
 
   const [openNew, setOpenNew] = useState(false);
   const [edit, setEdit] = useState(null);
+
+  const didAutoSeedRef = useRef(false);
 
   useEffect(() => {
     dispatch(fetchCategoriesThunk());
@@ -397,59 +399,57 @@ export default function CategoriasPage() {
     py: 2,
   };
 
-  const DEFAULT_CATEGORIES = [
-    { name: "Casa", icon: "home", color: "#22c55e" },
-    { name: "Mercado", icon: "shopping_cart", color: "#f59e0b" },
-    { name: "Assinaturas", icon: "subscriptions", color: "#a855f7" },
-    { name: "Transporte", icon: "directions_car", color: "#06b6d4" },
-    { name: "Saúde", icon: "favorite", color: "#ef4444" },
-    { name: "Lazer", icon: "sports_esports", color: "#3b82f6" },
-    { name: "Outros", icon: "more_horiz", color: "#64748b" },
-  ];
+  function normName(s) {
+    return String(s || "").trim().toLowerCase();
+  }
+
+  const DEFAULT_CATEGORIES = useMemo(
+    () => [
+      { name: "Casa", icon: "home", color: "#22c55e" },
+      { name: "Mercado", icon: "shopping_cart", color: "#f59e0b" },
+      { name: "Assinaturas", icon: "subscriptions", color: "#a855f7" },
+      { name: "Transporte", icon: "directions_car", color: "#06b6d4" },
+      { name: "Transferência", icon: "currency_exchange", color: "#0000ff" },
+      { name: "Saúde", icon: "favorite", color: "#ef4444" },
+      { name: "Lazer", icon: "sports_esports", color: "#3b82f6" },
+      { name: "Outros", icon: "more_horiz", color: "#64748b" },
+    ],
+    []
+  );
 
   const existingNames = useMemo(() => {
     return new Set((rows || []).map((c) => normName(c.name)));
   }, [rows]);
 
-  const hasMissingDefaults = useMemo(() => {
-    return DEFAULT_CATEGORIES.some((c) => !existingNames.has(normName(c.name)));
-  }, [existingNames]);
+  useEffect(() => {
+    if (status !== "succeeded") return;
+    if (didAutoSeedRef.current) return;
 
-  function normName(s) {
-    return String(s || "").trim().toLowerCase();
-  }
-
-  async function handleSeedDefaults() {
-    const existing = new Set((rows || []).map((c) => normName(c.name)));
-    const missing = DEFAULT_CATEGORIES.filter((c) => !existing.has(normName(c.name)));
-
+    const missing = DEFAULT_CATEGORIES.filter((c) => !existingNames.has(normName(c.name)));
     if (missing.length === 0) {
-      Swal.fire({ title: "Já existe", text: "As categorias padrão já estão cadastradas.", icon: "info" });
+      didAutoSeedRef.current = true;
       return;
     }
 
-    const res = await Swal.fire({
-      title: "Popular categorias padrão?",
-      html: `Serão criadas <b>${missing.length}</b> categorias (as que ainda não existem).`,
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: "Criar",
-      cancelButtonText: "Cancelar",
-      reverseButtons: true,
-    });
+    didAutoSeedRef.current = true;
 
-    if (!res.isConfirmed) return;
-
-    try {
-      for (const c of missing) {
-        await dispatch(createCategoryThunk({ ...c, active: true })).unwrap();
+    (async () => {
+      try {
+        for (const c of missing) {
+          await dispatch(createCategoryThunk({ ...c, active: true })).unwrap();
+        }
+        dispatch(fetchCategoriesThunk());
+      } catch (e) {
+        console.error("Erro ao popular categorias padrão automaticamente:", e);
       }
-      Swal.fire({ title: "Pronto!", text: "Categorias padrão criadas.", icon: "success", timer: 1200, showConfirmButton: false });
-      dispatch(fetchCategoriesThunk());
-    } catch (e) {
-      Swal.fire({ title: "Erro", text: e?.detail || "Falha ao criar categorias.", icon: "error" });
-    }
-  }
+    })();
+  }, [dispatch, status, existingNames, DEFAULT_CATEGORIES]);
+
+  const missingDefaults = useMemo(() => {
+    return DEFAULT_CATEGORIES.filter((c) => !existingNames.has(normName(c.name)));
+  }, [DEFAULT_CATEGORIES, existingNames]);
+
+  const shouldShowSuggestions = missingDefaults.length > 0;
 
   const columns = useMemo(() => {
     return [
@@ -498,7 +498,15 @@ export default function CategoriasPage() {
         width: 130,
         renderCell: (params) => {
           const on = params.value !== false;
-          return <Chip size="small" label={on ? "Ativa" : "Inativa"} variant={on ? "filled" : "outlined"} color={on ? "success" : "default"} sx={{ fontWeight: 900 }} />;
+          return (
+            <Chip
+              size="small"
+              label={on ? "Ativa" : "Inativa"}
+              variant={on ? "filled" : "outlined"}
+              color={on ? "success" : "default"}
+              sx={{ fontWeight: 900 }}
+            />
+          );
         },
       },
       {
@@ -558,13 +566,12 @@ export default function CategoriasPage() {
     ];
   }, [dispatch, deleting]);
 
-  // ✅ altura de página (sem “grid baixinho”)
   const gridHeight = "calc(100vh - 220px)";
 
   return (
     <Box sx={pageSx}>
       <Stack spacing={1.2}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} flexWrap="wrap">
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 950 }}>
               Categorias
@@ -575,13 +582,20 @@ export default function CategoriasPage() {
           </Box>
 
           <Stack direction="row" spacing={1} alignItems="center">
-            {hasMissingDefaults ? (
-              <Button variant="outlined" sx={{ fontWeight: 950 }} onClick={handleSeedDefaults}>
-                Popular padrões
-              </Button>
-            ) : null}
+            <Button
+              variant="outlined"
+              startIcon={<ArrowBackRoundedIcon />}
+              onClick={() => navigate("/cadastros")}
+            >
+              Voltar
+            </Button>
 
-            <Button variant="contained" startIcon={<AddRoundedIcon />} sx={{ fontWeight: 950 }} onClick={() => setOpenNew(true)}>
+            <Button
+              variant="contained"
+              startIcon={<AddRoundedIcon />}
+              sx={{ fontWeight: 950 }}
+              onClick={() => setOpenNew(true)}
+            >
               Nova categoria
             </Button>
           </Stack>
@@ -615,7 +629,7 @@ export default function CategoriasPage() {
           </>
         )}
 
-        <CategorySuggestions />
+        {shouldShowSuggestions ? <CategorySuggestions /> : null}
 
         <CategoryDialog open={openNew} onClose={() => setOpenNew(false)} initial={null} />
         <CategoryDialog open={!!edit} onClose={() => setEdit(null)} initial={edit} />
