@@ -27,6 +27,9 @@ import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 
 import DashboardChart from "../components/DashboardChart";
 import DashboardChartNivo from "../components/DashboardChartNivo";
+import DashboardMonthlyPace from "../components/DashboardMonthlyPace";
+
+
 
 // =============================
 // DEBUG
@@ -583,7 +586,7 @@ export default function Dashboard() {
 
     return out;
   }, [txns, month, targetInvoiceYM, getTxnMonthKey, isTransferCategory]);
-  
+
 
   const totalEntradaMes = useMemo(() => {
     if (!month) return 0;
@@ -1331,6 +1334,31 @@ export default function Dashboard() {
             </Stack>
           </CardContent>
         </Card>
+      </Box>
+
+      <Box
+        sx={{
+          width: "100%",
+          display: "grid",
+          gap: 2,
+          alignItems: "stretch",
+          gridTemplateColumns: { xs: "1fr" },
+        }}
+      >
+        <DashboardMonthlyPace
+          month={month}
+          transactions={txns}
+          money={money}
+          cardBg={cardBg}
+          getDateYMD={resolveVizDateYMD}
+          getExpenseAmount={resolveVizAmountExpense}
+          isExcluded={(t) => {
+            const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
+            if (billId) return true;
+            if (isTransferCategory(t)) return true;
+            return false;
+          }}
+        />
       </Box>
 
       <Box
