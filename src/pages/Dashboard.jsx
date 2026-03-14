@@ -29,8 +29,6 @@ import DashboardChart from "../components/DashboardChart";
 import DashboardChartNivo from "../components/DashboardChartNivo";
 import DashboardMonthlyPace from "../components/DashboardMonthlyPace";
 
-
-
 // =============================
 // DEBUG
 // =============================
@@ -51,9 +49,6 @@ const dbgGroup = (title, fn) => {
 // =============================
 // Helpers minimalistas
 // =============================
-
-
-
 function normalizeISODate(d) {
   if (!d) return "";
   if (d instanceof Date && !isNaN(d.getTime())) {
@@ -106,7 +101,8 @@ function normalizeDirectionFromTxn(t) {
 }
 
 function signedAmountNormalized(t) {
-  const v = Number(t?.amount ?? t?.value ?? 0);
+  const cents = typeof t?.amount_cents !== "undefined" ? Number(t.amount_cents) / 100 : null;
+  const v = Number(t?.amount ?? t?.value ?? cents ?? 0);
   const abs = Math.abs(v);
   if (v < 0) return v;
   return normalizeDirectionFromTxn(t) === "income" ? abs : -abs;
@@ -215,9 +211,11 @@ function monthsDiffYM(fromYM, toYM) {
   const a = String(fromYM || "").match(/^(\d{4})-(\d{2})$/);
   const b = String(toYM || "").match(/^(\d{4})-(\d{2})$/);
   if (!a || !b) return 0;
-  const y1 = Number(a[1]), m1 = Number(a[2]);
-  const y2 = Number(b[1]), m2 = Number(b[2]);
-  return (y2 * 12 + (m2 - 1)) - (y1 * 12 + (m1 - 1));
+  const y1 = Number(a[1]);
+  const m1 = Number(a[2]);
+  const y2 = Number(b[1]);
+  const m2 = Number(b[2]);
+  return y2 * 12 + (m2 - 1) - (y1 * 12 + (m1 - 1));
 }
 
 function getInstallmentIndex(t) {
@@ -227,6 +225,7 @@ function getInstallmentIndex(t) {
     t?.installmentNo ??
     t?.installment_no ??
     t?.installment ??
+    t?.installment_current ??
     1
   );
   return Number.isFinite(n) && n > 0 ? n : 1;
@@ -239,6 +238,7 @@ function getInstallmentsTotal(t) {
     t?.installments ??
     t?.totalInstallments ??
     t?.installmentsCount ??
+    t?.installment_total ??
     0
   );
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -390,12 +390,7 @@ function StackedDayTooltip({ active, payload, catMeta, money, theme }) {
       }}
     >
       <Stack spacing={0.8}>
-        <Stack
-          direction="row"
-          justifyContent="space-between"
-          alignItems="baseline"
-          sx={{ my: 3 }}
-        >
+        <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ my: 3 }}>
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>Dia {brFromISO(sp)}</Typography>
           <Typography sx={{ fontWeight: 950, fontSize: 12 }}>{money(total)}</Typography>
         </Stack>
@@ -448,34 +443,36 @@ export default function Dashboard() {
   const theme = useTheme();
 
   const month = useSelector((s) => s.finance.month);
-  const txns = useSelector(selectTransactionsUi);
-  const accounts = useSelector((s) => s.accounts.accounts);
+  const txns = useSelector(selectTransactionsUi) || [];
+  const accounts = useSelector((s) => s.accounts.accounts || s.accounts.items || []);
+  const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
+  const bills = useSelector((s) => s.bills?.items || s.bills?.bills || []);
 
   const hideValues = useSelector(selectHideValues);
 
   const accountsStatus = useSelector((s) => s.accounts.status);
   const txStatus = useSelector((s) => s.transactions.status);
-  const bootstrapStatus = useSelector((s) => s.bootstrap.status);
+  const bootstrapStatus = useSelector((s) => s.bootstrap?.status || "idle");
+
   const isBootLoading = bootstrapStatus === "loading";
+  const isBootIdle = bootstrapStatus === "idle";
+  const isInitialLoading = (isBootLoading || isBootIdle) && !month;
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [showAllCards, setShowAllCards] = useState(false);
 
-  const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
-
   const hasAnyData =
     (accounts?.length || 0) > 0 ||
     (txns?.length || 0) > 0 ||
-    (categories?.length || 0) > 0;
+    (categories?.length || 0) > 0 ||
+    (bills?.length || 0) > 0;
 
   const [vizRef, setVizRef] = useState("purchase");
   const [vizInstallments, setVizInstallments] = useState("consolidate_purchase");
-  const [chartLib, setChartLib] = useState("recharts");
+  const [chartLib] = useState("recharts");
 
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
-
-
 
   const categoriesById = useMemo(() => {
     const m = new Map();
@@ -498,7 +495,6 @@ export default function Dashboard() {
       return catName === "transferencia" || catName === "transferência";
     };
   }, [categoriesById]);
-
 
   const onChangeVizRef = (_, v) => {
     if (!v) return;
@@ -587,7 +583,6 @@ export default function Dashboard() {
     return out;
   }, [txns, month, targetInvoiceYM, getTxnMonthKey, isTransferCategory]);
 
-
   const totalEntradaMes = useMemo(() => {
     if (!month) return 0;
 
@@ -614,8 +609,6 @@ export default function Dashboard() {
     );
   }, [monthTx]);
 
-  const bills = useSelector((s) => s.bills?.items || s.bills?.bills || []);
-
   const totalDespesasMensais = useMemo(() => {
     if (!month) return 0;
 
@@ -629,13 +622,23 @@ export default function Dashboard() {
         const kind = String(b?.kind || "").toLowerCase();
         if (kind === "cc_invoice" || kind === "credit_card_invoice") return false;
 
-        const start = String(b?.startMonth || "").slice(0, 7);
-        const end = String(b?.endMonth || "").slice(0, 7) || start;
+        const start = String(b?.startMonth || b?.start_month || "").slice(0, 7);
+        const end = String(b?.endMonth || b?.end_month || "").slice(0, 7) || start;
         if (!/^\d{4}-\d{2}$/.test(start)) return false;
 
         return ym >= start && ym <= end;
       })
-      .reduce((acc, b) => acc + Math.abs(Number(b?.defaultAmount || 0)), 0);
+      .reduce((acc, b) => {
+        const raw =
+          typeof b?.defaultAmount !== "undefined"
+            ? Number(b.defaultAmount)
+            : typeof b?.default_amount !== "undefined"
+              ? Number(b.default_amount)
+              : typeof b?.default_amount_cents !== "undefined"
+                ? Number(b.default_amount_cents) / 100
+                : 0;
+        return acc + Math.abs(raw || 0);
+      }, 0);
   }, [bills, month]);
 
   const totalAvulso = useMemo(() => {
@@ -740,7 +743,15 @@ export default function Dashboard() {
     }
 
     return out;
-  }, [txns, month, vizInstallments, resolveVizDateYMD, resolveVizAmountExpense, isCardTxn, isTransferCategory]);
+  }, [
+    txns,
+    month,
+    vizInstallments,
+    resolveVizDateYMD,
+    resolveVizAmountExpense,
+    isCardTxn,
+    isTransferCategory,
+  ]);
 
   const chartStack = useMemo(() => {
     if (!month) return { data: [], catKeys: [], catMeta: new Map() };
@@ -879,11 +890,7 @@ export default function Dashboard() {
     };
 
     const getDueDayFromAccount = (a) => {
-      const v =
-        a?.statement?.dueDay ??
-        a?.statement?.due_day ??
-        a?.dueDay ??
-        a?.due_day;
+      const v = a?.statement?.dueDay ?? a?.statement?.due_day ?? a?.dueDay ?? a?.due_day;
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     };
@@ -940,7 +947,19 @@ export default function Dashboard() {
     );
   }, [invoicesByCard]);
 
-  if ((isBootLoading || accountsStatus === "loading" || txStatus === "loading") && !hasAnyData) {
+  dbg("Dashboard states", {
+    bootstrapStatus,
+    accountsStatus,
+    txStatus,
+    hasAnyData,
+    txns: txns.length,
+    accounts: accounts.length,
+    categories: categories.length,
+    bills: bills.length,
+    month,
+  });
+
+  if ((isBootLoading || isBootIdle || isInitialLoading) && !hasAnyData) {
     return <Spinner status="loading" />;
   }
 
@@ -1351,6 +1370,7 @@ export default function Dashboard() {
           money={money}
           cardBg={cardBg}
           categoriesById={categoriesById}
+          loading={isBootLoading || txStatus === "loading"}
           isExcluded={(t) => {
             const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
             if (billId) return true;

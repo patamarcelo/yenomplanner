@@ -1,5 +1,5 @@
 // src/layouts/Layout.jsx
-import React, { useMemo, useState, useEffect, useRef, lazy, Suspense } from "react";
+import React, { useMemo, useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -44,19 +44,13 @@ import { toggleHideValues, selectHideValues } from "../store/uiSlice";
 import { alpha } from "@mui/material/styles";
 
 import { meThunk, logout, selectAuthUser } from "../store/authSlice";
+import { bootstrapThunk } from "../store/bootstrapThunk";
 
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
-import { fetchAccountsThunk } from "../store/accountsSlice.js";
-import { fetchAllTransactionsThunk } from "../store/transactionsSlice.js";
-import { fetchCategoriesThunk } from "../store/categoriesSlice.js";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 
-// ✅ bills
-import { fetchBillsThunk } from "../store/billsSlice.js";
-
 import { Toaster } from "react-hot-toast";
-
 import { trackEvent } from "../utils/analytics.js";
 
 const NewTransactionModal = lazy(() => import("../components/NewTransactionModal"));
@@ -64,6 +58,7 @@ const NewTransactionModal = lazy(() => import("../components/NewTransactionModal
 const DRAWER_EXPANDED = 230;
 const DRAWER_COLLAPSED = 76;
 const TOP_H = 64;
+const BOOTSTRAP_REFRESH_MS = 45 * 1000;
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon />, color: "#3b82f6" },
@@ -238,10 +233,8 @@ export default function Layout({ children }) {
   const currentUser = useSelector((s) => s.user.user);
   const authStatus = useSelector((s) => s.user.status);
 
-  const accountsStatus = useSelector((s) => s.accounts.status);
-  const billsStatus = useSelector((s) => s.bills.status);
-  const categoriesStatus = useSelector((s) => s.categories.status);
-  const transactionsStatus = useSelector((s) => s.transactions.status);
+  const bootstrapStatus = useSelector((s) => s.bootstrap?.status || "idle");
+  const bootstrapLastLoadedAt = useSelector((s) => s.bootstrap?.lastLoadedAt || null);
 
   const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -273,7 +266,7 @@ export default function Layout({ children }) {
 
   const activeIcon = location.pathname.startsWith("/cadastros") ? activeNav?.icon : null;
 
-  const bootstrappedRef = useRef(false);
+  const bootstrapInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!isMdUp) setMobileOpen(false);
@@ -314,14 +307,43 @@ export default function Layout({ children }) {
     writeStoredYM(month);
   }, [isPublicRoute, month, dispatch]);
 
+  const runBootstrap = useCallback(
+    async ({ force = false } = {}) => {
+      if (isPublicRoute) return;
+      if (!token) return;
+      if (!currentUser) return;
+      if (bootstrapInFlightRef.current) return;
+      if (bootstrapStatus === "loading") return;
+
+      if (!force && bootstrapLastLoadedAt) {
+        const elapsed = Date.now() - bootstrapLastLoadedAt;
+        if (elapsed < BOOTSTRAP_REFRESH_MS) return;
+      }
+
+      bootstrapInFlightRef.current = true;
+
+      try {
+        await dispatch(bootstrapThunk()).unwrap();
+      } catch (err) {
+        console.error("Erro no bootstrap:", err);
+      } finally {
+        bootstrapInFlightRef.current = false;
+      }
+    },
+    [
+      isPublicRoute,
+      token,
+      currentUser,
+      bootstrapStatus,
+      bootstrapLastLoadedAt,
+      dispatch,
+    ]
+  );
+
   useEffect(() => {
-    if (isPublicRoute) {
-      bootstrappedRef.current = false;
-      return;
-    }
+    if (isPublicRoute) return;
 
     if (!token) {
-      bootstrappedRef.current = false;
       navigate("/login", { replace: true });
       return;
     }
@@ -329,61 +351,57 @@ export default function Layout({ children }) {
     if (!currentUser && authStatus === "loading") return;
 
     if (!currentUser && authStatus !== "loading") {
-      bootstrappedRef.current = false;
-
       dispatch(meThunk())
         .unwrap()
         .catch(() => {
-          bootstrappedRef.current = false;
           dispatch(logout());
           navigate("/login", { replace: true });
         });
-
-      return;
     }
+  }, [isPublicRoute, token, currentUser, authStatus, dispatch, navigate]);
 
+  useEffect(() => {
     if (!currentUser) return;
-    if (bootstrappedRef.current) return;
 
-    const jobs = [];
+    if (bootstrapStatus === "idle" || bootstrapStatus === "failed") {
+      runBootstrap({ force: true });
+    }
+  }, [currentUser, bootstrapStatus, runBootstrap]);
 
-    if (accountsStatus !== "succeeded") {
-      jobs.push(dispatch(fetchAccountsThunk()).unwrap());
+  useEffect(() => {
+    if (!currentUser || isPublicRoute) return;
+
+    const isDashboardRoute = location.pathname === "/";
+    const isTransactionsRoute = location.pathname.startsWith("/lancamentos");
+
+    if (isDashboardRoute || isTransactionsRoute) {
+      runBootstrap();
+    }
+  }, [currentUser, isPublicRoute, location.pathname, runBootstrap]);
+
+  useEffect(() => {
+    if (isPublicRoute) return;
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && currentUser) {
+        runBootstrap();
+      }
     }
 
-    if (billsStatus !== "succeeded") {
-      jobs.push(dispatch(fetchBillsThunk()).unwrap());
+    function handleFocus() {
+      if (currentUser) {
+        runBootstrap();
+      }
     }
 
-    if (categoriesStatus !== "succeeded") {
-      jobs.push(dispatch(fetchCategoriesThunk()).unwrap());
-    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
 
-    if (!isMobile && transactionsStatus !== "succeeded") {
-      jobs.push(dispatch(fetchAllTransactionsThunk()).unwrap());
-    }
-
-    if (jobs.length === 0) {
-      bootstrappedRef.current = true;
-      return;
-    }
-
-    Promise.allSettled(jobs).finally(() => {
-      bootstrappedRef.current = true;
-    });
-  }, [
-    isPublicRoute,
-    token,
-    currentUser,
-    authStatus,
-    dispatch,
-    navigate,
-    isMobile,
-    accountsStatus,
-    billsStatus,
-    categoriesStatus,
-    transactionsStatus,
-  ]);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [isPublicRoute, currentUser, runBootstrap]);
 
   if (isPublicRoute) {
     return <Box sx={{ minHeight: "100vh" }}>{children}</Box>;
@@ -406,7 +424,6 @@ export default function Layout({ children }) {
   };
 
   function handleLogout() {
-    bootstrappedRef.current = false;
     setNewOpen(false);
     setMobileOpen(false);
 
