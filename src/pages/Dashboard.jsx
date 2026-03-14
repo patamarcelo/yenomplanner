@@ -1350,8 +1350,7 @@ export default function Dashboard() {
           transactions={txns}
           money={money}
           cardBg={cardBg}
-          getDateYMD={resolveVizDateYMD}
-          getExpenseAmount={resolveVizAmountExpense}
+          categoriesById={categoriesById}
           isExcluded={(t) => {
             const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
             if (billId) return true;

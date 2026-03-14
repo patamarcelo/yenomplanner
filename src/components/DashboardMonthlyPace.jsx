@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Divider,
@@ -104,6 +105,11 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
+function safeNum(v) {
+  const n = Number(v || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function defaultCardBg(theme, tone = "primary") {
   const map = {
     primary: theme.palette.primary.main,
@@ -116,14 +122,30 @@ function defaultCardBg(theme, tone = "primary") {
   const base = map[tone] || map.primary;
 
   return {
-    borderRadius: 1.2,
-    border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-    background: `linear-gradient(180deg, ${alpha(base, 0.07)}, ${alpha(
+    borderRadius: 1.25,
+    border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.05)",
+    background: `linear-gradient(180deg, ${alpha(base, 0.06)}, ${alpha(
       theme.palette.background.paper,
-      0.86
+      0.88
     )})`,
   };
+}
+
+function pickFallbackColor(theme, key) {
+  const palette = [
+    theme.palette.primary.main,
+    theme.palette.secondary.main,
+    theme.palette.info.main,
+    theme.palette.success.main,
+    theme.palette.warning.main,
+    theme.palette.error.main,
+  ];
+  let h = 0;
+  const s = String(key || "x");
+  for (let i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i);
+  const idx = Math.abs(h) % palette.length;
+  return palette[idx];
 }
 
 function MiniKpi({ icon: Icon, label, value, helper, tone = "primary" }) {
@@ -141,30 +163,30 @@ function MiniKpi({ icon: Icon, label, value, helper, tone = "primary" }) {
         const base = paletteMap[tone] || paletteMap.primary;
 
         return {
-          p: 1.35,
+          p: 1.2,
           borderRadius: 1.2,
-          border: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-          background: alpha(theme.palette.background.paper, 0.72),
+          border: `1px solid ${alpha(theme.palette.divider, 0.76)}`,
+          background: alpha(theme.palette.background.paper, 0.76),
           minHeight: 92,
-          boxShadow: `inset 0 0 0 1px ${alpha(base, 0.06)}`,
+          boxShadow: `inset 0 0 0 1px ${alpha(base, 0.05)}`,
         };
       }}
     >
-      <Stack spacing={0.65}>
-        <Stack direction="row" spacing={1} alignItems="center">
+      <Stack spacing={0.6}>
+        <Stack direction="row" spacing={0.9} alignItems="center">
           <Box
             sx={(theme) => ({
-              width: 32,
-              height: 32,
-              borderRadius: 1.6,
+              width: 30,
+              height: 30,
+              borderRadius: 1,
               display: "grid",
               placeItems: "center",
-              background: alpha(theme.palette.primary.main, 0.12),
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.16)}`,
+              background: alpha(theme.palette.primary.main, 0.1),
+              border: `1px solid ${alpha(theme.palette.primary.main, 0.12)}`,
               flexShrink: 0,
             })}
           >
-            {Icon ? <Icon sx={{ fontSize: 18 }} /> : null}
+            {Icon ? <Icon sx={{ fontSize: 17 }} /> : null}
           </Box>
 
           <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
@@ -177,7 +199,7 @@ function MiniKpi({ icon: Icon, label, value, helper, tone = "primary" }) {
             fontWeight: 950,
             fontSize: 20,
             lineHeight: 1.1,
-            letterSpacing: -0.4,
+            letterSpacing: -0.35,
           }}
         >
           {value}
@@ -197,19 +219,19 @@ function ChartTooltip({ active, payload, label, money }) {
   return (
     <Box
       sx={(theme) => ({
-        p: 1.2,
-        borderRadius: 1.5,
-        background: alpha(theme.palette.background.paper, 0.96),
-        border: `1px solid ${alpha(theme.palette.divider, 0.85)}`,
-        boxShadow: "0 16px 36px rgba(0,0,0,0.18)",
+        p: 1.15,
+        borderRadius: 1.1,
+        background: alpha(theme.palette.background.paper, 0.97),
+        border: `1px solid ${alpha(theme.palette.divider, 0.82)}`,
+        boxShadow: "0 12px 28px rgba(0,0,0,0.14)",
         minWidth: 210,
       })}
     >
-      <Typography sx={{ fontWeight: 900, mb: 0.8, fontSize: 12.5 }}>
+      <Typography sx={{ fontWeight: 900, mb: 0.75, fontSize: 12.5 }}>
         {String(label)}
       </Typography>
 
-      <Stack spacing={0.55}>
+      <Stack spacing={0.5}>
         {payload.map((item) => (
           <Stack
             key={String(item.dataKey)}
@@ -218,11 +240,11 @@ function ChartTooltip({ active, payload, label, money }) {
             spacing={1}
             alignItems="center"
           >
-            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+            <Stack direction="row" spacing={0.7} alignItems="center" sx={{ minWidth: 0 }}>
               <Box
                 sx={{
-                  width: 9,
-                  height: 9,
+                  width: 8,
+                  height: 8,
                   borderRadius: 999,
                   background: item.color,
                   flexShrink: 0,
@@ -241,11 +263,6 @@ function ChartTooltip({ active, payload, label, money }) {
       </Stack>
     </Box>
   );
-}
-
-function safeNum(v) {
-  const n = Number(v || 0);
-  return Number.isFinite(n) ? n : 0;
 }
 
 function getInstallmentsTotal(t) {
@@ -370,6 +387,22 @@ function buildMonthBuckets(baseMonth, monthsBack) {
   return { monthList, map };
 }
 
+function resolveCategoryInfo(t, categoriesById, theme) {
+  const rawId = String(t?.categoryId ?? t?.category_id ?? t?.category ?? "outros");
+  const cat = categoriesById?.get?.(rawId);
+
+  return {
+    key: String(cat?.id ?? rawId),
+    name: String(cat?.name ?? t?.categoryName ?? t?.categoria ?? rawId ?? "Outros"),
+    color: cat?.color || cat?.tint || null,
+    fallbackColor: pickFallbackColor(theme, rawId),
+  };
+}
+
+function formatPercentBR(v) {
+  return `${Number(v || 0).toFixed(1)}%`;
+}
+
 export default function DashboardMonthlyPace({
   month,
   transactions = [],
@@ -378,16 +411,24 @@ export default function DashboardMonthlyPace({
   title = "Ritmo de gastos",
   monthsBack = 6,
   isExcluded,
+  categoriesById,
 }) {
   const theme = useTheme();
   const resolvedCardBg = cardBg || defaultCardBg;
   const excludeResolver = isExcluded || (() => false);
 
   const [mode, setMode] = useState("purchase");
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
+  const [categorySortBy, setCategorySortBy] = useState("previous");
 
   const handleModeChange = (_, value) => {
     if (!value) return;
     setMode(value);
+  };
+
+  const handleCategorySortChange = (_, value) => {
+    if (!value) return;
+    setCategorySortBy(value);
   };
 
   const analysis = useMemo(() => {
@@ -395,6 +436,7 @@ export default function DashboardMonthlyPace({
       return {
         cutoffDay: 1,
         currentMonthLabel: "",
+        previousMonthLabel: "",
         currentSpent: 0,
         previousSpent: 0,
         projectedLinear: 0,
@@ -403,6 +445,8 @@ export default function DashboardMonthlyPace({
         currentInstallments: 0,
         barData: [],
         lineData: [],
+        categoryImpactRows: [],
+        categoryLineDataByKey: {},
       };
     }
 
@@ -412,6 +456,48 @@ export default function DashboardMonthlyPace({
     const cutoffDay = clamp(realTodayDay, 1, selectedMonthDays);
 
     const { monthList, map: monthsMap } = buildMonthBuckets(month, monthsBack);
+    const previousMonthYM = addMonthsYM(month, -1);
+
+    const categoryAcc = new Map();
+
+    function ensureCategoryRow(catInfo) {
+      if (!categoryAcc.has(catInfo.key)) {
+        categoryAcc.set(catInfo.key, {
+          key: catInfo.key,
+          name: catInfo.name,
+          color: catInfo.color || catInfo.fallbackColor,
+          currentTotal: 0,
+          previousTotal: 0,
+          currentDays: Array.from({ length: selectedMonthDays }, (_, idx) => ({
+            day: idx + 1,
+            value: 0,
+            cumulative: 0,
+          })),
+          previousDays: Array.from({ length: selectedMonthDays }, (_, idx) => ({
+            day: idx + 1,
+            value: 0,
+            cumulative: 0,
+          })),
+        });
+      }
+      return categoryAcc.get(catInfo.key);
+    }
+
+    function addToCategory(catInfo, refYM, day, amount) {
+      if (!catInfo?.key || !day || !amount) return;
+      if (refYM !== month && refYM !== previousMonthYM) return;
+      if (day < 1 || day > selectedMonthDays) return;
+
+      const row = ensureCategoryRow(catInfo);
+
+      if (refYM === month) {
+        row.currentTotal += amount;
+        row.currentDays[day - 1].value += amount;
+      } else if (refYM === previousMonthYM) {
+        row.previousTotal += amount;
+        row.previousDays[day - 1].value += amount;
+      }
+    }
 
     if (mode === "purchase") {
       const seenInstallments = new Set();
@@ -455,6 +541,9 @@ export default function DashboardMonthlyPace({
           if (kindBucket === "installment") bucket.installmentPartial += amount;
           else bucket.oneOffPartial += amount;
         }
+
+        const catInfo = resolveCategoryInfo(t, categoriesById, theme);
+        addToCategory(catInfo, purchaseYM, day, amount);
       }
     } else {
       for (const t of transactions || []) {
@@ -494,6 +583,9 @@ export default function DashboardMonthlyPace({
           if (kindBucket === "installment") bucket.installmentPartial += amount;
           else bucket.oneOffPartial += amount;
         }
+
+        const catInfo = resolveCategoryInfo(t, categoriesById, theme);
+        addToCategory(catInfo, refYM, day, amount);
       }
     }
 
@@ -523,10 +615,6 @@ export default function DashboardMonthlyPace({
       days: [],
     };
 
-    const previousMonthYM = addMonthsYM(month, -1);
-
-    
-    
     const previous = monthsMap.get(previousMonthYM) || {
       ym: previousMonthYM,
       full: 0,
@@ -570,6 +658,71 @@ export default function DashboardMonthlyPace({
       anterior: Number(safeNum(previous.days?.[day - 1]?.cumulative).toFixed(2)),
     }));
 
+    const categoryImpactRows = Array.from(categoryAcc.values())
+      .map((row) => {
+        let accCurr = 0;
+        let accPrev = 0;
+
+        const currentDays = row.currentDays.map((d) => {
+          accCurr += safeNum(d.value);
+          return {
+            ...d,
+            value: Number(safeNum(d.value).toFixed(2)),
+            cumulative: Number(accCurr.toFixed(2)),
+          };
+        });
+
+        const previousDays = row.previousDays.map((d) => {
+          accPrev += safeNum(d.value);
+          return {
+            ...d,
+            value: Number(safeNum(d.value).toFixed(2)),
+            cumulative: Number(accPrev.toFixed(2)),
+          };
+        });
+
+        const currentTotal = Number(safeNum(row.currentTotal).toFixed(2));
+        const previousTotal = Number(safeNum(row.previousTotal).toFixed(2));
+        const delta = Number((currentTotal - previousTotal).toFixed(2));
+
+        let pctVsPrevious = 0;
+        let isExtrapolated = false;
+        let hasPreviousBase = previousTotal > 0;
+
+        if (previousTotal > 0) {
+          pctVsPrevious = Number(((currentTotal / previousTotal) * 100).toFixed(1));
+          isExtrapolated = pctVsPrevious > 100;
+        } else if (currentTotal > 0) {
+          pctVsPrevious = 999.9;
+          isExtrapolated = true;
+          hasPreviousBase = false;
+        }
+
+        return {
+          key: row.key,
+          name: row.name,
+          color: row.color || pickFallbackColor(theme, row.key),
+          currentTotal,
+          previousTotal,
+          delta,
+          currentDays,
+          previousDays,
+          pctVsPrevious,
+          isExtrapolated,
+          hasPreviousBase,
+        };
+      })
+      .filter((row) => row.currentTotal > 0 || row.previousTotal > 0);
+
+    const categoryLineDataByKey = {};
+    categoryImpactRows.forEach((row) => {
+      categoryLineDataByKey[row.key] = lineDays.map((day) => ({
+        day,
+        atual: Number(safeNum(row.currentDays?.[day - 1]?.cumulative).toFixed(2)),
+        anterior: Number(safeNum(row.previousDays?.[day - 1]?.cumulative).toFixed(2)),
+      }));
+    });
+
     return {
       cutoffDay,
       currentMonthLabel: formatMonthBR(month),
@@ -582,8 +735,52 @@ export default function DashboardMonthlyPace({
       currentInstallments: Number(safeNum(current.installmentPartial).toFixed(2)),
       barData,
       lineData,
+      categoryImpactRows,
+      categoryLineDataByKey,
     };
-  }, [month, monthsBack, transactions, excludeResolver, mode]);
+  }, [month, monthsBack, transactions, excludeResolver, mode, categoriesById, theme]);
+
+  const sortedCategoryRows = useMemo(() => {
+    const rows = [...(analysis.categoryImpactRows || [])];
+    if (categorySortBy === "current") {
+      rows.sort((a, b) => {
+        if (b.currentTotal !== a.currentTotal) return b.currentTotal - a.currentTotal;
+        return b.previousTotal - a.previousTotal;
+      });
+      return rows;
+    }
+
+    rows.sort((a, b) => {
+      if (b.previousTotal !== a.previousTotal) return b.previousTotal - a.previousTotal;
+      return b.currentTotal - a.currentTotal;
+    });
+    return rows;
+  }, [analysis.categoryImpactRows, categorySortBy]);
+
+  const topCategoryRows = useMemo(() => {
+    return sortedCategoryRows.slice(0, 10);
+  }, [sortedCategoryRows]);
+
+  useEffect(() => {
+    if (!topCategoryRows.length) {
+      setSelectedCategoryKey("");
+      return;
+    }
+
+    const exists = topCategoryRows.some((r) => r.key === selectedCategoryKey);
+    if (!selectedCategoryKey || !exists) {
+      setSelectedCategoryKey(topCategoryRows[0].key);
+    }
+  }, [topCategoryRows, selectedCategoryKey]);
+
+  const selectedCategory =
+    topCategoryRows.find((r) => r.key === selectedCategoryKey) ||
+    sortedCategoryRows.find((r) => r.key === selectedCategoryKey) ||
+    null;
+
+  const selectedCategoryLineData = selectedCategory
+    ? analysis.categoryLineDataByKey?.[selectedCategory.key] || []
+    : [];
 
   const deltaTonePrev =
     analysis.deltaVsPrev > 0 ? "error" : analysis.deltaVsPrev < 0 ? "success" : "info";
@@ -597,16 +794,16 @@ export default function DashboardMonthlyPace({
 
   return (
     <Card sx={(t) => resolvedCardBg(t, "warning")}>
-      <CardContent sx={{ p: 2.25 }}>
+      <CardContent sx={{ p: 2 }}>
         <Stack spacing={2}>
           <Stack
             direction={{ xs: "column", lg: "row" }}
             justifyContent="space-between"
             alignItems={{ xs: "flex-start", lg: "center" }}
-            spacing={1.5}
+            spacing={1.4}
           >
-            <Stack spacing={0.35}>
-              <Typography sx={{ fontWeight: 950, letterSpacing: -0.4 }}>
+            <Stack spacing={0.3}>
+              <Typography sx={{ fontWeight: 950, letterSpacing: -0.35 }}>
                 {title}
               </Typography>
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
@@ -622,10 +819,11 @@ export default function DashboardMonthlyPace({
                 onChange={handleModeChange}
                 sx={{
                   "& .MuiToggleButton-root": {
-                    px: 1.2,
-                    py: 0.55,
+                    px: 1.15,
+                    py: 0.5,
                     fontWeight: 900,
                     textTransform: "none",
+                    borderRadius: 1,
                   },
                 }}
               >
@@ -638,7 +836,7 @@ export default function DashboardMonthlyPace({
           <Box
             sx={{
               display: "grid",
-              gap: 1.25,
+              gap: 1.15,
               gridTemplateColumns: {
                 xs: "1fr",
                 sm: "repeat(2, minmax(0, 1fr))",
@@ -687,13 +885,13 @@ export default function DashboardMonthlyPace({
 
           <Box
             sx={(theme) => ({
-              p: 1.2,
-              borderRadius: 1.2,
-              border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-              background: alpha(theme.palette.background.paper, 0.6),
+              p: 1.1,
+              borderRadius: 1.15,
+              border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
+              background: alpha(theme.palette.background.paper, 0.62),
             })}
           >
-            <Stack spacing={0.75}>
+            <Stack spacing={0.7}>
               <Stack
                 direction={{ xs: "column", sm: "row" }}
                 justifyContent="space-between"
@@ -714,7 +912,7 @@ export default function DashboardMonthlyPace({
                 sx={{
                   height: 8,
                   borderRadius: 999,
-                  background: alpha(theme.palette.info.main, 0.12),
+                  background: alpha(theme.palette.info.main, 0.1),
                   "& .MuiLinearProgress-bar": {
                     borderRadius: 999,
                   },
@@ -732,7 +930,7 @@ export default function DashboardMonthlyPace({
           <Box
             sx={{
               display: "grid",
-              gap: 2,
+              gap: 1.5,
               gridTemplateColumns: { xs: "1fr", xl: "1.05fr 1.4fr" },
               alignItems: "stretch",
             }}
@@ -741,13 +939,13 @@ export default function DashboardMonthlyPace({
               sx={(theme) => ({
                 minWidth: 0,
                 borderRadius: 1.2,
-                border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-                background: alpha(theme.palette.background.paper, 0.55),
-                p: 1.1,
+                border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
+                background: alpha(theme.palette.background.paper, 0.58),
+                p: 1,
               })}
             >
-              <Stack spacing={1}>
-                <Stack spacing={0.15}>
+              <Stack spacing={0.9}>
+                <Stack spacing={0.1}>
                   <Typography sx={{ fontWeight: 900, fontSize: 14 }}>
                     Comparativo até o dia {analysis.cutoffDay}
                   </Typography>
@@ -759,7 +957,7 @@ export default function DashboardMonthlyPace({
                 <Box sx={{ width: "100%", height: 290 }}>
                   <ResponsiveContainer>
                     <BarChart data={analysis.barData} barGap={6}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.25} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.2} />
                       <XAxis
                         dataKey="label"
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
@@ -772,13 +970,13 @@ export default function DashboardMonthlyPace({
                       <Bar
                         dataKey="mesFechado"
                         name="Mês fechado"
-                        radius={[8, 8, 0, 0]}
-                        fill={alpha(theme.palette.info.main, 0.26)}
+                        radius={[6, 6, 0, 0]}
+                        fill={alpha(theme.palette.info.main, 0.24)}
                       />
                       <Bar
                         dataKey="ateHoje"
                         name={`Até dia ${analysis.cutoffDay}`}
-                        radius={[8, 8, 0, 0]}
+                        radius={[6, 6, 0, 0]}
                         fill={theme.palette.primary.main}
                       />
                     </BarChart>
@@ -791,13 +989,13 @@ export default function DashboardMonthlyPace({
               sx={(theme) => ({
                 minWidth: 0,
                 borderRadius: 1.2,
-                border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-                background: alpha(theme.palette.background.paper, 0.55),
-                p: 1.1,
+                border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
+                background: alpha(theme.palette.background.paper, 0.58),
+                p: 1,
               })}
             >
-              <Stack spacing={1}>
-                <Stack spacing={0.15}>
+              <Stack spacing={0.9}>
+                <Stack spacing={0.1}>
                   <Typography sx={{ fontWeight: 900, fontSize: 14 }}>
                     Evolução acumulada por dia
                   </Typography>
@@ -809,7 +1007,7 @@ export default function DashboardMonthlyPace({
                 <Box sx={{ width: "100%", height: 290 }}>
                   <ResponsiveContainer>
                     <LineChart data={analysis.lineData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.22} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.18} />
                       <XAxis
                         dataKey="day"
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
@@ -821,7 +1019,7 @@ export default function DashboardMonthlyPace({
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <ReferenceLine
                         x={analysis.cutoffDay}
-                        stroke={alpha(theme.palette.text.secondary, 0.45)}
+                        stroke={alpha(theme.palette.text.secondary, 0.38)}
                         strokeDasharray="4 4"
                       />
                       <Line
@@ -846,6 +1044,311 @@ export default function DashboardMonthlyPace({
                 </Box>
               </Stack>
             </Box>
+          </Box>
+
+          <Divider />
+
+          <Box
+            sx={{
+              display: "grid",
+              gap: 1.5,
+              gridTemplateColumns: { xs: "1fr", xl: "1.05fr 1.4fr" },
+              alignItems: "stretch",
+            }}
+          >
+            <Box
+              sx={(theme) => ({
+                minWidth: 0,
+                borderRadius: 1.2,
+                border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
+                background: alpha(theme.palette.background.paper, 0.58),
+                p: 1,
+              })}
+            >
+              <Stack spacing={1}>
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "flex-start", sm: "center" }}
+                  spacing={1}
+                >
+                  <Stack spacing={0.1}>
+                    <Typography sx={{ fontWeight: 900, fontSize: 14 }}>
+                      Top 10 categorias
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                      barra = % do mês atual sobre o mês anterior
+                    </Typography>
+                  </Stack>
+
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={categorySortBy}
+                    onChange={handleCategorySortChange}
+                    sx={{
+                      "& .MuiToggleButton-root": {
+                        px: 1.05,
+                        py: 0.45,
+                        fontWeight: 900,
+                        textTransform: "none",
+                        borderRadius: 1,
+                      },
+                    }}
+                  >
+                    <ToggleButton value="previous">Ordenar: mês anterior</ToggleButton>
+                    <ToggleButton value="current">Ordenar: mês atual</ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
+
+                <Box sx={{ flex: 1, overflow: "auto", maxHeight: 430 }}>
+                  {topCategoryRows.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                      Sem categorias para comparar.
+                    </Typography>
+                  ) : (
+                    <Stack spacing={0}>
+                      {topCategoryRows.map((row, idx) => {
+                        const isSelected = selectedCategoryKey === row.key;
+                        const isPositive = row.delta > 0;
+                        const barColorBase = row.color || pickFallbackColor(theme, row.key);
+                        const barColor = row.isExtrapolated
+                          ? theme.palette.error.main
+                          : barColorBase;
+
+                        const progressValue = row.pctVsPrevious > 0 ? row.pctVsPrevious : 0;
+
+                        return (
+                          <React.Fragment key={row.key}>
+                            <Button
+                              onClick={() => setSelectedCategoryKey(row.key)}
+                              sx={(theme) => ({
+                                px: 0.7,
+                                py: 0.9,
+                                justifyContent: "flex-start",
+                                textTransform: "none",
+                                borderRadius: 1,
+                                color: "inherit",
+                                background: isSelected
+                                  ? alpha(theme.palette.primary.main, 0.07)
+                                  : "transparent",
+                                "&:hover": {
+                                  background: alpha(theme.palette.action.active, 0.045),
+                                },
+                              })}
+                            >
+                              <Box sx={{ width: "100%" }}>
+                                <Stack
+                                  direction="row"
+                                  spacing={1}
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                >
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.85}
+                                    alignItems="center"
+                                    sx={{ minWidth: 0, flex: 1 }}
+                                  >
+                                    <Box
+                                      sx={{
+                                        width: 9,
+                                        height: 9,
+                                        borderRadius: 999,
+                                        background: barColorBase,
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                    <Typography sx={{ fontWeight: 900, fontSize: 13 }} noWrap>
+                                      {row.name}
+                                    </Typography>
+                                  </Stack>
+
+                                  <Stack spacing={0} alignItems="flex-end" sx={{ ml: 1 }}>
+                                    <Typography
+                                      sx={{
+                                        fontWeight: 950,
+                                        fontSize: 13,
+                                        color: isPositive
+                                          ? "error.main"
+                                          : row.delta < 0
+                                            ? "success.main"
+                                            : "text.primary",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {row.delta >= 0 ? "+" : ""}
+                                      {money(row.delta)}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      sx={{ color: "text.secondary", fontWeight: 700 }}
+                                    >
+                                      {money(row.currentTotal)} vs {money(row.previousTotal)}
+                                    </Typography>
+                                  </Stack>
+                                </Stack>
+
+                                <Box sx={{ mt: 0.7 }}>
+                                  <LinearProgress
+                                    variant="determinate"
+                                    value={progressValue}
+                                    sx={{
+                                      height: 6,
+                                      borderRadius: 999,
+                                      background: alpha(barColor, 0.12),
+                                      overflow: "visible",
+                                      "& .MuiLinearProgress-bar": {
+                                        borderRadius: 999,
+                                        backgroundColor: alpha(barColor, 0.96),
+                                      },
+                                    }}
+                                  />
+                                </Box>
+
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  justifyContent="space-between"
+                                  spacing={0.4}
+                                  sx={{ mt: 0.5 }}
+                                >
+                                  <Typography
+                                    variant="caption"
+                                    sx={{
+                                      color: row.isExtrapolated ? "error.main" : "text.secondary",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    {row.hasPreviousBase
+                                      ? `${formatPercentBR(row.pctVsPrevious)} do mês anterior`
+                                      : "sem base no mês anterior"}
+                                  </Typography>
+
+                                  {row.isExtrapolated ? (
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        color: "error.main",
+                                        fontWeight: 900,
+                                      }}
+                                    >
+                                      acima de 100% do mês anterior
+                                    </Typography>
+                                  ) : null}
+                                </Stack>
+                              </Box>
+                            </Button>
+
+                            {idx < topCategoryRows.length - 1 ? (
+                              <Divider sx={{ opacity: 0.4 }} />
+                            ) : null}
+                          </React.Fragment>
+                        );
+                      })}
+                    </Stack>
+                  )}
+                </Box>
+              </Stack>
+            </Box>
+
+            <Box
+              sx={(theme) => ({
+                minWidth: 0,
+                borderRadius: 1.2,
+                border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
+                background: alpha(theme.palette.background.paper, 0.58),
+                p: 1,
+              })}
+            >
+              <Stack spacing={0.9}>
+                <Stack
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="baseline"
+                  spacing={1}
+                >
+                  <Stack spacing={0.1}>
+                    <Typography sx={{ fontWeight: 900, fontSize: 14 }}>
+                      {selectedCategory ? `Categoria: ${selectedCategory.name}` : "Categoria"}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                      acumulado atual vs mês anterior
+                    </Typography>
+                  </Stack>
+
+                  {selectedCategory ? (
+                    <Stack alignItems="flex-end" spacing={0}>
+                      <Typography
+                        sx={{
+                          fontWeight: 950,
+                          fontSize: 13,
+                          color:
+                            selectedCategory.delta > 0
+                              ? "error.main"
+                              : selectedCategory.delta < 0
+                                ? "success.main"
+                                : "text.primary",
+                        }}
+                      >
+                        {selectedCategory.delta >= 0 ? "+" : ""}
+                        {money(selectedCategory.delta)}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 700 }}>
+                        {money(selectedCategory.currentTotal)} vs {money(selectedCategory.previousTotal)}
+                      </Typography>
+                    </Stack>
+                  ) : null}
+                </Stack>
+
+                <Box sx={{ width: "100%", height: 320 }}>
+                  <ResponsiveContainer>
+                    <LineChart data={selectedCategoryLineData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.18} />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis hide />
+                      <Tooltip content={<ChartTooltip money={money} />} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <ReferenceLine
+                        x={analysis.cutoffDay}
+                        stroke={alpha(theme.palette.text.secondary, 0.38)}
+                        strokeDasharray="4 4"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="atual"
+                        name="Mês atual"
+                        stroke={selectedCategory?.color || theme.palette.primary.main}
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="anterior"
+                        name="Mês anterior"
+                        stroke={theme.palette.info.main}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Stack>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: "none" }}>
+            {typeof window !== "undefined" ? (
+              (() => {
+                window.debugComparativoCategorias = sortedCategoryRows || [];
+                return null;
+              })()
+            ) : null}
           </Box>
         </Stack>
       </CardContent>
