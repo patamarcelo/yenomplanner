@@ -7,6 +7,8 @@ import { setTransactionsFromBootstrap } from "./transactionsSlice";
 import { setBillsFromBootstrap } from "./billsSlice";
 import { setCategoriesFromBootstrap } from "./categoriesSlice";
 import { setInvoicesFromBootstrap } from "./invoicesSlice";
+import { mapAccountFromApi } from "../api/accountsApi";
+
 
 export const bootstrapThunk = createAsyncThunk(
     "bootstrap/load",
@@ -15,7 +17,7 @@ export const bootstrapThunk = createAsyncThunk(
             const data = await fetchBootstrap();
 
             if (data?.accounts) {
-                dispatch(setAccountsFromBootstrap(data.accounts));
+                dispatch(setAccountsFromBootstrap((data.accounts || []).map(mapAccountFromApi)));
             }
 
             if (data?.transactions) {
