@@ -1,6 +1,5 @@
 // src/components/TransactionsGridMobile.jsx
-import React, { useMemo, useState, useCallback } from "react";
-import { useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   Box,
   Stack,
@@ -18,15 +17,15 @@ import {
   Card,
   CardContent,
 } from "@mui/material";
-import { alpha, useTheme } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
 
 import EditRoundedIcon from "@mui/icons-material/EditRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
-import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
-import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import Fab from "@mui/material/Fab";
 
 import { useDispatch, useSelector } from "react-redux";
 import * as XLSX from "xlsx";
@@ -44,11 +43,6 @@ import SpinnerPage from "./ui/Spinner";
 import EditTxnDialog from "./transactions/EditTxnDialog";
 import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
 import TransactionsMobileFiltersSheet from "./TransactionsMobileFiltersSheet";
-
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import Fab from "@mui/material/Fab";
-
-
 
 /* =========================
    Helpers
@@ -75,6 +69,8 @@ const STATUS_META = {
     sx: { bgcolor: "rgba(211,47,47,0.14)", color: "#b71c1c" },
   },
 };
+
+const EMPTY_TXN = {};
 
 function getRowShape(row) {
   if (!row) return {};
@@ -175,7 +171,7 @@ function CategoryChip({ cat }) {
             style={{
               width: 10,
               height: 10,
-              borderRadius: 6,
+              borderRadius: 1,
               background: dot,
               display: "inline-block",
             }}
@@ -186,6 +182,7 @@ function CategoryChip({ cat }) {
         fontWeight: 900,
         borderColor: dot,
         bgcolor: alpha(dot, 0.1),
+        padding: 2,
         "& .MuiChip-icon": { marginLeft: 0 },
       }}
     />
@@ -210,6 +207,7 @@ function AccountChip({ accountId, accountsById }) {
       sx={{
         fontWeight: 850,
         borderRadius: 999,
+        padding: 2,
         borderColor: "rgba(0,0,0,0.10)",
         backgroundColor: acc.color || "rgba(0,0,0,0.04)",
         "& .MuiChip-icon": { marginLeft: "6px", marginRight: "-4px" },
@@ -217,15 +215,6 @@ function AccountChip({ accountId, accountsById }) {
       }}
     />
   );
-}
-
-function addMonthStr(ym, delta) {
-  const [y, m] = String(ym || "").split("-").map(Number);
-  if (!y || !m) return ym;
-  const d = new Date(y, m - 1 + delta, 1);
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `${yy}-${mm}`;
 }
 
 function monthLabelLong(ym) {
@@ -271,7 +260,7 @@ function MobileTxnCard({
     <Card
       variant="outlined"
       sx={{
-        borderRadius: 2,
+        borderRadius: 1,
         overflow: "hidden",
         borderColor: "rgba(0,0,0,0.08)",
         boxShadow: "0 2px 8px rgba(2,6,23,0.04)",
@@ -322,12 +311,7 @@ function MobileTxnCard({
             </Typography>
           </Stack>
 
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            gap={1}
-          >
+          <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
             <Stack direction="row" gap={0.55} flexWrap="wrap" sx={{ minWidth: 0, flex: 1 }}>
               <Chip
                 size="small"
@@ -420,7 +404,6 @@ function MobileTxnCard({
   );
 }
 
-
 export default function TransactionsGridMobile({
   rows,
   month,
@@ -428,7 +411,6 @@ export default function TransactionsGridMobile({
   onMonthFilterChange,
 }) {
   const dispatch = useDispatch();
-  const theme = useTheme();
 
   const categories = useSelector(selectCategories);
   const accounts = useSelector((s) => s.accounts?.accounts || []);
@@ -448,6 +430,7 @@ export default function TransactionsGridMobile({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
+  const [monthFilter, setMonthFilterState] = useState("");
   const [accountFilter, setAccountFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [kindFilter, setKindFilter] = useState("");
@@ -458,8 +441,6 @@ export default function TransactionsGridMobile({
   const [purchaseFrom, setPurchaseFrom] = useState("");
   const [purchaseTo, setPurchaseTo] = useState("");
   const [remainingMax, setRemainingMax] = useState("");
-
-  const [createOpen, setCreateOpen] = useState(false);
 
   const showToast = useCallback((message, severity = "success") => {
     setToast({ open: true, severity, message });
@@ -484,7 +465,7 @@ export default function TransactionsGridMobile({
     setPurchaseFrom(fmt(yesterday));
     setPurchaseTo(fmt(tomorrow));
 
-    // garante que os outros filtros começam limpos
+    setMonthFilterState("");
     setAccountFilter("");
     setCategoryFilter("");
     setKindFilter("");
@@ -494,6 +475,16 @@ export default function TransactionsGridMobile({
     setDescriptionQuery("");
     setRemainingMax("");
   }, []);
+
+
+  const setMonthFilter = useCallback(
+    (value) => {
+      const next = String(value || "");
+      setMonthFilterState(next);
+      onMonthFilterChange?.(next);
+    },
+    [onMonthFilterChange]
+  );
 
   const categoriesBySlug = useMemo(() => {
     const m = {};
@@ -523,16 +514,8 @@ export default function TransactionsGridMobile({
     return { accountsById };
   }, [accounts]);
 
-  const shiftRange = useCallback(
-    (delta) => {
-      const next = addMonthStr(month, delta);
-      onMonthFilterChange?.(next);
-    },
-    [month, onMonthFilterChange]
-  );
-
   const filteredRows = useMemo(() => {
-    const currentYM = String(month || "");
+    const currentYM = String(monthFilter || "");
 
     return safeRows.filter((raw) => {
       const row = getRowShape(raw);
@@ -569,7 +552,7 @@ export default function TransactionsGridMobile({
     });
   }, [
     safeRows,
-    month,
+    monthFilter,
     accountFilter,
     categoryFilter,
     kindFilter,
@@ -632,6 +615,11 @@ export default function TransactionsGridMobile({
     setDeleteTarget(getRowShape(row));
   }, []);
 
+  const handleCreate = useCallback(() => {
+    setDialogMode("create");
+    setEditingRow({});
+  }, []);
+
   const handleDialogSave = useCallback(
     async (payload) => {
       try {
@@ -671,6 +659,7 @@ export default function TransactionsGridMobile({
   }, [deleteTarget, runBusy, showToast]);
 
   const handleClearFilters = useCallback(() => {
+    setMonthFilter("");
     setAccountFilter("");
     setCategoryFilter("");
     setKindFilter("");
@@ -681,7 +670,7 @@ export default function TransactionsGridMobile({
     setPurchaseFrom("");
     setPurchaseTo("");
     setRemainingMax("");
-  }, []);
+  }, [setMonthFilter]);
 
   const handleExportXlsx = useCallback(() => {
     const wb = XLSX.utils.book_new();
@@ -718,17 +707,17 @@ export default function TransactionsGridMobile({
       new Blob([buf], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }),
-      `lancamentos-${month || "periodo"}.xlsx`
+      `lancamentos-${monthFilter || month || "periodo"}.xlsx`
     );
-  }, [filteredRows, categoriesBySlug, categoriesById, accountsIndex.accountsById, month]);
+  }, [filteredRows, categoriesBySlug, categoriesById, accountsIndex.accountsById, monthFilter, month]);
 
   return (
-    <Box sx={{ width: "100%" }}>
+    <Box sx={{ width: "100%", pb: 8 }}>
       <Stack spacing={1.15}>
         <Card
           variant="outlined"
           sx={{
-            borderRadius: 2,
+            borderRadius: 1,
             borderColor: "rgba(0,0,0,0.08)",
           }}
         >
@@ -743,39 +732,22 @@ export default function TransactionsGridMobile({
                     {filteredRows.length} itens
                   </Typography>
                 </Box>
-
-                <Stack direction="row" alignItems="center" gap={0.5}>
-                  <IconButton
-                    size="small"
-                    onClick={() => shiftRange(-1)}
-                    sx={{ width: 30, height: 30 }}
-                  >
-                    <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
-                  </IconButton>
-
-                  <Chip
-                    label={monthLabelLong(month)}
-                    sx={{
-                      height: 28,
-                      fontWeight: 900,
-                      bgcolor: alpha(theme.palette.primary.main, 0.08),
-                      "& .MuiChip-label": {
-                        px: 1.2,
-                      },
-                    }}
-                  />
-
-                  <IconButton
-                    size="small"
-                    onClick={() => shiftRange(1)}
-                    sx={{ width: 30, height: 30 }}
-                  >
-                    <ChevronRightRoundedIcon sx={{ fontSize: 20 }} />
-                  </IconButton>
-                </Stack>
               </Stack>
 
               <Stack direction="row" gap={0.7} flexWrap="wrap">
+                {monthFilter ? (
+                  <Chip
+                    size="small"
+                    label={`Mês fatura: ${monthLabelLong(monthFilter)}`}
+                    sx={{
+                      height: 26,
+                      fontWeight: 850,
+                      bgcolor: (t) => t.palette.primary.main + "14",
+                      color: "primary.main",
+                    }}
+                  />
+                ) : null}
+
                 <Chip
                   size="small"
                   label={`Entradas: ${formatBRL(totals.income)}`}
@@ -868,11 +840,13 @@ export default function TransactionsGridMobile({
       <TransactionsMobileFiltersSheet
         open={mobileFiltersOpen}
         onClose={() => setMobileFiltersOpen(false)}
+        monthFilter={monthFilter}
+        setMonthFilter={setMonthFilter}
+        invoiceMonthDefault={String(month || "").slice(0, 7)}
         purchaseFrom={purchaseFrom}
         setPurchaseFrom={setPurchaseFrom}
         purchaseTo={purchaseTo}
         setPurchaseTo={setPurchaseTo}
-        shiftRange={shiftRange}
         accountFilter={accountFilter}
         setAccountFilter={setAccountFilter}
         accounts={accounts}
@@ -894,15 +868,17 @@ export default function TransactionsGridMobile({
         setRemainingMax={setRemainingMax}
         handleClearFilters={handleClearFilters}
         STATUS_META={STATUS_META}
+        rows={rows}   // 👈 adicionar
       />
 
       <EditTxnDialog
+        key={`${dialogMode}-${editingRow?.id ?? "new"}`}
         open={!!editingRow}
         onClose={() => {
           setEditingRow(null);
         }}
         mode={dialogMode}
-        txn={editingRow || {}}
+        txn={editingRow || EMPTY_TXN}
         accounts={accounts || []}
         defaultAccountId={resolveAccountIdFast(editingRow)}
         onSave={handleDialogSave}
@@ -941,6 +917,22 @@ export default function TransactionsGridMobile({
           {toast.message}
         </Alert>
       </Snackbar>
+
+      <Fab
+        color="primary"
+        aria-label="novo lançamento"
+        onClick={handleCreate}
+        sx={{
+          position: "fixed",
+          right: 16,
+          bottom: 16,
+          width: 52,
+          height: 52,
+          boxShadow: "0 10px 24px rgba(25,118,210,0.28)",
+        }}
+      >
+        <AddRoundedIcon />
+      </Fab>
     </Box>
   );
 }
