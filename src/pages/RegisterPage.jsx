@@ -89,6 +89,7 @@ export default function RegisterPage() {
             first_name: firstName.trim(),
             last_name: lastName.trim(),
             fone: normalizePhoneBR(fone),
+            signup_source: "yenomplanner",
         };
 
         try {
