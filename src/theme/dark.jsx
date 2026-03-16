@@ -2,18 +2,18 @@ export const darkThemeSpec = {
   palette: {
     mode: "dark",
     background: {
-      default: "#0B0B0F",
-      paper: "#14141A",
+      default: "#111218",   // fundo geral (menos preto)
+      paper: "#1A1C24",     // cards
     },
     text: {
       primary: "#F2F2F7",
-      secondary: "rgba(242,242,247,0.65)",
+      secondary: "rgba(242,242,247,0.68)",
     },
     primary: { main: "#0A84FF" },
     success: { main: "#30D158" },
     warning: { main: "#FF9F0A" },
     error: { main: "#FF453A" },
-    divider: "rgba(242,242,247,0.10)",
+    divider: "rgba(255,255,255,0.08)",
   },
   shape: { borderRadius: 14 },
   typography: {
