@@ -9,6 +9,7 @@ import TrendingDownRoundedIcon from "@mui/icons-material/TrendingDownRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import CalendarMonthRoundedIcon from "@mui/icons-material/CalendarMonthRounded";
 import ViewWeekRoundedIcon from "@mui/icons-material/ViewWeekRounded";
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
 
 import { formatBRL } from "../utils/money";
@@ -295,42 +296,92 @@ function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
     <Card
       sx={(theme) => {
         const tones = {
-          good: theme.palette.success.main,
-          bad: theme.palette.error.main,
-          info: theme.palette.info.main,
-          neutral: theme.palette.text.primary,
+          good: {
+            main: theme.palette.success.main,
+            soft: alpha(theme.palette.success.main, theme.palette.mode === "dark" ? 0.18 : 0.10),
+            line: alpha(theme.palette.success.main, 0.9),
+          },
+          bad: {
+            main: theme.palette.error.main,
+            soft: alpha(theme.palette.error.main, theme.palette.mode === "dark" ? 0.18 : 0.10),
+            line: alpha(theme.palette.error.main, 0.9),
+          },
+          info: {
+            main: theme.palette.info.main,
+            soft: alpha(theme.palette.info.main, theme.palette.mode === "dark" ? 0.18 : 0.10),
+            line: alpha(theme.palette.info.main, 0.9),
+          },
+          neutral: {
+            main: theme.palette.mode === "dark" ? "#94a3b8" : "#64748b",
+            soft: alpha(theme.palette.mode === "dark" ? "#94a3b8" : "#64748b", theme.palette.mode === "dark" ? 0.16 : 0.10),
+            line: alpha(theme.palette.mode === "dark" ? "#94a3b8" : "#64748b", 0.9),
+          },
+          bank: {
+            main: theme.palette.mode === "dark" ? "#38bdf8" : "#0284c7",
+            soft: alpha(theme.palette.mode === "dark" ? "#38bdf8" : "#0284c7", theme.palette.mode === "dark" ? 0.18 : 0.10),
+            line: alpha(theme.palette.mode === "dark" ? "#38bdf8" : "#0284c7", 0.9),
+          },
+          warning: {
+            main: theme.palette.warning.main,
+            soft: alpha(theme.palette.warning.main, theme.palette.mode === "dark" ? 0.18 : 0.10),
+            line: alpha(theme.palette.warning.main, 0.9),
+          },
         };
+
         const accent = tones[tone] || tones.neutral;
 
         return {
           height: "100%",
-          borderRadius: 2,
-          border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-          boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+          borderRadius: 1.2,
+          border: `1px solid ${alpha(theme.palette.divider, 0.78)}`,
+          boxShadow: theme.palette.mode === "dark"
+            ? "0 10px 24px rgba(0,0,0,0.22)"
+            : "0 10px 26px rgba(15,23,42,0.06)",
           overflow: "hidden",
           position: "relative",
+          background: `linear-gradient(180deg, ${alpha(accent.main, 0.07)}, ${alpha(theme.palette.background.paper, 0.94)})`,
+          transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
           "&:before": {
             content: '""',
             position: "absolute",
-            inset: 0,
-            background: `linear-gradient(135deg, ${alpha(accent, 0.10)}, transparent 55%)`,
-            pointerEvents: "none",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            background: accent.line,
+          },
+          "&:hover": {
+            transform: "translateY(-1px)",
+            boxShadow: theme.palette.mode === "dark"
+              ? "0 14px 32px rgba(0,0,0,0.28)"
+              : "0 14px 32px rgba(15,23,42,0.08)",
+            borderColor: alpha(accent.main, 0.35),
           },
         };
       }}
     >
-      <CardContent sx={{ p: 2 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
-          <Stack spacing={0.45} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
+      <CardContent sx={{ p: 1.55 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.2}>
+          <Stack spacing={0.55} sx={{ minWidth: 0 }}>
+            <Typography
+              sx={{
+                color: "text.secondary",
+                fontWeight: 850,
+                fontSize: 11,
+                lineHeight: 1,
+                textTransform: "uppercase",
+                letterSpacing: 0.35,
+              }}
+            >
               {title}
             </Typography>
+
             <Typography
-              variant="h6"
               sx={{
                 fontWeight: 950,
-                letterSpacing: -0.4,
-                lineHeight: 1.1,
+                letterSpacing: -0.5,
+                lineHeight: 1.05,
+                fontSize: { xs: 19, sm: 20, md: 19, lg: 18 },
                 wordBreak: "break-word",
               }}
             >
@@ -340,15 +391,34 @@ function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
 
           {Icon ? (
             <Box
-              sx={(theme) => ({
-                width: 38,
-                height: 38,
-                borderRadius: 2,
-                display: "grid",
-                placeItems: "center",
-                border: `1px solid ${alpha(theme.palette.divider, 0.7)}`,
-                background: alpha(theme.palette.background.paper, 0.7),
-              })}
+              sx={(theme) => {
+                const tones = {
+                  good: theme.palette.success.main,
+                  bad: theme.palette.error.main,
+                  info: theme.palette.info.main,
+                  neutral: theme.palette.mode === "dark" ? "#94a3b8" : "#64748b",
+                  bank: theme.palette.mode === "dark" ? "#38bdf8" : "#0284c7",
+                  warning: theme.palette.warning.main,
+                };
+
+                const color = tones[tone] || tones.neutral;
+
+                return {
+                  width: 40,
+                  height: 40,
+                  minWidth: 40,
+                  borderRadius: 1.1,
+                  display: "grid",
+                  placeItems: "center",
+                  color,
+                  border: `1px solid ${alpha(color, 0.22)}`,
+                  background: alpha(color, theme.palette.mode === "dark" ? 0.16 : 0.10),
+                  boxShadow: `inset 0 1px 0 ${alpha("#fff", theme.palette.mode === "dark" ? 0.04 : 0.55)}`,
+                  "& .MuiSvgIcon-root": {
+                    fontSize: 20,
+                  },
+                };
+              }}
             >
               <Icon fontSize="small" />
             </Box>
@@ -650,6 +720,42 @@ export default function Dashboard() {
     );
   }, [monthTx]);
 
+  const totalAvulsoAccount = useMemo(() => {
+    if (!month) return 0;
+
+    return sum(
+      (txns || [])
+        .filter((t) => {
+          if (!t) return false;
+          if (normalizeDirectionFromTxn(t) !== "expense") return false;
+
+          const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
+          if (billId) return false;
+
+          if (isTransferCategory(t)) return false;
+          if (isInstallment(t)) return false;
+
+          const accId = resolveAccountIdFromTxn(t);
+          const acc = accId ? accountsById?.[String(accId)] : null;
+          const accType = String(acc?.type || "").toLowerCase();
+
+          if (accType === "credit_card") return false;
+
+          const d =
+            t?.purchaseDate ??
+            t?.purchase_date ??
+            t?.chargeDate ??
+            t?.charge_date ??
+            t?.date ??
+            t?.paidAt ??
+            t?.paid_at ??
+            "";
+
+          return ymFromISODate(d) === month;
+        })
+        .map((t) => Math.abs(Math.min(0, signedAmountNormalized(t))))
+    );
+  }, [txns, month, isTransferCategory, resolveAccountIdFromTxn, accountsById]);
   const totalParcelamento = useMemo(() => {
     return sum(
       monthTx
@@ -701,7 +807,10 @@ export default function Dashboard() {
 
     for (const t of txns || []) {
       if (!t) continue;
-      if (!isCardTxn(t)) continue;
+
+      const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
+      if (billId) continue;
+
       if (normalizeDirectionFromTxn(t) !== "expense") continue;
       if (isTransferCategory(t)) continue;
 
@@ -749,7 +858,6 @@ export default function Dashboard() {
     vizInstallments,
     resolveVizDateYMD,
     resolveVizAmountExpense,
-    isCardTxn,
     isTransferCategory,
   ]);
 
@@ -985,18 +1093,19 @@ export default function Dashboard() {
             xs: "1fr",
             sm: "repeat(2, 1fr)",
             md: "repeat(3, 1fr)",
-            lg: "repeat(6, minmax(0, 1fr))",
+            lg: "repeat(7, minmax(0, 1fr))",
           },
           gap: 2,
           width: "100%",
         }}
       >
         <KpiCard title="Total de entradas" value={money(totalEntradaMes)} icon={TrendingUpRoundedIcon} tone="good" />
-        <KpiCard title="Total de saídas" value={money(totalSaidaMes + totalDespesasMensais)} icon={TrendingDownRoundedIcon} tone="bad" />
+        <KpiCard title="Total de saídas" value={money(totalSaidaMes + totalDespesasMensais + totalAvulsoAccount)} icon={TrendingDownRoundedIcon} tone="bad" />
+        <KpiCard title="Despesas mensais" value={money(totalDespesasMensais)} icon={CalendarMonthRoundedIcon} tone="warning" />
         <KpiCard title="Total em cartões" value={money(totalCartoesMes)} icon={CreditCardRoundedIcon} tone="info" />
-        <KpiCard title="Despesas mensais" value={money(totalDespesasMensais)} icon={CalendarMonthRoundedIcon} tone="bad" />
-        <KpiCard title="Total avulso" value={money(totalAvulso)} icon={BoltRoundedIcon} tone="neutral" />
         <KpiCard title="Total parcelamento" value={money(totalParcelamento)} icon={ViewWeekRoundedIcon} tone="info" />
+        <KpiCard title="Total avulso" value={money(totalAvulso)} icon={BoltRoundedIcon} tone="neutral" />
+        <KpiCard title="Avulso CC" value={money(totalAvulsoAccount)} icon={AccountBalanceRoundedIcon} tone="bank" />
       </Box>
 
       <Box
@@ -1145,10 +1254,10 @@ export default function Dashboard() {
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 1,
-                                borderRadius: 1.5,
-                                px: 0.5,
+                                px: 0.45,
                                 transition: "background 140ms ease",
-                                "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
+                                borderRadius: 0.75,
+                                "&:hover": { background: alpha(t.palette.action.hover, 0.08) },
                               })}
                             >
                               <Box sx={{ width: 10, height: 10, borderRadius: 999, background: base, flexShrink: 0 }} />
@@ -1263,10 +1372,10 @@ export default function Dashboard() {
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 1,
-                                borderRadius: 1.5,
-                                px: 0.5,
+                                px: 0.45,
                                 transition: "background 140ms ease",
-                                "&:hover": { background: alpha(t.palette.action.hover, 0.7) },
+                                borderRadius: 0.75,
+                                "&:hover": { background: alpha(t.palette.action.hover, 0.08) },
                               })}
                             >
                               <Box

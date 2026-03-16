@@ -1,9 +1,22 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import { lightThemeSpec } from "./light.jsx";
 import { darkThemeSpec } from "./dark.jsx";
 
 const ThemeModeContext = createContext(null);
+
+const LS_THEME_MODE_KEY = "yp.themeMode";
+
+
+function readStoredThemeMode() {
+  try {
+    const stored = localStorage.getItem(LS_THEME_MODE_KEY);
+    return stored === "dark" || stored === "light" ? stored : "light";
+  } catch {
+    return "light";
+  }
+}
+
 
 function buildTheme(spec) {
   return createTheme({
@@ -34,8 +47,9 @@ function buildTheme(spec) {
             boxShadow:
               spec.palette.mode === "dark"
                 ? "var(--shadow-soft-dark)"
-                : "var(--shadow-soft)",
+                : "0 8px 24px rgba(15, 23, 42, 0.06)",
             border: `1px solid ${spec.palette.divider}`,
+            backgroundImage: "none",
           },
         },
       },
@@ -91,7 +105,7 @@ function buildTheme(spec) {
             background:
               spec.palette.mode === "dark"
                 ? "rgba(255,255,255,0.02)"
-                : "rgba(0,0,0,0.02)",
+                : "rgba(37,99,235,0.03)",
           },
           input: {
             paddingTop: 10,
@@ -149,7 +163,11 @@ function buildTheme(spec) {
           root: {
             boxShadow: "none",
             borderBottom: `1px solid ${spec.palette.divider}`,
-            background: spec.palette.background.paper,
+            background:
+              spec.palette.mode === "dark"
+                ? spec.palette.background.paper
+                : "rgba(255,255,255,0.82)",
+            backdropFilter: "blur(10px)",
             color: spec.palette.text.primary,
           },
         },
@@ -159,7 +177,10 @@ function buildTheme(spec) {
         styleOverrides: {
           paper: {
             borderRight: `1px solid ${spec.palette.divider}`,
-            background: spec.palette.background.paper,
+            background:
+              spec.palette.mode === "dark"
+                ? spec.palette.background.paper
+                : "#F8FAFC",
           },
         },
       },
@@ -167,7 +188,6 @@ function buildTheme(spec) {
       // ✅ DataGrid (se você usa): aqui costuma vir 50% do "tá tudo grande"
       MuiDataGrid: {
         defaultProps: {
-          // density: "compact",
           rowHeight: 36,
           columnHeaderHeight: 40,
         },
@@ -175,12 +195,25 @@ function buildTheme(spec) {
           root: {
             border: `1px solid ${spec.palette.divider}`,
             borderRadius: 14,
+            backgroundColor: spec.palette.background.paper,
           },
           cell: {
             outline: "none",
           },
           columnHeaders: {
             borderBottom: `1px solid ${spec.palette.divider}`,
+            background:
+              spec.palette.mode === "dark"
+                ? "rgba(255,255,255,0.03)"
+                : "#F8FAFC",
+          },
+          row: {
+            "&:hover": {
+              backgroundColor:
+                spec.palette.mode === "dark"
+                  ? "rgba(255,255,255,0.03)"
+                  : "rgba(15,23,42,0.025)",
+            },
           },
         },
       },
@@ -223,7 +256,18 @@ function buildTheme(spec) {
 }
 
 export function AppThemeProvider({ children }) {
-  const [mode, setMode] = useState("light");
+  const [mode, setMode] = useState(() => readStoredThemeMode());
+
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_THEME_MODE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }, [mode]);
+
+
 
   const theme = useMemo(() => {
     const spec = mode === "dark" ? darkThemeSpec : lightThemeSpec;

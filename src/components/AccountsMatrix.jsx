@@ -1,4 +1,3 @@
-// src/components/AccountsMatrix.jsx
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSelector } from "react-redux";
 import {
@@ -11,7 +10,6 @@ import {
     useTheme,
     IconButton,
     Collapse,
-    Button,
     Tooltip,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -19,6 +17,7 @@ import { alpha } from "@mui/material/styles";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
 import ReceiptLongRoundedIcon from "@mui/icons-material/ReceiptLongRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
+import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import UnfoldMoreRoundedIcon from "@mui/icons-material/UnfoldMoreRounded";
@@ -29,11 +28,7 @@ import { formatBRL } from "../utils/money";
 import { selectTransactionsUi } from "../store/transactionsSlice";
 import { selectBills } from "../store/billsSlice";
 import { selectHideValues } from "../store/uiSlice";
-
-
-
-
-
+import AccountsFlowTrend from "./AccountsFlowTrend";
 
 // -----------------------------
 // Month helpers (pt-BR)
@@ -133,6 +128,30 @@ function isLikelyInvoicePayment(t) {
     return false;
 }
 
+function isInstallmentTxn(t) {
+    const k = String(t?.kind || "").toLowerCase();
+    return ["installment", "parcelado", "parcela"].includes(k);
+}
+
+function resolveTxnPayeeLabel(t) {
+    return (
+        String(t?.merchant || "").trim() ||
+        String(t?.description || "").trim() ||
+        String(t?.supplier || t?.vendor || t?.fornecedor || "").trim() ||
+        "Sem favorecido"
+    );
+}
+
+function resolveTxnDateYMD(t) {
+    return (
+        normalizeISODate(t?.purchaseDate ?? t?.purchase_date) ||
+        normalizeISODate(t?.chargeDate ?? t?.charge_date) ||
+        normalizeISODate(t?.date ?? t?.refDate ?? t?.reference_date) ||
+        normalizeISODate(t?.paidAt ?? t?.paid_at) ||
+        normalizeISODate(t?.createdAt ?? t?.created_at)
+    );
+}
+
 function hashCode(str) {
     let h = 0;
     for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
@@ -159,7 +178,6 @@ function clamp01(x) {
 function parseColorToRgb(color) {
     const s = String(color || "").trim();
 
-    // #RGB / #RRGGBB
     if (s.startsWith("#")) {
         const hex = s.slice(1);
         if (hex.length === 3) {
@@ -176,13 +194,11 @@ function parseColorToRgb(color) {
         }
     }
 
-    // rgb(...) / rgba(...)
     const m = s.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
     if (m) {
         return { r: Number(m[1]) || 0, g: Number(m[2]) || 0, b: Number(m[3]) || 0 };
     }
 
-    // fallback: preto
     return { r: 0, g: 0, b: 0 };
 }
 
@@ -200,7 +216,6 @@ function lerpRgb(c1, c2, t) {
     return `rgb(${r},${g},${b2})`;
 }
 
-// 3 cores: verde (baixo) -> amarelo (meio) -> vermelho (alto)
 function heatColor3(theme, t01) {
     const t = clamp01(t01);
 
@@ -225,7 +240,6 @@ function computeHeatMeta(values, last12MonthKeys) {
         if (max === null || v > max) max = v;
     }
 
-    // se não tem range (tudo igual / vazio), não aplica heat
     if (min === null || max === null) return null;
     if (min === max) return null;
 
@@ -304,8 +318,9 @@ function billLabelForRow(b) {
 // -----------------------------
 // localStorage keys (UI prefs)
 // -----------------------------
-const LS_BILLS_OPEN = "ym_openBillsCats_v1"; // map catId -> boolean (true=open)
-const LS_BILLS_MODE = "ym_openBillsMode_v1"; // "open" | "closed"
+const LS_BILLS_OPEN = "ym_openBillsCats_v1";
+const LS_BILLS_MODE = "ym_openBillsMode_v1";
+const LS_AVULSO_CC_OPEN = "ym_openAvulsoCc_v1";
 
 // -----------------------------
 // Main component
@@ -314,14 +329,15 @@ export default function AccountsMatrix() {
     const theme = useTheme();
     const scrollRef = useRef(null);
 
-    // ✅ Redux
     const txns = useSelector(selectTransactionsUi) || [];
     const accounts = useSelector((s) => s.accounts.accounts) || [];
     const bills = useSelector(selectBills) || [];
+    const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
     const hideValues = useSelector(selectHideValues);
 
 
-    // ✅ UI: expand/collapse de categorias (bills) + persistência
+    const [matrixScrollLeft, setMatrixScrollLeft] = useState(0);
+
     const [openBillCats, setOpenBillCats] = useState(() => {
         try {
             const raw = localStorage.getItem(LS_BILLS_OPEN);
@@ -332,12 +348,30 @@ export default function AccountsMatrix() {
         }
     });
 
+    const categoriesById = useMemo(() => {
+        const map = new Map();
+        for (const c of categories || []) {
+            if (!c?.id) continue;
+            map.set(String(c.id), c);
+        }
+        return map;
+    }, [categories]);
+
     const [billsMode, setBillsMode] = useState(() => {
         try {
             const raw = localStorage.getItem(LS_BILLS_MODE);
             return raw === "open" || raw === "closed" ? raw : "open";
         } catch {
             return "open";
+        }
+    });
+
+    const [avulsoCcOpen, setAvulsoCcOpen] = useState(() => {
+        try {
+            const raw = localStorage.getItem(LS_AVULSO_CC_OPEN);
+            return raw === "1";
+        } catch {
+            return true;
         }
     });
 
@@ -353,15 +387,18 @@ export default function AccountsMatrix() {
         } catch { }
     }, [billsMode]);
 
+    useEffect(() => {
+        try {
+            localStorage.setItem(LS_AVULSO_CC_OPEN, avulsoCcOpen ? "1" : "0");
+        } catch { }
+    }, [avulsoCcOpen]);
+
     const toggleBillCat = useCallback((catId) => {
         const k = String(catId || "outros");
         setOpenBillCats((prev) => ({ ...(prev || {}), [k]: !prev?.[k] }));
     }, []);
 
-    // ✅ Soma por clique: seleção de células
-    // - guarda valores (numéricos) escolhidos
-    // - destaca célula selecionada
-    const [selectedCells, setSelectedCells] = useState(() => new Map()); // key -> { value, label }
+    const [selectedCells, setSelectedCells] = useState(() => new Map());
     const selectedSum = useMemo(() => {
         let s = 0;
         for (const it of selectedCells.values()) s += safeNum(it?.value);
@@ -383,23 +420,36 @@ export default function AccountsMatrix() {
 
     const isSelectedCell = useCallback((cellKey) => selectedCells.has(cellKey), [selectedCells]);
 
-    // focus sempre no mês/ano atual
+    const isTransferTxn = useCallback((t) => {
+        const catId = String(t?.categoryId ?? t?.category_id ?? t?.category ?? "").trim();
+        const cat = categoriesById.get(catId);
+
+        const catName = String(cat?.name || catId || "")
+            .trim()
+            .toLowerCase();
+
+        if (catName === "transferencia" || catName === "transferência") return true;
+
+        const desc = String(t?.description || t?.merchant || "").trim().toLowerCase();
+        if (desc.includes("transferencia") || desc.includes("transferência")) return true;
+
+        return false;
+    }, [categoriesById]);
+
     const now = new Date();
     const focusYear = now.getFullYear();
     const focusMonthIndex0 = now.getMonth();
 
-    // Layout tokens
     const COL_MONTH_W = 112;
     const COL_YEAR_TOTAL_W = 130;
     const COL_TOTAL_W = 140;
 
-    const COL_LABEL_MIN = 150; // 👈 um pouco maior, mas com ellipsis não estoura
-    const COL_LABEL_MAX = 120; // 👈 limite real para não “quebrar” o quadro
+    const COL_LABEL_MIN = 150;
+    const COL_LABEL_MAX = 120;
 
     const ROW_H = 36;
     const ROW_H_SECTION = Math.round(ROW_H * 0.82);
 
-    // cor estrutural (mais forte)
     const strongLine = theme.palette.primary.main;
     const strongBg = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.3 : 0.2);
     const strongBgSoft = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.24 : 0.16);
@@ -413,9 +463,6 @@ export default function AccountsMatrix() {
     const selectedBg = alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.25 : 0.16);
     const selectedBorder = `1px solid ${alpha(theme.palette.primary.main, 0.7)}`;
 
-    // -----------------------------
-    // ✅ Resolver de conta (reutilizável)
-    // -----------------------------
     const accountResolver = useMemo(() => {
         const accountsById = new Map();
         for (const a of accounts || []) accountsById.set(String(a.id), a);
@@ -456,9 +503,6 @@ export default function AccountsMatrix() {
         return { accountsById, resolveAccountIdFromTxn };
     }, [accounts]);
 
-    // -----------------------------
-    // 🔥 CARTÕES
-    // -----------------------------
     const cardsData = useMemo(() => {
         const creditCards = (accounts || []).filter((a) => a?.active && a?.type === "credit_card");
         const accountsById = accountResolver.accountsById;
@@ -559,9 +603,6 @@ export default function AccountsMatrix() {
         return { months, years, cardRows, cardsTotalValues };
     }, [accounts, txns, theme, focusYear, accountResolver]);
 
-    // -----------------------------
-    // ✅ RECEITAS (income)
-    // -----------------------------
     const everIncomeByAccId = useMemo(() => {
         const accountsById = accountResolver.accountsById;
         const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
@@ -682,14 +723,6 @@ export default function AccountsMatrix() {
         return { rows, totalByMonth };
     }, [txns, accounts, cardsData.months, accountResolver, everIncomeByAccId]);
 
-    // -----------------------------
-    // ✅ BILLS
-    // Regras:
-    // 1) Linha principal: SUBTOTAL por categoria
-    // 2) Clique na categoria: expande e mostra os fornecedores (consolidados por favorecido)
-    // 3) Dentro do favorecido: consolida mesmo favorecido
-    // 4) Botões “Abrir tudo / Fechar tudo” + persistência no navegador
-    // -----------------------------
     const billsData = useMemo(() => {
         const list = (bills || []).filter((b) => b?.active !== false).filter((b) => !billIsInvoice(b));
 
@@ -703,7 +736,7 @@ export default function AccountsMatrix() {
         const monthMin = months[0] || fallbackStart;
         const monthMax = months[months.length - 1] || fallbackEnd;
 
-        const byCat = new Map(); // catId -> { id, catId, label, values, __children: Map(payeeKey->child) }
+        const byCat = new Map();
 
         const ensureCatRow = (catId, label) => {
             const k = String(catId || "outros");
@@ -801,7 +834,72 @@ export default function AccountsMatrix() {
         return { months, catRows: cleanCatRows, childrenByCatId, totalByMonth };
     }, [bills, cardsData.months]);
 
-    // ✅ auto-preenche “openBillCats” com base no modo salvo (open/closed) quando categorias mudam
+    const avulsoCcData = useMemo(() => {
+        const months = (cardsData.months || []).map((m) => ymKey(m.year, m.monthIndex0));
+        const monthsSet = new Set(months);
+
+        const byPayee = new Map();
+        const totalByMonth = {};
+
+        for (const ym of months) totalByMonth[ym] = 0;
+
+        const accountsById = accountResolver.accountsById;
+        const resolveAccountIdFromTxn = accountResolver.resolveAccountIdFromTxn;
+
+        for (const t of txns || []) {
+            if (!t) continue;
+            if (isLikelyInvoicePayment(t)) continue;
+            if (resolvedDirection(t) !== "expense") continue;
+            if (isTransferTxn(t)) continue;
+
+            const billId = String(t?.billId ?? t?.bill_id ?? "").trim();
+            if (billId) continue;
+
+            if (isInstallmentTxn(t)) continue;
+
+            const accId = resolveAccountIdFromTxn(t);
+            const acc = accId ? accountsById.get(String(accId)) : null;
+            const accType = String(acc?.type || "").toLowerCase();
+
+            if (accType === "credit_card") continue;
+
+            const ymd = resolveTxnDateYMD(t);
+            const ym = ymd ? ymd.slice(0, 7) : "";
+            if (!ym || !monthsSet.has(ym)) continue;
+
+            const payeeLabel = resolveTxnPayeeLabel(t);
+            const payeeKey = normalizeTextKey(payeeLabel) || "sem_favorecido";
+
+            const value = Math.abs((centsFromTxn(t) || 0) / 100);
+            if (!value) continue;
+
+            let row = byPayee.get(payeeKey);
+            if (!row) {
+                row = {
+                    id: `avulso_cc_${payeeKey}`,
+                    payeeKey,
+                    label: payeeLabel,
+                    values: {},
+                };
+                byPayee.set(payeeKey, row);
+            }
+
+            row.values[ym] = Number((safeNum(row.values[ym]) + value).toFixed(2));
+            totalByMonth[ym] = Number((safeNum(totalByMonth[ym]) + value).toFixed(2));
+        }
+
+        const rows = Array.from(byPayee.values())
+            .map((r) => {
+                let total = 0;
+                for (const ym of months) total += safeNum(r.values[ym]);
+                return { ...r, __total: Number(total.toFixed(2)) };
+            })
+            .sort((a, b) => safeNum(b.__total) - safeNum(a.__total))
+            .map(({ __total, ...rest }) => rest);
+
+        return { months, rows, totalByMonth };
+    }, [txns, cardsData.months, accountResolver, isTransferTxn]);
+
     useEffect(() => {
         const cats = (billsData?.catRows || []).map((c) => String(c?.catId || "outros"));
         if (!cats.length) return;
@@ -812,12 +910,11 @@ export default function AccountsMatrix() {
 
             for (const catId of cats) {
                 if (typeof next[catId] !== "boolean") {
-                    next[catId] = billsMode === "open"; // default pelo modo salvo
+                    next[catId] = billsMode === "open";
                     changed = true;
                 }
             }
 
-            // remove cats que não existem mais
             for (const k of Object.keys(next)) {
                 if (!cats.includes(k)) {
                     delete next[k];
@@ -829,25 +926,6 @@ export default function AccountsMatrix() {
         });
     }, [billsData?.catRows, billsMode]);
 
-    const openAllBills = useCallback(() => {
-        const cats = (billsData?.catRows || []).map((c) => String(c?.catId || "outros"));
-        const next = {};
-        for (const id of cats) next[id] = true;
-        setBillsMode("open");
-        setOpenBillCats(next);
-    }, [billsData?.catRows]);
-
-    const closeAllBills = useCallback(() => {
-        const cats = (billsData?.catRows || []).map((c) => String(c?.catId || "outros"));
-        const next = {};
-        for (const id of cats) next[id] = false;
-        setBillsMode("closed");
-        setOpenBillCats(next);
-    }, [billsData?.catRows]);
-
-    // -----------------------------
-    // data
-    // -----------------------------
     const data = useMemo(() => {
         const months = cardsData.months || [];
         const emptyValues = {};
@@ -912,9 +990,27 @@ export default function AccountsMatrix() {
                         isCat: true,
                     })),
                 },
+                {
+                    id: "avulso_cc",
+                    kind: "section",
+                    label: "Avulsos CC",
+                    icon: <AccountBalanceRoundedIcon fontSize="small" />,
+                    headerRow: {
+                        id: "avulso_cc_total",
+                        label: "Avulsos CC (TOTAL)",
+                        values: avulsoCcData.totalByMonth || emptyValues,
+                        tone: "avulsoCc",
+                    },
+                    rows: (avulsoCcData.rows || []).map((r) => ({
+                        id: r.id,
+                        label: r.label,
+                        values: r.values,
+                        tone: "avulsoCcItem",
+                    })),
+                },
             ],
         };
-    }, [cardsData, billsData, incomeData]);
+    }, [cardsData, billsData, incomeData, avulsoCcData]);
 
     const months = data.months;
 
@@ -944,11 +1040,13 @@ export default function AccountsMatrix() {
     }, [columns]);
 
     const last12MonthSet = useMemo(() => new Set(last12MonthKeys), [last12MonthKeys]);
+
     useEffect(() => {
         if (!scrollRef.current) return;
         if (focusColIndex < 0) return;
         const x = focusColIndex * COL_MONTH_W;
         scrollRef.current.scrollLeft = Math.max(0, x - COL_MONTH_W * 1.5);
+        setMatrixScrollLeft(Math.max(0, x - COL_MONTH_W * 1.5));
     }, [focusColIndex]);
 
     const sumYear = (values, year) => {
@@ -969,13 +1067,36 @@ export default function AccountsMatrix() {
         const incomeValues = data.sections.find((s) => s.id === "income")?.headerRow?.values || {};
         const cardsValues = data.sections.find((s) => s.id === "cards")?.headerRow?.values || {};
         const billsValues = data.sections.find((s) => s.id === "bills")?.headerRow?.values || {};
+        const avulsoCcValues = data.sections.find((s) => s.id === "avulso_cc")?.headerRow?.values || {};
 
         for (const m of months) {
             const key = ymKey(m.year, m.monthIndex0);
             const entradas = safeNum(incomeValues[key]);
-            const saidas = safeNum(cardsValues[key]) + safeNum(billsValues[key]);
+            const saidas =
+                safeNum(cardsValues[key]) +
+                safeNum(billsValues[key]) +
+                safeNum(avulsoCcValues[key]);
+
             out[key] = entradas - saidas;
         }
+        return out;
+    }, [data.sections, months]);
+
+    const totalExpensesByMonth = useMemo(() => {
+        const out = {};
+
+        const cardsValues = data.sections.find((s) => s.id === "cards")?.headerRow?.values || {};
+        const billsValues = data.sections.find((s) => s.id === "bills")?.headerRow?.values || {};
+        const avulsoCcValues = data.sections.find((s) => s.id === "avulso_cc")?.headerRow?.values || {};
+
+        for (const m of months) {
+            const key = ymKey(m.year, m.monthIndex0);
+            out[key] =
+                safeNum(cardsValues[key]) +
+                safeNum(billsValues[key]) +
+                safeNum(avulsoCcValues[key]);
+        }
+
         return out;
     }, [data.sections, months]);
 
@@ -1030,6 +1151,8 @@ export default function AccountsMatrix() {
         if (tone === "bills") return alpha(theme.palette.warning.light, 0.12);
         if (tone === "billCat") return alpha(theme.palette.warning.main, 0.08);
         if (tone === "billPayee") return alpha(theme.palette.warning.main, 0.04);
+        if (tone === "avulsoCc") return alpha(theme.palette.primary.main, 0.10);
+        if (tone === "avulsoCcItem") return alpha(theme.palette.primary.main, 0.05);
         return "transparent";
     };
 
@@ -1102,7 +1225,6 @@ export default function AccountsMatrix() {
                     const cellKey = `${rowKey || label}|${c.kind}|${c.year ?? ""}|${c.monthIndex0 ?? ""}`;
                     const selected = isSelectedCell(cellKey);
 
-                    // clique só faz sentido se tiver valor != 0
                     const clickable = !!v;
 
                     const ym = c.kind === "month" ? ymKey(c.year, c.monthIndex0) : "";
@@ -1117,8 +1239,6 @@ export default function AccountsMatrix() {
                     if (shouldHeat) {
                         const t01 = (v - heatMeta.min) / (heatMeta.max - heatMeta.min);
                         const base = heatColor3(theme, t01);
-
-                        // 👇 intensidade suave (ajuste fino aqui)
                         const a = theme.palette.mode === "dark" ? 0.22 : 0.14;
                         heatBg = alpha(base, a);
                     }
@@ -1145,10 +1265,7 @@ export default function AccountsMatrix() {
                                 color: isNeg ? theme.palette.error.main : theme.palette.text.primary,
                                 cursor: clickable ? "pointer" : "default",
                                 userSelect: "none",
-
-                                // ✅ heatmap base (somente últimos 12 meses)
                                 ...(heatBg ? { background: heatBg } : null),
-
                                 ...(isFocusMonth
                                     ? {
                                         background: heatBg ? heatBg : focusBg,
@@ -1157,7 +1274,6 @@ export default function AccountsMatrix() {
                                     }
                                     : null),
                                 ...(isYearTotal || isAllTotal ? { background: alpha(theme.palette.action.hover, 0.35) } : null),
-
                                 ...(selected
                                     ? {
                                         background: selectedBg,
@@ -1177,7 +1293,6 @@ export default function AccountsMatrix() {
     };
 
     const totalMatrixWidth = "max-content";
-
     const showSumBar = selectedCells.size > 0;
 
     const allBillsOpen = (billsData?.catRows || []).length > 0 &&
@@ -1202,7 +1317,7 @@ export default function AccountsMatrix() {
     }, [billsData?.catRows, allBillsOpen]);
 
     return (
-        <Card variant="outlined" sx={{ overflow: "hidden" }}>
+        <Card variant="outlined" sx={{ overflow: "hidden", borderRadius: 1 }}>
             <CardContent sx={{ pb: 2 }}>
                 <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
                     <Stack spacing={0.2}>
@@ -1210,11 +1325,10 @@ export default function AccountsMatrix() {
                             Contas (matriz)
                         </Typography>
                         <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
-                            receitas (income) + cartões (cutoff) + bills consolidadas
+                            receitas (income) + cartões (cutoff) + bills consolidadas + avulsos conta corrente
                         </Typography>
                     </Stack>
 
-                    {/* Soma rápida (aparece só quando há seleção) */}
                     {showSumBar ? (
                         <Stack direction="row" spacing={1} alignItems="center">
                             <Typography
@@ -1243,280 +1357,352 @@ export default function AccountsMatrix() {
                 <Divider sx={{ mb: 1.2 }} />
 
                 <Box
-                    ref={scrollRef}
                     sx={{
-                        overflowX: "auto",
-                        overflowY: "hidden",
                         border: `1px solid ${borderC}`,
-                        borderRadius: 0.75,
+                        borderRadius: 1,
+                        overflow: "hidden",
+                        background: alpha(theme.palette.background.paper, 0.45),
                     }}
                 >
-                    <Box sx={{ minWidth: totalMatrixWidth }}>
-                        {/* Header row 1: Years */}
-                        <Box sx={{ display: "flex", position: "sticky", top: 0, zIndex: 5, background: bgSticky }}>
-                            <Box
-                                sx={{
-                                    ...cellBase,
-                                    minWidth: COL_LABEL_MIN,
-                                    width: COL_LABEL_MAX,
-                                    maxWidth: COL_LABEL_MAX,
-                                    position: "sticky",
-                                    left: 0,
-                                    zIndex: 6,
-                                    background: bgSticky,
-                                    fontWeight: 900,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                }}
-                            >
-                                Referência
-                            </Box>
-
-                            {years.map((y) => {
-                                const spanW = 12 * COL_MONTH_W + COL_YEAR_TOTAL_W;
-                                return (
-                                    <Box
-                                        key={`year_${y}`}
-                                        sx={{
-                                            ...cellBase,
-                                            width: spanW,
-                                            minWidth: spanW,
-                                            justifyContent: "center",
-                                            fontWeight: 900,
-                                            background: strongBg,
-                                            borderBottom: `3px solid ${strongLine}`,
-                                            borderRight: `2px solid ${strongLine}`,
-                                        }}
-                                    >
-                                        {y}
-                                    </Box>
-                                );
-                            })}
-
-                            <Box
-                                sx={{
-                                    ...cellBase,
-                                    width: COL_TOTAL_W,
-                                    minWidth: COL_TOTAL_W,
-                                    justifyContent: "center",
-                                    fontWeight: 900,
-                                    background: strongBg,
-                                    borderBottom: `3px solid ${strongLine}`,
-                                    borderRight: `2px solid ${strongLine}`,
-                                }}
-                            >
-                                TOTAL
-                            </Box>
-                        </Box>
-
-                        {/* Header row 2: Months + Totals */}
-                        <Box sx={{ display: "flex", position: "sticky", top: ROW_H, zIndex: 4, background: bgSticky }}>
-                            <Box
-                                sx={{
-                                    ...cellBase,
-                                    minWidth: COL_LABEL_MIN,
-                                    width: COL_LABEL_MAX,
-                                    maxWidth: COL_LABEL_MAX,
-                                    position: "sticky",
-                                    left: 0,
-                                    zIndex: 6,
-                                    background: bgSticky,
-                                    fontWeight: 800,
-                                }}
-                            />
-
-                            {columns.map((c, idx) => {
-                                const isFocus = c.kind === "month" && idx === focusColIndex;
-                                const w = colWidth(c);
-
-                                return (
-                                    <Box
-                                        key={`col_${c.kind}_${c.year ?? ""}_${c.monthIndex0 ?? ""}`}
-                                        sx={{
-                                            ...cellBase,
-                                            width: w,
-                                            minWidth: w,
-                                            justifyContent: "center",
-                                            fontWeight: 900,
-                                            textTransform: "lowercase",
-                                            background: c.kind === "yearTotal" || c.kind === "allTotal" ? strongBg : strongBgSoft,
-                                            borderBottom: `2px solid ${strongLine}`,
-                                            ...(isFocus
-                                                ? {
-                                                    background: alpha(theme.palette.primary.main, 0.14),
-                                                    borderLeft: focusBorder,
-                                                    borderRight: focusBorder,
-                                                }
-                                                : null),
-                                        }}
-                                    >
-                                        {colLabel(c)}
-                                    </Box>
-                                );
-                            })}
-                        </Box>
-
-                        {/* Sections */}
-                        {data.sections.map((sec) => (
-                            <Box key={sec.id}>
-                                {/* section header row */}
-                                <Box sx={{ display: "flex", background: strongBg }}>
-                                    <Box
-                                        sx={{
-                                            ...cellBase,
-                                            height: ROW_H_SECTION,
-                                            minWidth: COL_LABEL_MIN,
-                                            width: COL_LABEL_MAX,
-                                            maxWidth: COL_LABEL_MAX,
-                                            position: "sticky",
-                                            left: 0,
-                                            zIndex: 3,
-                                            background: bgSticky,
-                                            fontWeight: 900,
-                                            borderBottom: `3px solid ${strongLine}`,
-                                            overflow: "hidden",
-                                        }}
-                                    >
-                                        <Stack direction="row" spacing={1} alignItems="center" sx={{ opacity: 0.95, minWidth: 0 }}>
-                                            {sec.icon}
-                                            <span
-                                                style={{
-                                                    fontSize: 12,
-                                                    overflow: "hidden",
-                                                    textOverflow: "ellipsis",
-                                                    whiteSpace: "nowrap",
-                                                }}
-                                            >
-                                                {sec.label}
-                                            </span>
-                                        </Stack>
-                                    </Box>
-
-                                    <Box sx={{ height: ROW_H_SECTION, width: "100%", borderBottom: `3px solid ${strongLine}` }} />
+                    <Box
+                        ref={scrollRef}
+                        onScroll={(e) => setMatrixScrollLeft(e.currentTarget.scrollLeft)}
+                        sx={{
+                            overflowX: "auto",
+                            overflowY: "hidden",
+                            borderRadius: 1,
+                            "&::-webkit-scrollbar": {
+                                height: 10,
+                            },
+                            "&::-webkit-scrollbar-thumb": {
+                                backgroundColor: alpha(theme.palette.text.primary, 0.18),
+                                borderRadius: 999,
+                            },
+                            "&::-webkit-scrollbar-track": {
+                                backgroundColor: alpha(theme.palette.divider, 0.08),
+                            },
+                        }}
+                    >
+                        <Box sx={{ minWidth: totalMatrixWidth }}>
+                            <Box sx={{ display: "flex", position: "sticky", top: 0, zIndex: 5, background: bgSticky }}>
+                                <Box
+                                    sx={{
+                                        ...cellBase,
+                                        minWidth: COL_LABEL_MIN,
+                                        width: COL_LABEL_MAX,
+                                        maxWidth: COL_LABEL_MAX,
+                                        position: "sticky",
+                                        left: 0,
+                                        zIndex: 6,
+                                        background: bgSticky,
+                                        fontWeight: 900,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                    }}
+                                >
+                                    Referência
                                 </Box>
 
-
-
-                                {/* total row */}
-                                {renderRow({
-                                    rowKey: sec.headerRow.id,
-                                    label: sec.headerRow.label,
-                                    values: sec.headerRow.values,
-                                    tone: sec.headerRow.tone,
-                                    isHeaderRow: true,
-                                    allowNegative: false,
-                                    isSubtotal: false,
-                                    prefixIcon:
-                                        sec.id === "bills" ? (
-                                            <Tooltip title={allBillsOpen ? "Fechar todas as categorias" : "Abrir todas as categorias"}>
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleAllBills();
-                                                    }}
-                                                    sx={{
-                                                        p: 0.3,
-                                                        mr: 0.5,
-                                                        color: allBillsOpen ? theme.palette.primary.main : theme.palette.text.secondary,
-                                                    }}
-                                                >
-                                                    {allBillsOpen ? (
-                                                        <UnfoldLessRoundedIcon sx={{ fontSize: 18 }} />
-                                                    ) : (
-                                                        <UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />
-                                                    )}
-                                                </IconButton>
-                                            </Tooltip>
-                                        ) : null,
+                                {years.map((y) => {
+                                    const spanW = 12 * COL_MONTH_W + COL_YEAR_TOTAL_W;
+                                    return (
+                                        <Box
+                                            key={`year_${y}`}
+                                            sx={{
+                                                ...cellBase,
+                                                width: spanW,
+                                                minWidth: spanW,
+                                                justifyContent: "center",
+                                                fontWeight: 900,
+                                                background: strongBg,
+                                                borderBottom: `3px solid ${strongLine}`,
+                                                borderRight: `2px solid ${strongLine}`,
+                                            }}
+                                        >
+                                            {y}
+                                        </Box>
+                                    );
                                 })}
 
-                                {/* Bills special */}
-                                {sec.id === "bills" ? (
-                                    <>
-                                        {(sec.rows || []).map((cat) => {
-                                            const catId = String(cat.catId || "outros");
-                                            const isOpen = !!openBillCats[catId];
-                                            const children = billsData.childrenByCatId?.get(catId) || [];
+                                <Box
+                                    sx={{
+                                        ...cellBase,
+                                        width: COL_TOTAL_W,
+                                        minWidth: COL_TOTAL_W,
+                                        justifyContent: "center",
+                                        fontWeight: 900,
+                                        background: strongBg,
+                                        borderBottom: `3px solid ${strongLine}`,
+                                        borderRight: `2px solid ${strongLine}`,
+                                    }}
+                                >
+                                    TOTAL
+                                </Box>
+                            </Box>
 
-                                            const prefixIcon = (
-                                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            toggleBillCat(catId);
-                                                        }}
-                                                        sx={{ p: 0.2, mr: 0.2 }}
-                                                        aria-label={isOpen ? "recolher" : "expandir"}
-                                                    >
-                                                        {isOpen ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} /> : <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />}
-                                                    </IconButton>
+                            <Box sx={{ display: "flex", position: "sticky", top: ROW_H, zIndex: 4, background: bgSticky }}>
+                                <Box
+                                    sx={{
+                                        ...cellBase,
+                                        minWidth: COL_LABEL_MIN,
+                                        width: COL_LABEL_MAX,
+                                        maxWidth: COL_LABEL_MAX,
+                                        position: "sticky",
+                                        left: 0,
+                                        zIndex: 6,
+                                        background: bgSticky,
+                                        fontWeight: 800,
+                                    }}
+                                />
+
+                                {columns.map((c, idx) => {
+                                    const isFocus = c.kind === "month" && idx === focusColIndex;
+                                    const w = colWidth(c);
+
+                                    return (
+                                        <Box
+                                            key={`col_${c.kind}_${c.year ?? ""}_${c.monthIndex0 ?? ""}`}
+                                            sx={{
+                                                ...cellBase,
+                                                width: w,
+                                                minWidth: w,
+                                                justifyContent: "center",
+                                                fontWeight: 900,
+                                                textTransform: "lowercase",
+                                                background: c.kind === "yearTotal" || c.kind === "allTotal" ? strongBg : strongBgSoft,
+                                                borderBottom: `2px solid ${strongLine}`,
+                                                ...(isFocus
+                                                    ? {
+                                                        background: alpha(theme.palette.primary.main, 0.14),
+                                                        borderLeft: focusBorder,
+                                                        borderRight: focusBorder,
+                                                    }
+                                                    : null),
+                                            }}
+                                        >
+                                            {colLabel(c)}
+                                        </Box>
+                                    );
+                                })}
+                            </Box>
+
+                            {data.sections.map((sec) => (
+                                <Box key={sec.id}>
+                                    <Box sx={{ display: "flex", background: strongBg }}>
+                                        <Box
+                                            sx={{
+                                                ...cellBase,
+                                                height: ROW_H_SECTION,
+                                                minWidth: COL_LABEL_MIN,
+                                                width: COL_LABEL_MAX,
+                                                maxWidth: COL_LABEL_MAX,
+                                                position: "sticky",
+                                                left: 0,
+                                                zIndex: 3,
+                                                background: bgSticky,
+                                                fontWeight: 900,
+                                                borderBottom: `3px solid ${strongLine}`,
+                                                overflow: "hidden",
+                                            }}
+                                        >
+                                            <Stack direction="row" spacing={1} alignItems="center" sx={{ opacity: 0.95, minWidth: 0 }}>
+                                                {sec.icon}
+                                                <span
+                                                    style={{
+                                                        fontSize: 12,
+                                                        overflow: "hidden",
+                                                        textOverflow: "ellipsis",
+                                                        whiteSpace: "nowrap",
+                                                    }}
+                                                >
+                                                    {sec.label}
                                                 </span>
-                                            );
+                                            </Stack>
+                                        </Box>
 
-                                            return (
-                                                <Box key={cat.id}>
-                                                    {renderRow({
-                                                        rowKey: cat.id,
-                                                        label: `↳ ${cat.label} (sub)`,
-                                                        values: cat.values,
-                                                        tone: "billCat",
-                                                        isHeaderRow: false,
-                                                        allowNegative: false,
-                                                        isSubtotal: true,
-                                                        prefixIcon,
-                                                        onClickLabel: () => toggleBillCat(catId),
-                                                    })}
+                                        <Box sx={{ height: ROW_H_SECTION, width: "100%", borderBottom: `3px solid ${strongLine}` }} />
+                                    </Box>
 
-                                                    <Collapse in={isOpen} timeout={180} unmountOnExit>
-                                                        {children.map((p) =>
-                                                            renderRow({
-                                                                rowKey: p.id,
-                                                                label: `   • ${p.label}`,
-                                                                values: p.values,
-                                                                tone: "billPayee",
-                                                                isHeaderRow: false,
-                                                                allowNegative: false,
-                                                                isSubtotal: false,
-                                                            })
-                                                        )}
-                                                    </Collapse>
-                                                </Box>
-                                            );
-                                        })}
-                                    </>
-                                ) : (
-                                    (sec.rows || []).map((r) =>
+                                    {sec.id !== "avulso_cc" &&
                                         renderRow({
-                                            rowKey: r.id,
-                                            label: r.label,
-                                            values: r.values,
-                                            tone: r.tone,
-                                            isHeaderRow: false,
+                                            rowKey: sec.headerRow.id,
+                                            label: sec.headerRow.label,
+                                            values: sec.headerRow.values,
+                                            tone: sec.headerRow.tone,
+                                            isHeaderRow: true,
                                             allowNegative: false,
                                             isSubtotal: false,
-                                        })
-                                    )
-                                )}
-                            </Box>
-                        ))}
+                                            prefixIcon:
+                                                sec.id === "bills" ? (
+                                                    <Tooltip title={allBillsOpen ? "Fechar todas as categorias" : "Abrir todas as categorias"}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                toggleAllBills();
+                                                            }}
+                                                            sx={{
+                                                                p: 0.3,
+                                                                mr: 0.5,
+                                                                color: allBillsOpen ? theme.palette.primary.main : theme.palette.text.secondary,
+                                                            }}
+                                                        >
+                                                            {allBillsOpen ? (
+                                                                <UnfoldLessRoundedIcon sx={{ fontSize: 18 }} />
+                                                            ) : (
+                                                                <UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />
+                                                            )}
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                ) : null,
+                                        })}
 
-                        {/* RESULTADO */}
-                        <Box sx={{ mt: 0.3 }}>
-                            {renderRow({
-                                rowKey: "grand_total",
-                                label: "RESULTADO",
-                                values: grandTotalByMonth,
-                                tone: "totals",
-                                isHeaderRow: true,
-                                allowNegative: true,
-                                isSubtotal: false,
-                            })}
+                                    {sec.id === "bills" ? (
+                                        <>
+                                            {(sec.rows || []).map((cat) => {
+                                                const catId = String(cat.catId || "outros");
+                                                const isOpen = !!openBillCats[catId];
+                                                const children = billsData.childrenByCatId?.get(catId) || [];
+
+                                                const prefixIcon = (
+                                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                toggleBillCat(catId);
+                                                            }}
+                                                            sx={{ p: 0.2, mr: 0.2 }}
+                                                            aria-label={isOpen ? "recolher" : "expandir"}
+                                                        >
+                                                            {isOpen ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} /> : <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />}
+                                                        </IconButton>
+                                                    </span>
+                                                );
+
+                                                return (
+                                                    <Box key={cat.id}>
+                                                        {renderRow({
+                                                            rowKey: cat.id,
+                                                            label: `↳ ${cat.label} (sub)`,
+                                                            values: cat.values,
+                                                            tone: "billCat",
+                                                            isHeaderRow: false,
+                                                            allowNegative: false,
+                                                            isSubtotal: true,
+                                                            prefixIcon,
+                                                            onClickLabel: () => toggleBillCat(catId),
+                                                        })}
+
+                                                        <Collapse in={isOpen} timeout={180} unmountOnExit>
+                                                            {children.map((p) =>
+                                                                renderRow({
+                                                                    rowKey: p.id,
+                                                                    label: `   • ${p.label}`,
+                                                                    values: p.values,
+                                                                    tone: "billPayee",
+                                                                    isHeaderRow: false,
+                                                                    allowNegative: false,
+                                                                    isSubtotal: false,
+                                                                })
+                                                            )}
+                                                        </Collapse>
+                                                    </Box>
+                                                );
+                                            })}
+                                        </>
+                                    ) : sec.id === "avulso_cc" ? (
+                                        <>
+                                            {renderRow({
+                                                rowKey: sec.headerRow.id,
+                                                label: sec.headerRow.label,
+                                                values: sec.headerRow.values,
+                                                tone: sec.headerRow.tone,
+                                                isHeaderRow: true,
+                                                allowNegative: false,
+                                                isSubtotal: false,
+                                                prefixIcon: (
+                                                    <Tooltip title={avulsoCcOpen ? "Recolher favorecidos" : "Expandir favorecidos"}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setAvulsoCcOpen((v) => !v);
+                                                            }}
+                                                            sx={{
+                                                                p: 0.3,
+                                                                mr: 0.5,
+                                                                color: avulsoCcOpen ? theme.palette.primary.main : theme.palette.text.secondary,
+                                                            }}
+                                                        >
+                                                            {avulsoCcOpen ? (
+                                                                <UnfoldLessRoundedIcon sx={{ fontSize: 18 }} />
+                                                            ) : (
+                                                                <UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />
+                                                            )}
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                ),
+                                                onClickLabel: () => setAvulsoCcOpen((v) => !v),
+                                            })}
+
+                                            <Collapse in={avulsoCcOpen} timeout={180} unmountOnExit>
+                                                {(sec.rows || []).map((r) =>
+                                                    renderRow({
+                                                        rowKey: r.id,
+                                                        label: `   • ${r.label}`,
+                                                        values: r.values,
+                                                        tone: r.tone,
+                                                        isHeaderRow: false,
+                                                        allowNegative: false,
+                                                        isSubtotal: false,
+                                                    })
+                                                )}
+                                            </Collapse>
+                                        </>
+                                    ) : (
+                                        (sec.rows || []).map((r) =>
+                                            renderRow({
+                                                rowKey: r.id,
+                                                label: r.label,
+                                                values: r.values,
+                                                tone: r.tone,
+                                                isHeaderRow: false,
+                                                allowNegative: false,
+                                                isSubtotal: false,
+                                            })
+                                        )
+                                    )}
+                                </Box>
+                            ))}
+
+                            <Box sx={{ mt: 0.3 }}>
+                                {renderRow({
+                                    rowKey: "grand_total",
+                                    label: "RESULTADO",
+                                    values: grandTotalByMonth,
+                                    tone: "totals",
+                                    isHeaderRow: true,
+                                    allowNegative: true,
+                                    isSubtotal: false,
+                                })}
+                            </Box>
                         </Box>
                     </Box>
                 </Box>
+
+                <AccountsFlowTrend
+                    months={months}
+                    incomeTotals={incomeData.totalByMonth || {}}
+                    expenseTotals={totalExpensesByMonth}
+                    hideValues={hideValues}
+                    matrixScrollLeft={matrixScrollLeft}
+                    monthColWidth={COL_MONTH_W}
+                    yearTotalWidth={COL_YEAR_TOTAL_W}
+                    allTotalWidth={COL_TOTAL_W}
+                    labelColWidth={COL_LABEL_MAX}
+                />
             </CardContent>
         </Card>
     );
