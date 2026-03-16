@@ -431,6 +431,22 @@ export default function DashboardMonthlyPace({
     setCategorySortBy(value);
   };
 
+  const chartColors = useMemo(
+    () => ({
+      // gráfico comparativo (barras)
+      compareFull: alpha(theme.palette.grey[500], 0.32),
+      comparePartial: theme.palette.warning.main,
+
+      // gráfico evolução (linhas)
+      currentLine: theme.palette.error.main,
+      previousLine: theme.palette.success.main,
+
+      // gráfico categoria selecionada
+      categoryPreviousLine: alpha(theme.palette.info.main, 0.95),
+    }),
+    [theme]
+  );
+
   const analysis = useMemo(() => {
     if (!month) {
       return {
@@ -950,7 +966,7 @@ export default function DashboardMonthlyPace({
                     Comparativo até o dia {analysis.cutoffDay}
                   </Typography>
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    barras escuras = até hoje • barras claras = mês cheio
+                      cinza = mês fechado • laranja = até hoje
                   </Typography>
                 </Stack>
 
@@ -971,13 +987,13 @@ export default function DashboardMonthlyPace({
                         dataKey="mesFechado"
                         name="Mês fechado"
                         radius={[6, 6, 0, 0]}
-                        fill={alpha(theme.palette.info.main, 0.24)}
+                        fill={chartColors.compareFull}
                       />
                       <Bar
                         dataKey="ateHoje"
                         name={`Até dia ${analysis.cutoffDay}`}
                         radius={[6, 6, 0, 0]}
-                        fill={theme.palette.primary.main}
+                        fill={chartColors.comparePartial}
                       />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1026,17 +1042,18 @@ export default function DashboardMonthlyPace({
                         type="monotone"
                         dataKey="atual"
                         name="Mês atual"
-                        stroke={theme.palette.primary.main}
+                        stroke={chartColors.currentLine}
                         strokeWidth={3}
                         dot={false}
-                        activeDot={{ r: 4 }}
+                        activeDot={{ r: 5 }}
                       />
                       <Line
                         type="monotone"
                         dataKey="anterior"
                         name="Mês anterior"
-                        stroke={theme.palette.info.main}
-                        strokeWidth={2}
+                        stroke={chartColors.previousLine}
+                        strokeWidth={2.4}
+                        strokeDasharray="7 4"
                         dot={false}
                       />
                     </LineChart>
@@ -1322,17 +1339,18 @@ export default function DashboardMonthlyPace({
                         type="monotone"
                         dataKey="atual"
                         name="Mês atual"
-                        stroke={selectedCategory?.color || theme.palette.primary.main}
+                        stroke={selectedCategory?.color || chartColors.currentLine}
                         strokeWidth={3}
                         dot={false}
-                        activeDot={{ r: 4 }}
+                        activeDot={{ r: 5 }}
                       />
                       <Line
                         type="monotone"
                         dataKey="anterior"
                         name="Mês anterior"
-                        stroke={theme.palette.info.main}
-                        strokeWidth={2}
+                        stroke={chartColors.categoryPreviousLine}
+                        strokeWidth={2.4}
+                        strokeDasharray="7 4"
                         dot={false}
                       />
                     </LineChart>
