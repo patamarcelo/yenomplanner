@@ -19,6 +19,8 @@ const SupportPage = lazy(() => import("../pages/SupportPage"));
 
 const ResetPasswordPage = lazy(() => import("../pages/ResetPasswordPage"));
 
+const UserPage = lazy(() => import("../pages/UserPage"));
+
 const wrap = (el) => <Suspense fallback={null}>{el}</Suspense>;
 
 export const router = createBrowserRouter([
@@ -35,6 +37,10 @@ export const router = createBrowserRouter([
 
       { path: "cadastros", element: wrap(<CadastrosPage />) },
       { path: "cadastros/categorias", element: wrap(<CategoriasPage />) },
+      {
+        path: "/cadastros/usuario",
+        element: <UserPage />,
+      },
       { path: "cadastros/suporte", element: wrap(<SupportPage />) },
 
       {

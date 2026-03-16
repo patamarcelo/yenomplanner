@@ -1,8 +1,34 @@
-// src/store/authSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { signup, login, fetchMe, requestPasswordReset } from "../api/authApi";
 
 const TOKEN_KEY = "authToken";
+
+function extractUserFromPayload(data) {
+  if (!data) return null;
+
+  if (data.user) return data.user;
+
+  const hasFlatUserFields =
+    data.id ||
+    data.email ||
+    data.first_name ||
+    data.last_name ||
+    data.fone ||
+    data.signup_source;
+
+  if (hasFlatUserFields) {
+    return {
+      id: data.id ?? null,
+      email: data.email ?? "",
+      first_name: data.first_name ?? "",
+      last_name: data.last_name ?? "",
+      fone: data.fone ?? "",
+      signup_source: data.signup_source ?? "",
+    };
+  }
+
+  return null;
+}
 
 export const signupThunk = createAsyncThunk("auth/signup", async (payload) => {
   const data = await signup(payload);
@@ -16,18 +42,12 @@ export const loginThunk = createAsyncThunk("auth/login", async (payload) => {
   return data;
 });
 
-/**
- * ✅ Evita "Sessão expirada" depois do logout:
- * - Se não tem token, não chama /me e não marca erro.
- * - Só retorna "Sessão expirada" quando realmente havia token e a chamada falhou.
- */
 export const meThunk = createAsyncThunk(
   "auth/me",
   async (_, { getState, rejectWithValue }) => {
     const state = getState();
     const token = state?.user?.token || localStorage.getItem(TOKEN_KEY) || "";
 
-    // ✅ sem token = usuário deslogado → não é sessão expirada
     if (!token) return rejectWithValue(null);
 
     try {
@@ -40,11 +60,6 @@ export const meThunk = createAsyncThunk(
   }
 );
 
-/**
- * ✅ Reset de senha (request)
- * Backend: POST /auth/password/reset/
- * (resposta deve ser genérica, 200, mesmo se e-mail não existir)
- */
 export const requestPasswordResetThunk = createAsyncThunk(
   "auth/requestPasswordReset",
   async ({ email }, { rejectWithValue }) => {
@@ -78,7 +93,7 @@ const authSlice = createSlice({
       state.user = null;
       state.token = "";
       state.status = "idle";
-      state.error = ""; // ✅ evita aparecer "Sessão expirada" no login após sair
+      state.error = "";
 
       state.resetStatus = "idle";
       state.resetError = "";
@@ -97,16 +112,13 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // -------------------------
-      // signup
-      // -------------------------
       .addCase(signupThunk.pending, (s) => {
         s.status = "loading";
         s.error = "";
       })
       .addCase(signupThunk.fulfilled, (s, a) => {
         s.status = "succeeded";
-        s.user = a.payload;
+        s.user = extractUserFromPayload(a.payload);
         s.token = a.payload?.token || s.token;
         s.error = "";
       })
@@ -115,9 +127,6 @@ const authSlice = createSlice({
         s.error = "Não foi possível criar a conta.";
       })
 
-      // -------------------------
-      // login
-      // -------------------------
       .addCase(loginThunk.pending, (s) => {
         s.status = "loading";
         s.error = "";
@@ -125,6 +134,7 @@ const authSlice = createSlice({
       .addCase(loginThunk.fulfilled, (s, a) => {
         s.status = "succeeded";
         s.token = a.payload?.token || "";
+        s.user = extractUserFromPayload(a.payload);
         s.error = "";
       })
       .addCase(loginThunk.rejected, (s) => {
@@ -132,15 +142,11 @@ const authSlice = createSlice({
         s.error = "Não foi possível entrar.";
       })
 
-      // -------------------------
-      // me
-      // -------------------------
       .addCase(meThunk.fulfilled, (s, a) => {
         s.user = a.payload;
         s.error = "";
       })
       .addCase(meThunk.rejected, (s, a) => {
-        // ✅ payload null => sem token/logout/rota pública → não mostrar erro
         if (a.payload == null) {
           s.user = null;
           s.token = "";
@@ -154,9 +160,6 @@ const authSlice = createSlice({
         s.error = a.payload || "Sessão expirada";
       })
 
-      // -------------------------
-      // password reset (request)
-      // -------------------------
       .addCase(requestPasswordResetThunk.pending, (s) => {
         s.resetStatus = "loading";
         s.resetError = "";

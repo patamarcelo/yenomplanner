@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import CategoryRoundedIcon from "@mui/icons-material/CategoryRounded";
 import HeadsetMicRoundedIcon from "@mui/icons-material/HeadsetMicRounded";
+import AccountCircleRoundedIcon from "@mui/icons-material/AccountCircleRounded";
 
 import { trackEvent } from "../utils/analytics";
 
@@ -13,6 +14,22 @@ export default function CadastrosPage() {
     return (
         <Box>
             <Stack direction="row" spacing={2} flexWrap="wrap">
+                <Card sx={{ width: 240, borderRadius: 1 }} elevation={8} component={Paper}>
+                    <CardActionArea
+                        onClick={() => {
+                            trackEvent("open_user_page", { location: "cadastros" });
+                            navigate("/cadastros/usuario");
+                        }}
+                    >
+                        <Stack p={2.2} spacing={1} alignItems="center">
+                            <AccountCircleRoundedIcon />
+                            <Typography fontWeight={800}>Usuário</Typography>
+                            <Typography variant="body2" sx={{ opacity: 0.75 }}>
+                                Conta e sessão
+                            </Typography>
+                        </Stack>
+                    </CardActionArea>
+                </Card>
                 <Card sx={{ width: 240, borderRadius: 1 }} elevation={8} component={Paper}>
                     <CardActionArea onClick={() => navigate("/cadastros/categorias")}>
                         <Stack p={2.2} spacing={1} alignItems="center">
@@ -24,6 +41,7 @@ export default function CadastrosPage() {
                         </Stack>
                     </CardActionArea>
                 </Card>
+
 
                 <Card sx={{ width: 240, borderRadius: 1 }} elevation={8} component={Paper}>
                     <CardActionArea
