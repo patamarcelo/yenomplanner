@@ -10,7 +10,7 @@ export async function login(payload) {
   console.log("[LOGIN] payload recebido:", payload);
 
   try {
-    const { data } = await api.post("/auth/login/", payload);
+    const { data } = await api.post("usuario/auth/login/", payload);
     console.log("[LOGIN] OK:", data);
     return data;
   } catch (err) {
