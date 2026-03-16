@@ -8,6 +8,7 @@ import { setBillsFromBootstrap } from "./billsSlice";
 import { setCategoriesFromBootstrap } from "./categoriesSlice";
 import { setInvoicesFromBootstrap } from "./invoicesSlice";
 import { mapAccountFromApi } from "../api/accountsApi";
+import { mapBillFromApi } from "../api/billsApi";
 
 
 export const bootstrapThunk = createAsyncThunk(
@@ -25,7 +26,7 @@ export const bootstrapThunk = createAsyncThunk(
             }
 
             if (data?.bills) {
-                dispatch(setBillsFromBootstrap(data.bills));
+                dispatch(setBillsFromBootstrap((data.bills || []).map(mapBillFromApi)));
             }
 
             if (data?.categories) {
