@@ -900,48 +900,6 @@ export default function DashboardMonthlyPace({
             />
           </Box>
 
-          <Box
-            sx={(theme) => ({
-              p: 1.1,
-              borderRadius: 1.15,
-              border: `1px solid ${alpha(theme.palette.divider, 0.68)}`,
-              background: alpha(theme.palette.background.paper, 0.62),
-            })}
-          >
-            <Stack spacing={0.7}>
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                justifyContent="space-between"
-                spacing={0.7}
-              >
-                <Typography sx={{ fontWeight: 900, fontSize: 13.5 }}>
-                  Composição até o dia {analysis.cutoffDay}
-                </Typography>
-
-                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800 }}>
-                  Avulsos: {money(analysis.currentOneOff)} • Parcelados: {money(analysis.currentInstallments)}
-                </Typography>
-              </Stack>
-
-              <LinearProgress
-                variant="determinate"
-                value={installmentsPct}
-                sx={{
-                  height: 8,
-                  borderRadius: 999,
-                  background: alpha(theme.palette.info.main, 0.1),
-                  "& .MuiLinearProgress-bar": {
-                    borderRadius: 999,
-                  },
-                }}
-              />
-
-              <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 700 }}>
-                Parcelados representam {installmentsPct.toFixed(1)}% do total até agora
-              </Typography>
-            </Stack>
-          </Box>
-
           <Divider />
 
           <Box
