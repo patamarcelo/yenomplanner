@@ -918,21 +918,6 @@ export default function TransactionsGridMobile({
         </Alert>
       </Snackbar>
 
-      <Fab
-        color="primary"
-        aria-label="novo lançamento"
-        onClick={handleCreate}
-        sx={{
-          position: "fixed",
-          right: 16,
-          bottom: 16,
-          width: 52,
-          height: 52,
-          boxShadow: "0 10px 24px rgba(25,118,210,0.28)",
-        }}
-      >
-        <AddRoundedIcon />
-      </Fab>
     </Box>
   );
 }

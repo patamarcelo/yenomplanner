@@ -626,80 +626,169 @@ export default function NewTransactionModal({ open, onClose }) {
     setChargeDate(nextCharge || today);
   }
 
-  // ======= estilo / cores (seu padrão) =======
+  // ======= estilo / cores (theme-aware) =======
+  const isDark = theme.palette.mode === "dark";
   const isExpense = direction === "expense";
-  const borderColor = isExpense ? "rgba(211,47,47,0.45)" : "rgba(46,125,50,0.45)";
-  const gradientAccent = isExpense ? "#f04444" : "#22c55e";
-  const tintBg = isExpense ? "#ffd5d5" : "#d7ffe7";
+
+  const accentMain = isExpense
+    ? theme.palette.error.main
+    : theme.palette.success.main;
+
+  const accentSoft = alpha(accentMain, isDark ? 0.18 : 0.12);
+  const accentBorder = alpha(accentMain, isDark ? 0.42 : 0.34);
+  const accentGlow = alpha(accentMain, isDark ? 0.24 : 0.18);
+
+  const paperBase = theme.palette.background.paper;
+  const paperSoft = alpha(theme.palette.background.paper, isDark ? 0.94 : 0.98);
+  const fieldBg = isDark
+    ? alpha(theme.palette.common.white, 0.04)
+    : "#ffffff";
+
+  const fieldBorder = alpha(theme.palette.text.primary, isDark ? 0.16 : 0.14);
+  const fieldBorderHover = alpha(accentMain, isDark ? 0.58 : 0.45);
+  const textPrimary = theme.palette.text.primary;
+  const textSecondary = theme.palette.text.secondary;
+
+    const modalBg = isDark
+    ? `
+      linear-gradient(
+        180deg,
+        ${alpha(accentMain, 0.86)} 0%,
+        ${alpha(accentMain, 0.56)} 72px,
+        ${alpha(accentMain, 0.29)} 180px,
+        ${alpha(theme.palette.background.paper, 0.98)} 320px,
+        ${paperBase} 100%
+      )
+    `
+    : `
+      linear-gradient(
+        180deg,
+        ${alpha(accentMain, 0.80)} 0%,
+        ${alpha(accentMain, 0.58)} 120px,
+        ${alpha(accentMain, 0.28)} 260px,
+        ${alpha(accentMain, 0.98)} 360px,
+        ${theme.palette.background.paper} 89%
+      )
+    `;
+
 
   const headerToggleSx = {
     borderRadius: 999,
     overflow: "hidden",
-    border: `1px solid ${borderColor}`,
-    bgcolor: "rgba(255,255,255,0.55)",
+    border: `1px solid ${accentBorder}`,
+    bgcolor: isDark
+      ? alpha(theme.palette.common.white, 0.04)
+      : alpha(theme.palette.common.white, 0.56),
     "& .MuiToggleButton-root": {
       px: 1.25,
       py: 0.55,
       fontWeight: 900,
       border: "none",
       textTransform: "none",
+      color: textPrimary,
+      backgroundColor: "transparent",
     },
     "& .MuiToggleButton-root.Mui-selected": {
-      bgcolor: direction === "expense" ? "rgba(211,47,47,0.14)" : "rgba(46,125,50,0.14)",
+      bgcolor: accentSoft,
+      color: accentMain,
+    },
+    "& .MuiToggleButton-root:hover": {
+      bgcolor: alpha(accentMain, isDark ? 0.10 : 0.06),
     },
   };
 
   const inputSx = {
-    "& .MuiInputLabel-root": { color: "rgba(15,23,42,0.78)", fontWeight: 800 },
+    "& .MuiInputLabel-root": {
+      color: alpha(textPrimary, 0.72),
+      fontWeight: 800,
+    },
     "& .MuiInputLabel-root.Mui-focused": {
-      color: isExpense ? "rgba(211,47,47,0.95)" : "rgba(46,125,50,0.95)",
+      color: accentMain,
     },
 
     "& .MuiInputBase-input": {
-      color: "#0f172a",
-      fontSize: isSmDown ? 16 : 15, // ✅ evita zoom no iPhone
+      color: textPrimary,
+      fontSize: isSmDown ? 16 : 15,
       WebkitTextSizeAdjust: "100%",
     },
 
+    "& .MuiInputBase-input::placeholder": {
+      color: alpha(textPrimary, 0.52),
+      opacity: 1,
+    },
+
     "& .MuiOutlinedInput-root": {
-      backgroundColor: "#fff",
+      backgroundColor: fieldBg,
       borderRadius: 10,
+      color: textPrimary,
+      transition: "box-shadow .15s ease, border-color .15s ease, background-color .15s ease",
     },
 
     "& .MuiOutlinedInput-notchedOutline": {
-      borderColor: "rgba(2,6,23,0.18)",
+      borderColor: fieldBorder,
     },
 
     "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
-      borderColor: isExpense ? "rgba(211,47,47,0.55)" : "rgba(46,125,50,0.55)",
+      borderColor: fieldBorderHover,
     },
 
     "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
-      borderColor: isExpense ? "rgba(211,47,47,0.85)" : "rgba(46,125,50,0.85)",
+      borderColor: accentMain,
       borderWidth: 1,
     },
 
     "& .MuiFormHelperText-root": {
-      color: "rgba(15,23,42,0.62)",
+      color: alpha(textPrimary, 0.62),
+    },
+
+    "& .MuiSelect-icon": {
+      color: alpha(textPrimary, 0.72),
     },
   };
-  // ✅ em mobile: deixa actions “grudado” com mais área útil
+
+  const actionButtonContainedSx = {
+    fontWeight: 950,
+    borderRadius: 2,
+    minWidth: 160,
+    boxShadow: "none",
+    bgcolor: accentMain,
+    "&:hover": {
+      bgcolor: accentMain,
+      filter: "brightness(0.96)",
+      boxShadow: "none",
+    },
+  };
+
+  const actionButtonOutlinedSx = {
+    borderRadius: 2,
+    borderColor: alpha(textPrimary, 0.18),
+    color: textPrimary,
+    "&:hover": {
+      borderColor: alpha(textPrimary, 0.28),
+      backgroundColor: alpha(textPrimary, 0.04),
+    },
+  };
+
   const actionsSx = isSmDown
     ? {
       position: "sticky",
       bottom: 0,
-      background: "rgba(255,255,255,0.92)",
+      background: isDark
+        ? alpha(theme.palette.background.paper, 0.94)
+        : alpha(theme.palette.background.paper, 0.97),
       backdropFilter: "blur(10px)",
-      borderTop: `1px solid ${alpha(theme.palette.divider, 0.75)}`,
+      borderTop: "none",
       px: 2,
-      py: 1.2,
-
-      // ✅ espaço extra para iPhone / home indicator
+      pt: 1.5,
       pb: "calc(16px + env(safe-area-inset-bottom))",
-
       zIndex: 10,
     }
-    : { pb: 2, pr: 2, gap: 1, marginTop: "-20px" };
+    : {
+      pt: 1.6,
+      pb: 2,
+      px: 2,
+      gap: 1,
+    };
 
   return (
     <Dialog
@@ -721,17 +810,14 @@ export default function NewTransactionModal({ open, onClose }) {
       PaperProps={{
         sx: {
           borderRadius: isSmDown ? 0 : 2,
-          border: isSmDown ? "none" : `1.5px solid ${borderColor}`,
+          border: isSmDown ? "none" : `1px solid ${accentBorder}`,
           height: isSmDown ? "100dvh" : "auto",
-          background: `
-      linear-gradient(
-        -180deg,
-        ${gradientAccent} 0%,
-        ${tintBg} 60px,
-        rgba(255,255,255,1) 85%
-      )
-    `,
-          boxShadow: isSmDown ? "none" : "0 2px 10px rgba(0,0,0,0.3)",
+          background: modalBg,
+          boxShadow: isSmDown
+            ? "none"
+            : isDark
+              ? "0 10px 40px rgba(0,0,0,0.45)"
+              : "0 10px 30px rgba(15,23,42,0.14)",
           overflow: "hidden",
           maxHeight: isSmDown ? "100dvh" : "90dvh",
           display: "flex",
@@ -739,9 +825,17 @@ export default function NewTransactionModal({ open, onClose }) {
         },
       }}
     >
-      <DialogTitle sx={{ fontWeight: 950, py: isSmDown ? 1.2 : 1.5 }}>
+      <DialogTitle
+        sx={{
+          fontWeight: 950,
+          py: isSmDown ? 1.2 : 1.5,
+          color: textPrimary,
+        }}
+      >
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.2}>
-          <Typography sx={{ fontWeight: 950, color: "whitesmoke" }}>Novo lançamento</Typography>
+          <Typography sx={{ fontWeight: 950, color: textPrimary }}>
+            Novo lançamento
+          </Typography>
 
           <ToggleButtonGroup
             exclusive
@@ -762,24 +856,41 @@ export default function NewTransactionModal({ open, onClose }) {
         dividers
         sx={{
           pt: 1.4,
-          pb: 1.6,
+          pb: isSmDown ? 3.5 : 2.8,
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
           overflowX: "hidden",
           WebkitOverflowScrolling: "touch",
 
+          "&.MuiDialogContent-dividers": {
+            borderTop: `1px solid ${alpha(theme.palette.divider, 0.85)}`,
+            borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+          },
+
           "& .MuiTextField-root .MuiOutlinedInput-root": {
             borderRadius: 10,
-            backgroundColor: "#fff",
-            transition: "box-shadow .15s ease, border-color .15s ease",
+            backgroundColor: fieldBg,
+            transition: "box-shadow .15s ease, border-color .15s ease, background-color .15s ease",
             "&.Mui-focused": {
-              boxShadow: `0 0 0 4px ${isExpense ? "rgba(211,47,47,0.18)" : "rgba(46,125,50,0.18)"}`,
+              boxShadow: `0 0 0 4px ${accentGlow}`,
             },
           },
-          "& .MuiInputBase-input::placeholder": { opacity: 0.85 },
-          "& .MuiFormHelperText-root": { marginLeft: 0, marginRight: 0, opacity: 0.85 },
-          "& .MuiSelect-select": { paddingTop: "12.5px", paddingBottom: "12.5px" },
+
+          "& .MuiFormHelperText-root": {
+            marginLeft: 0,
+            marginRight: 0,
+            opacity: 0.9,
+          },
+
+          "& .MuiSelect-select": {
+            paddingTop: "12.5px",
+            paddingBottom: "12.5px",
+          },
+
+          "& .MuiAutocomplete-popupIndicator, & .MuiAutocomplete-clearIndicator": {
+            color: alpha(textPrimary, 0.72),
+          },
         }}
       >
         <Stack spacing={3.25}>
@@ -1022,7 +1133,23 @@ export default function NewTransactionModal({ open, onClose }) {
                 setKind("one_off");
                 setShowInstallmentsPreview(false);
               }}
-              sx={{ fontWeight: 900 }}
+              sx={{
+                fontWeight: 900,
+                borderColor: alpha(accentMain, 0.28),
+                color: kind === "one_off" ? "#fff" : textPrimary,
+                backgroundColor:
+                  kind === "one_off"
+                    ? accentMain
+                    : isDark
+                      ? alpha(theme.palette.common.white, 0.03)
+                      : alpha(theme.palette.common.black, 0.02),
+                "&:hover": {
+                  backgroundColor:
+                    kind === "one_off"
+                      ? accentMain
+                      : alpha(accentMain, isDark ? 0.12 : 0.07),
+                },
+              }}
             />
 
             <Chip
@@ -1035,7 +1162,23 @@ export default function NewTransactionModal({ open, onClose }) {
                 setKind("recurring");
                 setShowInstallmentsPreview(false);
               }}
-              sx={{ fontWeight: 900 }}
+              sx={{
+                fontWeight: 900,
+                borderColor: alpha(accentMain, 0.28),
+                color: kind === "one_off" ? "#fff" : textPrimary,
+                backgroundColor:
+                  kind === "one_off"
+                    ? accentMain
+                    : isDark
+                      ? alpha(theme.palette.common.white, 0.03)
+                      : alpha(theme.palette.common.black, 0.02),
+                "&:hover": {
+                  backgroundColor:
+                    kind === "one_off"
+                      ? accentMain
+                      : alpha(accentMain, isDark ? 0.12 : 0.07),
+                },
+              }}
             />
 
             <Chip
@@ -1047,7 +1190,23 @@ export default function NewTransactionModal({ open, onClose }) {
                 if (saving) return;
                 setKind("installment");
               }}
-              sx={{ fontWeight: 900 }}
+              sx={{
+                fontWeight: 900,
+                borderColor: alpha(accentMain, 0.28),
+                color: kind === "one_off" ? "#fff" : textPrimary,
+                backgroundColor:
+                  kind === "one_off"
+                    ? accentMain
+                    : isDark
+                      ? alpha(theme.palette.common.white, 0.03)
+                      : alpha(theme.palette.common.black, 0.02),
+                "&:hover": {
+                  backgroundColor:
+                    kind === "one_off"
+                      ? accentMain
+                      : alpha(accentMain, isDark ? 0.12 : 0.07),
+                },
+              }}
             />
           </Stack>
 
@@ -1121,11 +1280,13 @@ export default function NewTransactionModal({ open, onClose }) {
                           <Box
                             key={p.idx}
                             sx={{
-                              border: "1px solid rgba(2,6,23,0.12)",
+                              border: `1px solid ${alpha(theme.palette.text.primary, isDark ? 0.10 : 0.12)}`,
                               borderRadius: 1.5,
                               px: 1.2,
                               py: 0.9,
-                              background: "rgba(255,255,255,0.9)",
+                              background: isDark
+                                ? alpha(theme.palette.common.white, 0.035)
+                                : alpha(theme.palette.common.white, 0.9),
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "space-between",
@@ -1143,7 +1304,8 @@ export default function NewTransactionModal({ open, onClose }) {
                                 px: 0.8,
                                 py: 0.2,
                                 borderRadius: 1,
-                                backgroundColor: "rgba(2,6,23,0.06)",
+                                backgroundColor: alpha(theme.palette.text.primary, isDark ? 0.12 : 0.06),
+                                color: textPrimary,
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -1170,7 +1332,12 @@ export default function NewTransactionModal({ open, onClose }) {
       </DialogContent>
 
       <DialogActions sx={actionsSx}>
-        <Button onClick={handleClose} variant="outlined" disabled={saving} sx={{ borderRadius: 2 }}>
+        <Button
+          onClick={handleClose}
+          variant="outlined"
+          disabled={saving}
+          sx={actionButtonOutlinedSx}
+        >
           Cancelar
         </Button>
 
@@ -1178,11 +1345,11 @@ export default function NewTransactionModal({ open, onClose }) {
           onClick={handleSave}
           variant="contained"
           disabled={saving}
-          sx={{ fontWeight: 950, borderRadius: 2, minWidth: 160 }}
+          sx={actionButtonContainedSx}
         >
           {saving ? (
             <Stack direction="row" alignItems="center" spacing={1}>
-              <CircularProgress size={18} />
+              <CircularProgress size={18} sx={{ color: "#fff" }} />
               <span>{savingLabel}</span>
             </Stack>
           ) : (

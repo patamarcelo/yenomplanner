@@ -438,28 +438,65 @@ export default function Layout({ children }) {
   const DrawerContent = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Toaster
-        position="top-center"
+        position={isMobile ? "top-center" : "top-center"}
+        containerStyle={{
+          top: isMobile ? 74 : 16,
+          left: 16,
+          right: 16,
+          zIndex: 1800,
+        }}
         toastOptions={{
           duration: 4800,
-          style: { borderRadius: "12px", marginTop: "-5px" },
+          style: {
+            borderRadius: "12px",
+            marginTop: 0,
+            padding: isMobile ? "12px 14px" : "14px 16px",
+            maxWidth: isMobile ? "calc(100vw - 32px)" : "560px",
+            fontSize: isMobile ? 13 : 14,
+          },
           success: {
             style: {
-              background: "rgba(34, 197, 94, 0.14)",
-              color: "#052e16",
-              border: "1px solid rgba(34, 197, 94, 0.65)",
+              background:
+                theme.palette.mode === "dark"
+                  ? "rgba(34, 197, 94, 0.18)"
+                  : "rgba(34, 197, 94, 0.14)",
+              color:
+                theme.palette.mode === "dark"
+                  ? "#f0fdf4"
+                  : "#052e16",
+              border:
+                theme.palette.mode === "dark"
+                  ? "1px solid rgba(34, 197, 94, 0.40)"
+                  : "1px solid rgba(34, 197, 94, 0.65)",
             },
-            iconTheme: { primary: "#16a34a", secondary: "#dcfce7" },
+            iconTheme: {
+              primary: "#16a34a",
+              secondary: theme.palette.mode === "dark" ? "#052e16" : "#dcfce7",
+            },
           },
           error: {
             style: {
-              background: "rgba(239, 68, 68, 0.14)",
-              color: "#450a0a",
-              border: "1px solid rgba(239, 68, 68, 0.35)",
+              background:
+                theme.palette.mode === "dark"
+                  ? "rgba(239, 68, 68, 0.18)"
+                  : "rgba(239, 68, 68, 0.14)",
+              color:
+                theme.palette.mode === "dark"
+                  ? "#fef2f2"
+                  : "#450a0a",
+              border:
+                theme.palette.mode === "dark"
+                  ? "1px solid rgba(239, 68, 68, 0.35)"
+                  : "1px solid rgba(239, 68, 68, 0.35)",
             },
-            iconTheme: { primary: "#dc2626", secondary: "#fee2e2" },
+            iconTheme: {
+              primary: "#dc2626",
+              secondary: theme.palette.mode === "dark" ? "#450a0a" : "#fee2e2",
+            },
           },
         }}
       />
+
 
       <Box
         sx={{
