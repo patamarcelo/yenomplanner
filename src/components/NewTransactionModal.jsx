@@ -177,7 +177,6 @@ export default function NewTransactionModal({ open, onClose }) {
   const historyIndex = useMemo(() => {
     if (!open) return null;
     if (!historyEnabled) return null;
-    // se não tem nada, nem monta
     if (!historyRows?.length) return null;
     return buildTxnHistoryIndex(historyRows);
   }, [open, historyEnabled, historyRows]);
@@ -205,9 +204,6 @@ export default function NewTransactionModal({ open, onClose }) {
     return msg;
   }
 
-
-
-  // defaults
   const [purchaseDate, setPurchaseDate] = useState(todayISO());
   const [chargeDate, setChargeDate] = useState(todayISO());
   const [chargeTouched, setChargeTouched] = useState(false);
@@ -217,16 +213,13 @@ export default function NewTransactionModal({ open, onClose }) {
   const [merchant, setMerchant] = useState("");
   const [description, setDescription] = useState("");
 
-  // ✅ usar slug (consistente com grid)
   const [categoryId, setCategoryId] = useState("outros");
-
-  // ✅ string BRL
   const [amount, setAmount] = useState("0");
 
-  const [status, setStatus] = useState("planned"); // planned | confirmed | paid | overdue
+  const [status, setStatus] = useState("planned");
   const statusTouchedRef = useRef(false);
 
-  const [kind, setKind] = useState("one_off"); // one_off | recurring | installment
+  const [kind, setKind] = useState("one_off");
   const [nParts, setNParts] = useState(2);
 
   const savingLabel = useMemo(() => {
@@ -243,10 +236,8 @@ export default function NewTransactionModal({ open, onClose }) {
     return `${y}-12`;
   });
 
-  // ✅ preview parcels colapsado (mobile-friendly)
   const [showInstallmentsPreview, setShowInstallmentsPreview] = useState(false);
 
-  // ✅ deferred values (reduz “engasgo” do autocomplete)
   const merchantDeferred = useDeferredValue(merchant);
   const descriptionDeferred = useDeferredValue(description);
 
@@ -273,7 +264,6 @@ export default function NewTransactionModal({ open, onClose }) {
     else setStatus("paid");
   }
 
-  // ✅ sugestão categoria por merchant (somente se index habilitado)
   const suggestedCategoryForMerchant = useMemo(() => {
     if (!historyIndex) return "";
     return historyIndex?.getBestCategoryForMerchant?.(merchantDeferred) || "";
@@ -287,7 +277,6 @@ export default function NewTransactionModal({ open, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, merchantDeferred, suggestedCategoryForMerchant]);
 
-  // auto-ajuste chargeDate quando trocar conta / purchaseDate (se usuário não editou)
   useEffect(() => {
     if (!open) return;
 
@@ -324,7 +313,6 @@ export default function NewTransactionModal({ open, onClose }) {
     return categoriesBySlug.get(String(categoryId || "")) || null;
   }, [categoriesBySlug, categoryId]);
 
-  // ✅ sugestões: só calcula se historyIndex estiver habilitado
   const merchantOptions = useMemo(() => {
     if (!historyIndex) return [];
     const q = String(merchantDeferred || "").trim();
@@ -343,7 +331,6 @@ export default function NewTransactionModal({ open, onClose }) {
     return list.map((x) => x.label);
   }, [historyIndex, merchantDeferred, descriptionDeferred, MIN_DESC_CHARS, isSmDown]);
 
-  // ✅ preview das parcelas: só calcula quando showInstallmentsPreview estiver true
   const previewInstallments = useMemo(() => {
     if (kind !== "installment") return [];
     if (!showInstallmentsPreview) return [];
@@ -394,7 +381,6 @@ export default function NewTransactionModal({ open, onClose }) {
     const y = new Date().getFullYear();
     setRecurringUntilYm(`${y}-12`);
 
-    // ✅ mobile perf
     setHistoryEnabled(false);
     setShowInstallmentsPreview(false);
   }
@@ -626,146 +612,140 @@ export default function NewTransactionModal({ open, onClose }) {
     setChargeDate(nextCharge || today);
   }
 
-  // ======= estilo / cores (theme-aware) =======
+  // ======= estilo / cores =======
   const isDark = theme.palette.mode === "dark";
   const isExpense = direction === "expense";
 
-  const accentMain = isExpense
-    ? theme.palette.error.main
-    : theme.palette.success.main;
+  const accentMain = isExpense ? "#F35F5F" : "#39B66A";
+  const accentStrong = isExpense ? "#EB5757" : "#2FA35D";
+  const primaryBlue = "#2F67E8";
+  const primaryBlueHover = "#2558CC";
 
-  const accentSoft = alpha(accentMain, isDark ? 0.18 : 0.12);
-  const accentBorder = alpha(accentMain, isDark ? 0.42 : 0.34);
-  const accentGlow = alpha(accentMain, isDark ? 0.24 : 0.18);
+  const textPrimary = isDark ? "#F3F4F6" : "#495262";
+  const textSecondary = isDark ? "rgba(243,244,246,0.72)" : "#8B8792";
 
-  const paperBase = theme.palette.background.paper;
-  const paperSoft = alpha(theme.palette.background.paper, isDark ? 0.94 : 0.98);
-  const fieldBg = isDark
-    ? alpha(theme.palette.common.white, 0.04)
-    : "#ffffff";
+  const modalSolidBg = isDark ? "#1C1B20" : "#F6EAEA";
+  const fieldBg = isDark ? "#2A2A31" : "#F4F4F4";
+  const fieldBorder = isDark ? "rgba(255,255,255,0.14)" : "#CBCBCB";
+  const fieldBorderHover = isDark ? "rgba(255,255,255,0.24)" : "#B8B8B8";
+  const dividerColor = isDark ? "rgba(255,255,255,0.08)" : "#DDD2D2";
+  const helperText = isDark ? "rgba(243,244,246,0.58)" : "#9C8F95";
+  const softOutline = isDark ? "rgba(255,255,255,0.12)" : "#D7D7D7";
 
-  const fieldBorder = alpha(theme.palette.text.primary, isDark ? 0.16 : 0.14);
-  const fieldBorderHover = alpha(accentMain, isDark ? 0.58 : 0.45);
-  const textPrimary = theme.palette.text.primary;
-  const textSecondary = theme.palette.text.secondary;
-
-    const modalBg = isDark
+  const modalBg = isDark
     ? `
       linear-gradient(
         180deg,
-        ${alpha(accentMain, 0.86)} 0%,
-        ${alpha(accentMain, 0.56)} 72px,
-        ${alpha(accentMain, 0.29)} 180px,
-        ${alpha(theme.palette.background.paper, 0.98)} 320px,
-        ${paperBase} 100%
+        ${alpha(accentStrong, 0.55)} 0px,
+        ${alpha(accentMain, 0.26)} 150px,
+        ${modalSolidBg} 300px
       )
     `
     : `
       linear-gradient(
         180deg,
-        ${alpha(accentMain, 0.80)} 0%,
-        ${alpha(accentMain, 0.58)} 120px,
-        ${alpha(accentMain, 0.28)} 260px,
-        ${alpha(accentMain, 0.98)} 360px,
-        ${theme.palette.background.paper} 89%
+        #FF6E6E 0px,
+        #F08B8B 44px,
+        #F0CACA 108px,
+        #F6EAEA 220px,
+        #F6EAEA 100%
       )
     `;
-
 
   const headerToggleSx = {
     borderRadius: 999,
     overflow: "hidden",
-    border: `1px solid ${accentBorder}`,
-    bgcolor: isDark
-      ? alpha(theme.palette.common.white, 0.04)
-      : alpha(theme.palette.common.white, 0.56),
+    border: isDark ? `1px solid ${alpha("#ffffff", 0.12)}` : "1px solid rgba(255,255,255,0.14)",
+    bgcolor: isDark ? alpha("#ffffff", 0.06) : "rgba(255,255,255,0.36)",
+    boxShadow: isDark ? "none" : "inset 0 1px 0 rgba(255,255,255,0.18)",
     "& .MuiToggleButton-root": {
       px: 1.25,
-      py: 0.55,
+      py: 0.5,
+      minHeight: 34,
       fontWeight: 900,
+      fontSize: 13,
       border: "none",
       textTransform: "none",
-      color: textPrimary,
+      color: isDark ? "rgba(255,255,255,0.82)" : "rgba(40,40,40,0.68)",
       backgroundColor: "transparent",
     },
     "& .MuiToggleButton-root.Mui-selected": {
-      bgcolor: accentSoft,
-      color: accentMain,
+      bgcolor: isDark ? alpha("#ffffff", 0.14) : "#FFD6D6",
+      color: isDark ? "#fff" : "#1F2937",
     },
     "& .MuiToggleButton-root:hover": {
-      bgcolor: alpha(accentMain, isDark ? 0.10 : 0.06),
+      bgcolor: isDark ? alpha("#ffffff", 0.08) : "rgba(255,255,255,0.22)",
     },
   };
 
   const inputSx = {
     "& .MuiInputLabel-root": {
-      color: alpha(textPrimary, 0.72),
+      color: textPrimary,
       fontWeight: 800,
+      fontSize: 13,
     },
     "& .MuiInputLabel-root.Mui-focused": {
-      color: accentMain,
+      color: textPrimary,
     },
-
     "& .MuiInputBase-input": {
       color: textPrimary,
       fontSize: isSmDown ? 16 : 15,
       WebkitTextSizeAdjust: "100%",
+      fontWeight: 500,
     },
-
     "& .MuiInputBase-input::placeholder": {
-      color: alpha(textPrimary, 0.52),
+      color: helperText,
       opacity: 1,
     },
-
     "& .MuiOutlinedInput-root": {
       backgroundColor: fieldBg,
-      borderRadius: 10,
+      borderRadius: 999,
       color: textPrimary,
       transition: "box-shadow .15s ease, border-color .15s ease, background-color .15s ease",
     },
-
     "& .MuiOutlinedInput-notchedOutline": {
       borderColor: fieldBorder,
     },
-
     "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
       borderColor: fieldBorderHover,
     },
-
     "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
-      borderColor: accentMain,
+      borderColor: fieldBorder,
       borderWidth: 1,
     },
-
     "& .MuiFormHelperText-root": {
-      color: alpha(textPrimary, 0.62),
+      color: helperText,
+      fontSize: 12,
     },
-
     "& .MuiSelect-icon": {
-      color: alpha(textPrimary, 0.72),
+      color: alpha(textPrimary, 0.62),
     },
   };
 
   const actionButtonContainedSx = {
     fontWeight: 950,
-    borderRadius: 2,
-    minWidth: 160,
+    borderRadius: 999,
+    minWidth: isSmDown ? 140 : 170,
     boxShadow: "none",
-    bgcolor: accentMain,
+    bgcolor: primaryBlue,
+    color: "#fff",
+    px: 3.2,
     "&:hover": {
-      bgcolor: accentMain,
-      filter: "brightness(0.96)",
+      bgcolor: primaryBlueHover,
       boxShadow: "none",
     },
   };
 
   const actionButtonOutlinedSx = {
-    borderRadius: 2,
-    borderColor: alpha(textPrimary, 0.18),
-    color: textPrimary,
+    borderRadius: 999,
+    borderColor: alpha(primaryBlue, 0.52),
+    color: primaryBlue,
+    backgroundColor: isDark ? "transparent" : "#F8FAFF",
+    fontWeight: 800,
+    px: 3,
     "&:hover": {
-      borderColor: alpha(textPrimary, 0.28),
-      backgroundColor: alpha(textPrimary, 0.04),
+      borderColor: primaryBlue,
+      backgroundColor: alpha(primaryBlue, 0.06),
     },
   };
 
@@ -773,11 +753,9 @@ export default function NewTransactionModal({ open, onClose }) {
     ? {
       position: "sticky",
       bottom: 0,
-      background: isDark
-        ? alpha(theme.palette.background.paper, 0.94)
-        : alpha(theme.palette.background.paper, 0.97),
+      background: isDark ? alpha(theme.palette.background.paper, 0.94) : "#F6EAEA",
       backdropFilter: "blur(10px)",
-      borderTop: "none",
+      borderTop: `1px solid ${dividerColor}`,
       px: 2,
       pt: 1.5,
       pb: "calc(16px + env(safe-area-inset-bottom))",
@@ -788,7 +766,28 @@ export default function NewTransactionModal({ open, onClose }) {
       pb: 2,
       px: 2,
       gap: 1,
+      borderTop: `1px solid ${dividerColor}`,
     };
+
+  const chipSx = (active) => ({
+    fontWeight: 900,
+    borderRadius: 999,
+    height: 30,
+    borderColor: active ? primaryBlue : alpha(textPrimary, 0.26),
+    color: active ? "#fff" : textPrimary,
+    backgroundColor: active
+      ? primaryBlue
+      : isDark
+        ? alpha("#fff", 0.04)
+        : "#F7F7F7",
+    "&:hover": {
+      backgroundColor: active
+        ? primaryBlueHover
+        : isDark
+          ? alpha("#fff", 0.06)
+          : "#F1F1F1",
+    },
+  });
 
   return (
     <Dialog
@@ -802,22 +801,22 @@ export default function NewTransactionModal({ open, onClose }) {
       slotProps={{
         backdrop: {
           sx: {
-            backgroundColor: "rgba(20,20,20,0.40)",
+            backgroundColor: "rgba(20,20,20,0.35)",
             backdropFilter: "blur(2px)",
           },
         },
       }}
       PaperProps={{
         sx: {
-          borderRadius: isSmDown ? 0 : 2,
-          border: isSmDown ? "none" : `1px solid ${accentBorder}`,
+          borderRadius: isSmDown ? 0 : "24px",
+          border: isSmDown ? "none" : (isDark ? `1px solid ${alpha("#fff", 0.08)}` : "1px solid #E78B8B"),
           height: isSmDown ? "100dvh" : "auto",
           background: modalBg,
           boxShadow: isSmDown
             ? "none"
             : isDark
-              ? "0 10px 40px rgba(0,0,0,0.45)"
-              : "0 10px 30px rgba(15,23,42,0.14)",
+              ? "0 16px 44px rgba(0,0,0,0.45)"
+              : "0 10px 28px rgba(33,43,54,0.18)",
           overflow: "hidden",
           maxHeight: isSmDown ? "100dvh" : "90dvh",
           display: "flex",
@@ -829,11 +828,11 @@ export default function NewTransactionModal({ open, onClose }) {
         sx={{
           fontWeight: 950,
           py: isSmDown ? 1.2 : 1.5,
-          color: textPrimary,
+          color: isDark ? "#fff" : "#FFFFFF",
         }}
       >
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.2}>
-          <Typography sx={{ fontWeight: 950, color: textPrimary }}>
+          <Typography sx={{ fontWeight: 950, color: isDark ? "#fff" : "#FFFFFF" }}>
             Novo lançamento
           </Typography>
 
@@ -864,23 +863,27 @@ export default function NewTransactionModal({ open, onClose }) {
           WebkitOverflowScrolling: "touch",
 
           "&.MuiDialogContent-dividers": {
-            borderTop: `1px solid ${alpha(theme.palette.divider, 0.85)}`,
-            borderBottom: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
+            borderTop: `1px solid ${alpha(dividerColor, 0.9)}`,
+            borderBottom: `1px solid ${alpha(dividerColor, 0.9)}`,
           },
 
           "& .MuiTextField-root .MuiOutlinedInput-root": {
-            borderRadius: 10,
+            borderRadius: 999,
             backgroundColor: fieldBg,
             transition: "box-shadow .15s ease, border-color .15s ease, background-color .15s ease",
             "&.Mui-focused": {
-              boxShadow: `0 0 0 4px ${accentGlow}`,
+              boxShadow: "none",
             },
+          },
+
+          "& .MuiAutocomplete-inputRoot": {
+            borderRadius: 999,
           },
 
           "& .MuiFormHelperText-root": {
             marginLeft: 0,
             marginRight: 0,
-            opacity: 0.9,
+            opacity: 0.95,
           },
 
           "& .MuiSelect-select": {
@@ -902,7 +905,7 @@ export default function NewTransactionModal({ open, onClose }) {
             sx={{
               pt: 2.5,
               flexWrap: "nowrap",
-              "& > *": { minWidth: 0 }, // evita overflow por width mínima do input
+              "& > *": { minWidth: 0 },
             }}
           >
             <TextField
@@ -930,11 +933,6 @@ export default function NewTransactionModal({ open, onClose }) {
               InputLabelProps={{ shrink: true }}
               sx={{ ...inputSx, flex: 1 }}
               disabled={saving}
-            // helperText={
-            //   selectedAccount?.type === "credit_card"
-            //     ? "Auto pelo vencimento do cartão (você pode editar)."
-            //     : "Para conta corrente, padrão = data da compra."
-            // }
             />
           </Stack>
 
@@ -985,7 +983,6 @@ export default function NewTransactionModal({ open, onClose }) {
             </TextField>
           </Stack>
 
-          {/* ✅ Loja (habilita histórico no focus) */}
           <Autocomplete
             freeSolo
             options={merchantOptions}
@@ -1014,7 +1011,6 @@ export default function NewTransactionModal({ open, onClose }) {
             )}
           />
 
-          {/* ✅ Descrição */}
           <Autocomplete
             freeSolo
             options={descriptionOptions}
@@ -1051,40 +1047,34 @@ export default function NewTransactionModal({ open, onClose }) {
                   modifiers: [
                     {
                       name: "flip",
-                      enabled: false, // 🚀 impede virar pra baixo
+                      enabled: false,
                     },
                   ],
                 },
               }}
-
               ListboxProps={{
                 style: {
                   maxHeight: 260,
                   overflow: "auto",
                 },
               }}
-
               isOptionEqualToValue={(opt, val) =>
                 String(opt?.slug ?? opt?.id ?? "") === String(val?.slug ?? val?.id ?? "")
               }
-
               getOptionLabel={(opt) => {
                 const slug = String(opt?.slug ?? opt?.id ?? "");
                 const name = String(opt?.name ?? opt?.title ?? opt?.label ?? "");
                 return name || slug;
               }}
-
               onChange={(_, val) => {
                 const next = String(val?.slug ?? val?.id ?? "");
                 if (next) setCategoryId(next);
               }}
-
               renderOption={(props, option) => (
                 <li {...props} key={String(option?.slug ?? option?.id ?? "")}>
                   <CategoryOption category={option} />
                 </li>
               )}
-
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -1115,7 +1105,7 @@ export default function NewTransactionModal({ open, onClose }) {
             />
           </Stack>
 
-          <Divider sx={{ mt: 20 }} />
+          <Divider sx={{ mt: 2, borderColor: dividerColor }} />
 
           <Stack
             direction="row"
@@ -1133,23 +1123,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 setKind("one_off");
                 setShowInstallmentsPreview(false);
               }}
-              sx={{
-                fontWeight: 900,
-                borderColor: alpha(accentMain, 0.28),
-                color: kind === "one_off" ? "#fff" : textPrimary,
-                backgroundColor:
-                  kind === "one_off"
-                    ? accentMain
-                    : isDark
-                      ? alpha(theme.palette.common.white, 0.03)
-                      : alpha(theme.palette.common.black, 0.02),
-                "&:hover": {
-                  backgroundColor:
-                    kind === "one_off"
-                      ? accentMain
-                      : alpha(accentMain, isDark ? 0.12 : 0.07),
-                },
-              }}
+              sx={chipSx(kind === "one_off")}
             />
 
             <Chip
@@ -1162,23 +1136,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 setKind("recurring");
                 setShowInstallmentsPreview(false);
               }}
-              sx={{
-                fontWeight: 900,
-                borderColor: alpha(accentMain, 0.28),
-                color: kind === "one_off" ? "#fff" : textPrimary,
-                backgroundColor:
-                  kind === "one_off"
-                    ? accentMain
-                    : isDark
-                      ? alpha(theme.palette.common.white, 0.03)
-                      : alpha(theme.palette.common.black, 0.02),
-                "&:hover": {
-                  backgroundColor:
-                    kind === "one_off"
-                      ? accentMain
-                      : alpha(accentMain, isDark ? 0.12 : 0.07),
-                },
-              }}
+              sx={chipSx(kind === "recurring")}
             />
 
             <Chip
@@ -1190,23 +1148,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 if (saving) return;
                 setKind("installment");
               }}
-              sx={{
-                fontWeight: 900,
-                borderColor: alpha(accentMain, 0.28),
-                color: kind === "one_off" ? "#fff" : textPrimary,
-                backgroundColor:
-                  kind === "one_off"
-                    ? accentMain
-                    : isDark
-                      ? alpha(theme.palette.common.white, 0.03)
-                      : alpha(theme.palette.common.black, 0.02),
-                "&:hover": {
-                  backgroundColor:
-                    kind === "one_off"
-                      ? accentMain
-                      : alpha(accentMain, isDark ? 0.12 : 0.07),
-                },
-              }}
+              sx={chipSx(kind === "installment")}
             />
           </Stack>
 
@@ -1223,10 +1165,10 @@ export default function NewTransactionModal({ open, onClose }) {
             />
           ) : null}
 
-          <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            Mês de fatura: <b>{formatMonthBR(invoiceMonth) || "—"}</b>{" "}
+          <Typography variant="body2" sx={{ color: textSecondary, fontWeight: 500 }}>
+            Mês de fatura: <b style={{ color: isDark ? "#E5E7EB" : "#5E6E8A" }}>{formatMonthBR(invoiceMonth) || "—"}</b>{" "}
             {selectedAccount?.type === "credit_card" ? (
-              <span style={{ opacity: 0.8 }}>
+              <span style={{ opacity: 0.82 }}>
                 (cutoff dia {selectedAccount?.statement?.cutoffDay || "—"} • venc. dia{" "}
                 {selectedAccount?.statement?.dueDay || "—"})
               </span>
@@ -1246,12 +1188,11 @@ export default function NewTransactionModal({ open, onClose }) {
                   fullWidth={isSmDown}
                   style={isSmDown ? undefined : { width: 180 }}
                 />
-                <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                <Typography variant="body2" sx={{ color: textSecondary }}>
                   Centavos distribuídos nas primeiras parcelas.
                 </Typography>
               </Stack>
 
-              {/* ✅ preview colapsado no mobile */}
               <Box sx={{ mt: 1.0 }}>
                 <Button
                   size="small"
@@ -1260,7 +1201,12 @@ export default function NewTransactionModal({ open, onClose }) {
                     setShowInstallmentsPreview((v) => !v);
                   }}
                   disabled={saving}
-                  sx={{ fontWeight: 950, textTransform: "none", borderRadius: 999 }}
+                  sx={{
+                    fontWeight: 950,
+                    textTransform: "none",
+                    borderRadius: 999,
+                    color: primaryBlue,
+                  }}
                   endIcon={showInstallmentsPreview ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
                 >
                   {showInstallmentsPreview ? "Ocultar preview" : "Ver preview das parcelas"}
@@ -1280,20 +1226,18 @@ export default function NewTransactionModal({ open, onClose }) {
                           <Box
                             key={p.idx}
                             sx={{
-                              border: `1px solid ${alpha(theme.palette.text.primary, isDark ? 0.10 : 0.12)}`,
+                              border: `1px solid ${softOutline}`,
                               borderRadius: 1.5,
                               px: 1.2,
                               py: 0.9,
-                              background: isDark
-                                ? alpha(theme.palette.common.white, 0.035)
-                                : alpha(theme.palette.common.white, 0.9),
+                              background: isDark ? alpha("#fff", 0.035) : alpha("#fff", 0.82),
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "space-between",
                               gap: 1,
                             }}
                           >
-                            <Typography variant="body2" sx={{ color: "text.secondary", fontWeight: 700 }}>
+                            <Typography variant="body2" sx={{ color: textSecondary, fontWeight: 700 }}>
                               {p.dateLabel}
                             </Typography>
 
@@ -1304,7 +1248,7 @@ export default function NewTransactionModal({ open, onClose }) {
                                 px: 0.8,
                                 py: 0.2,
                                 borderRadius: 1,
-                                backgroundColor: alpha(theme.palette.text.primary, isDark ? 0.12 : 0.06),
+                                backgroundColor: isDark ? alpha("#fff", 0.12) : alpha("#111827", 0.06),
                                 color: textPrimary,
                                 whiteSpace: "nowrap",
                               }}
@@ -1312,7 +1256,7 @@ export default function NewTransactionModal({ open, onClose }) {
                               {p.label}
                             </Typography>
 
-                            <Typography variant="body2" sx={{ fontWeight: 950, whiteSpace: "nowrap" }}>
+                            <Typography variant="body2" sx={{ fontWeight: 950, whiteSpace: "nowrap", color: textPrimary }}>
                               {p.valueLabel}
                             </Typography>
                           </Box>
