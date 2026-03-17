@@ -834,6 +834,7 @@ export default function DashboardMonthlyPace({
                 value={mode}
                 onChange={handleModeChange}
                 sx={{
+                  gap: 0.9, // 👈 espaço ENTRE os botões
                   "& .MuiToggleButton-root": {
                     px: 1.15,
                     py: 0.5,
@@ -946,8 +947,11 @@ export default function DashboardMonthlyPace({
           <Box
             sx={{
               display: "grid",
-              gap: 1.5,
-              gridTemplateColumns: { xs: "1fr", xl: "1.05fr 1.4fr" },
+              gap: 1.25,
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "minmax(0, 0.95fr) minmax(0, 1.05fr)",
+              },
               alignItems: "stretch",
             }}
           >
@@ -966,7 +970,7 @@ export default function DashboardMonthlyPace({
                     Comparativo até o dia {analysis.cutoffDay}
                   </Typography>
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                      cinza = mês fechado • laranja = até hoje
+                    cinza = mês fechado • laranja = até hoje
                   </Typography>
                 </Stack>
 
@@ -1068,8 +1072,11 @@ export default function DashboardMonthlyPace({
           <Box
             sx={{
               display: "grid",
-              gap: 1.5,
-              gridTemplateColumns: { xs: "1fr", xl: "1.05fr 1.4fr" },
+              gap: 1.25,
+              gridTemplateColumns: {
+                xs: "1fr",
+                sm: "minmax(0, 0.95fr) minmax(0, 1.05fr)",
+              },
               alignItems: "stretch",
             }}
           >
@@ -1118,7 +1125,32 @@ export default function DashboardMonthlyPace({
                   </ToggleButtonGroup>
                 </Stack>
 
-                <Box sx={{ flex: 1, overflow: "auto", maxHeight: 430 }}>
+                <Box
+  sx={(theme) => ({
+    flex: 1,
+    maxHeight: 430,
+    minHeight: 0,
+    overflowY: "auto",
+    overflowX: "hidden",
+    pr: 0.35,
+    scrollbarWidth: "thin",
+    scrollbarColor: `${alpha(theme.palette.text.primary, 0.18)} transparent`,
+    "&::-webkit-scrollbar": {
+      width: 6,
+      height: 6,
+    },
+    "&::-webkit-scrollbar-track": {
+      background: "transparent",
+    },
+    "&::-webkit-scrollbar-thumb": {
+      backgroundColor: alpha(theme.palette.text.primary, 0.16),
+      borderRadius: 999,
+    },
+    "&::-webkit-scrollbar-thumb:hover": {
+      backgroundColor: alpha(theme.palette.text.primary, 0.24),
+    },
+  })}
+>
                   {topCategoryRows.length === 0 ? (
                     <Typography variant="body2" sx={{ color: "text.secondary" }}>
                       Sem categorias para comparar.
@@ -1133,7 +1165,9 @@ export default function DashboardMonthlyPace({
                           ? theme.palette.error.main
                           : barColorBase;
 
-                        const progressValue = row.pctVsPrevious > 0 ? row.pctVsPrevious : 0;
+                        const progressValue = row.hasPreviousBase
+                          ? Math.min(Math.max(row.pctVsPrevious || 0, 0), 100)
+                          : 100;
 
                         return (
                           <React.Fragment key={row.key}>

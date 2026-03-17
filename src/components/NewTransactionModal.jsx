@@ -624,7 +624,7 @@ export default function NewTransactionModal({ open, onClose }) {
   const textPrimary = isDark ? "#F3F4F6" : "#495262";
   const textSecondary = isDark ? "rgba(243,244,246,0.72)" : "#8B8792";
 
-  const modalSolidBg = isDark ? "#1C1B20" : "#F6EAEA";
+
   const fieldBg = isDark ? "#2A2A31" : "#F4F4F4";
   const fieldBorder = isDark ? "rgba(255,255,255,0.14)" : "#CBCBCB";
   const fieldBorderHover = isDark ? "rgba(255,255,255,0.24)" : "#B8B8B8";
@@ -632,25 +632,42 @@ export default function NewTransactionModal({ open, onClose }) {
   const helperText = isDark ? "rgba(243,244,246,0.58)" : "#9C8F95";
   const softOutline = isDark ? "rgba(255,255,255,0.12)" : "#D7D7D7";
 
+  const modalSolidBg = isDark
+    ? "#1C1B20"
+    : isExpense
+      ? "#F6EAEA"
+      : "#EDF8F1";
+
   const modalBg = isDark
     ? `
       linear-gradient(
         180deg,
-        ${alpha(accentStrong, 0.55)} 0px,
-        ${alpha(accentMain, 0.26)} 150px,
-        ${modalSolidBg} 300px
+        ${alpha(accentStrong, 0.85)} 200px,
+        ${alpha(accentMain, 0.36)} 250px,
+        ${modalSolidBg} 500px
       )
     `
-    : `
-      linear-gradient(
-        180deg,
-        #FF6E6E 0px,
-        #F08B8B 44px,
-        #F0CACA 108px,
-        #F6EAEA 220px,
-        #F6EAEA 100%
-      )
-    `;
+    : isExpense
+      ? `
+        linear-gradient(
+          180deg,
+          #FF6E6E 0px,
+          #F08B8B 44px,
+          #F0CACA 108px,
+          #F6EAEA 220px,
+          #F6EAEA 100%
+        )
+      `
+      : `
+        linear-gradient(
+          180deg,
+          #52C878 0px,
+          #79D69A 44px,
+          #CFEFDC 108px,
+          #EDF8F1 220px,
+          #EDF8F1 100%
+        )
+      `;
 
   const headerToggleSx = {
     borderRadius: 999,
@@ -809,7 +826,11 @@ export default function NewTransactionModal({ open, onClose }) {
       PaperProps={{
         sx: {
           borderRadius: isSmDown ? 0 : "24px",
-          border: isSmDown ? "none" : (isDark ? `1px solid ${alpha("#fff", 0.08)}` : "1px solid #E78B8B"),
+          border: isSmDown
+            ? "none"
+            : isDark
+              ? `1px solid ${alpha("#fff", 0.08)}`
+              : `1px solid ${isExpense ? "#E78B8B" : "#9FD7AF"}`,
           height: isSmDown ? "100dvh" : "auto",
           background: modalBg,
           boxShadow: isSmDown

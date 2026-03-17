@@ -362,12 +362,17 @@ function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
     >
       <CardContent sx={{ p: 1.55 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.2}>
-          <Stack spacing={0.55} sx={{ minWidth: 0 }}>
+          <Stack
+            direction="column"
+            justifyContent="space-between"
+            alignItems="flex-start"
+            sx={{ height: "100%", minHeight: 26 }}
+          >
             <Typography
               sx={{
                 color: "text.secondary",
                 fontWeight: 850,
-                fontSize: 11,
+                fontSize: 7,
                 lineHeight: 1,
                 textTransform: "uppercase",
                 letterSpacing: 0.35,
@@ -380,9 +385,10 @@ function KpiCard({ title, value, icon: Icon, tone = "neutral" }) {
               sx={{
                 fontWeight: 950,
                 letterSpacing: -0.5,
-                lineHeight: 1.05,
-                fontSize: { xs: 19, sm: 20, md: 19, lg: 18 },
+                // lineHeight: 1.05,
+                fontSize: { xs: 16, sm: 18, md: 17, lg: 16 },
                 wordBreak: "break-word",
+                mt: 0.8,
               }}
             >
               {value}
