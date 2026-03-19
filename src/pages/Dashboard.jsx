@@ -30,6 +30,13 @@ import DashboardChart from "../components/DashboardChart";
 import DashboardChartNivo from "../components/DashboardChartNivo";
 import DashboardMonthlyPace from "../components/DashboardMonthlyPace";
 
+import Chip from "@mui/material/Chip";
+
+import LockRoundedIcon from "@mui/icons-material/LockRounded";
+import LockOpenRoundedIcon from "@mui/icons-material/LockOpenRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
+
 // =============================
 // DEBUG
 // =============================
@@ -524,6 +531,17 @@ export default function Dashboard() {
   const categories = useSelector((s) => s.categories?.items || s.categories?.categories || []);
   const bills = useSelector((s) => s.bills?.items || s.bills?.bills || []);
 
+
+  const invoices =
+    useSelector((s) =>
+      s.invoices?.items ||
+      s.invoices?.invoices ||
+      s.bootstrap?.invoices ||
+      s.bootstrap?.data?.invoices ||
+      []
+    ) || [];
+
+
   const hideValues = useSelector(selectHideValues);
 
   const accountsStatus = useSelector((s) => s.accounts.status);
@@ -590,6 +608,25 @@ export default function Dashboard() {
     }
     return m;
   }, [accounts]);
+
+  const invoicesByAccountMonth = useMemo(() => {
+    const map = new Map();
+
+    for (const inv of invoices || []) {
+      if (!inv) continue;
+
+      const accountId = String(inv?.account || inv?.account_id || "").trim();
+      if (!accountId) continue;
+
+      const statementMonth = normalizeYM(inv?.statement_month ?? inv?.statementMonth ?? "");
+      if (!statementMonth) continue;
+
+      map.set(`${accountId}::${statementMonth}`, inv);
+    }
+
+    return map;
+  }, [invoices]);
+
 
   const resolveAccountIdFromTxn = useMemo(() => {
     return (t) => {
@@ -1003,16 +1040,82 @@ export default function Dashboard() {
       return `${pad2(dd)}/${pad2(mm)}/${yy}`;
     };
 
+    const brFromISODate = (iso) => {
+      if (!iso) return "—";
+      const s = String(iso).slice(0, 10);
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return "—";
+      return `${m[3]}/${m[2]}/${m[1]}`;
+    };
+
     const getDueDayFromAccount = (a) => {
       const v = a?.statement?.dueDay ?? a?.statement?.due_day ?? a?.dueDay ?? a?.due_day;
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     };
 
+    const getStatusUi = (invoice) => {
+      if (!invoice) {
+        return {
+          lockState: "open",
+          statusLabel: "Aberta",
+          statusTone: "warning",
+          statusIcon: "open",
+        };
+      }
+
+      const invoiceState = String(
+        invoice?.invoice_state ?? invoice?.invoiceState ?? invoice?.status ?? ""
+      ).toUpperCase();
+
+      const isPaid =
+        Boolean(invoice?.is_paid ?? invoice?.isPaid) ||
+        Boolean(invoice?.paid_at ?? invoice?.paidAt) ||
+        Boolean(invoice?.payment_transaction ?? invoice?.paymentTransaction) ||
+        invoiceState === "PAID";
+
+      if (isPaid) {
+        return {
+          lockState: "paid",
+          statusLabel: "Paga",
+          statusTone: "success",
+          statusIcon: "paid",
+        };
+      }
+
+      if (invoiceState === "OVERDUE") {
+        return {
+          lockState: "closed",
+          statusLabel: "Vencida",
+          statusTone: "error",
+          statusIcon: "overdue",
+        };
+      }
+
+      if (
+        invoiceState === "CLOSED_UNPAID" ||
+        invoiceState === "CLOSED" ||
+        String(invoice?.lock_state ?? invoice?.lockState ?? "").toLowerCase() === "closed"
+      ) {
+        return {
+          lockState: "closed",
+          statusLabel: "A vencer",
+          statusTone: "info",
+          statusIcon: "closed",
+        };
+      }
+
+      return {
+        lockState: "open",
+        statusLabel: "Aberta",
+        statusTone: "warning",
+        statusIcon: "open",
+      };
+    };
+
     for (const t of monthTx || []) {
       const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
       if (!invYM) continue;
-
       if (normalizeDirectionFromTxn(t) !== "expense") continue;
 
       const accId =
@@ -1022,6 +1125,11 @@ export default function Dashboard() {
         (typeof t?.account === "string" || typeof t?.account === "number" ? t.account : null);
 
       if (!accId) continue;
+
+      const acc = accountsById?.[String(accId)];
+      const accType = String(acc?.type || "").toLowerCase();
+
+      if (accType !== "credit_card") continue;
 
       const v = Math.abs(Math.min(0, signedAmountNormalized(t)));
       if (!v) continue;
@@ -1038,22 +1146,40 @@ export default function Dashboard() {
 
     return Array.from(sums.entries())
       .map(([accId, total]) => {
-        const a = accountsById?.[String(accId)] || {};
+        const account = accountsById?.[String(accId)] || {};
+        const invYM = invYMByAcc.get(String(accId)) || targetInvoiceYM || "";
 
-        const invYM = invYMByAcc.get(String(accId)) || "";
-        const dueDay = getDueDayFromAccount(a);
-        const dueLabel = dueDay ? brFromYMAndDay(invYM, dueDay) : "—";
+        const dueDay = getDueDayFromAccount(account);
+        const dueLabelFallback = dueDay ? brFromYMAndDay(invYM, dueDay) : "—";
+
+        const invoice =
+          invoicesByAccountMonth.get(`${String(accId)}::${invYM}`) || null;
+        console.log('infcoisceeee', invoice)
+        const statusUi = getStatusUi(invoice);
 
         return {
-          id: String(accId),
-          name: a?.name || "Cartão",
-          color: a?.color || null,
+          id: `${String(accId)}::${invYM}`,
+          accountId: String(accId),
+          invoiceMonth: invYM,
+          name: account?.name || invoice?.account_name || "Cartão",
+          color: account?.color || invoice?.account_color || null,
           total: Number((total || 0).toFixed(2)),
-          dueLabel,
+          dueLabel: invoice?.due_date ? brFromISODate(invoice.due_date) : dueLabelFallback,
+
+          hasBill: Boolean(invoice?.has_bill ?? invoice?.hasBill ?? invoice?.bill),
+          billId: invoice?.bill ?? invoice?.bill_id ?? null,
+          billStatus: invoice?.bill_status ?? invoice?.billStatus ?? null,
+
+          invoiceState: invoice?.invoice_state ?? invoice?.invoiceState ?? "OPEN",
+          lockState: statusUi.lockState,
+          isPaid: statusUi.lockState === "paid",
+          statusLabel: statusUi.statusLabel,
+          statusTone: statusUi.statusTone,
+          statusIcon: statusUi.statusIcon,
         };
       })
       .sort((a, b) => (b.total || 0) - (a.total || 0));
-  }, [monthTx, accountsById]);
+  }, [monthTx, accountsById, invoicesByAccountMonth, targetInvoiceYM]);
 
   const totalInvoicesMonth = useMemo(() => {
     return Number(
@@ -1395,10 +1521,49 @@ export default function Dashboard() {
                                 }}
                               />
                               <Box sx={{ minWidth: 0, flex: 1 }}>
-                                <Typography sx={{ fontWeight: 950, fontSize: 13 }} noWrap>{c.name}</Typography>
+                                <Stack
+                                  direction="row"
+                                  spacing={0.75}
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  sx={{ minWidth: 0 }}
+                                >
+                                  <Stack direction="row" spacing={0.65} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
+                                    {c.statusIcon === "paid" ? (
+                                      <CheckCircleRoundedIcon sx={{ fontSize: 14, color: "success.main", flexShrink: 0 }} />
+                                    ) : c.statusIcon === "overdue" ? (
+                                      <ErrorOutlineRoundedIcon sx={{ fontSize: 14, color: "error.main", flexShrink: 0 }} />
+                                    ) : c.lockState === "closed" ? (
+                                      <LockRoundedIcon sx={{ fontSize: 14, color: "info.main", flexShrink: 0 }} />
+                                    ) : (
+                                      <LockOpenRoundedIcon sx={{ fontSize: 14, color: "warning.main", flexShrink: 0 }} />
+                                    )}
+
+                                    <Typography sx={{ fontWeight: 950, fontSize: 13 }} noWrap>
+                                      {c.name}
+                                    </Typography>
+                                  </Stack>
+
+                                  <Chip
+                                    size="small"
+                                    label={c.statusLabel}
+                                    color={c.statusTone}
+                                    variant={c.statusTone === "warning" ? "outlined" : "filled"}
+                                    sx={{
+                                      height: 20,
+                                      flexShrink: 0,
+                                      "& .MuiChip-label": {
+                                        px: 0.8,
+                                        fontSize: 10,
+                                        fontWeight: 900,
+                                      },
+                                    }}
+                                  />
+                                </Stack>
+
                                 <Typography
                                   sx={{
-                                    mt: 0.15,
+                                    mt: 0.25,
                                     fontSize: 9.6,
                                     fontWeight: 850,
                                     color: "text.secondary",
@@ -1406,8 +1571,10 @@ export default function Dashboard() {
                                   }}
                                   noWrap
                                 >
-                                  Vence aprox. {c.dueLabel}
+                                  Vence em {c.dueLabel}
+                                  {c.hasBill ? " • com bill" : " • sem bill"}
                                 </Typography>
+
                                 <Box sx={{ mt: 0.75 }}>
                                   <LinearProgress
                                     variant="determinate"
