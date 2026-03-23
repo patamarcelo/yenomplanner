@@ -198,57 +198,78 @@ export default function InstallmentsMatrix() {
       groupsMap.get(gid).push(t);
     }
 
-    const groups = Array.from(groupsMap.entries()).map(([groupId, arr]) => {
-      const sorted = arr.slice().sort((a, b) => ymCompare(ymFromAny(a?.invoiceMonth), ymFromAny(b?.invoiceMonth)));
-      const openItems = sorted.filter((x) => !isInvoiced(x));
-      const remainingOpen = openItems.length;
-      const first = sorted[0];
+    const groups = Array.from(groupsMap.entries())
+      .map(([groupId, arr]) => {
+        const sorted = arr.slice().sort((a, b) =>
+          ymCompare(
+            ymFromAny(a?.invoiceMonth || a?.invoice_month),
+            ymFromAny(b?.invoiceMonth || b?.invoice_month)
+          )
+        );
 
-      const accountId = resolveAccountId(first);
-      const acc = accountId != null ? accountsById.get(String(accountId)) : null;
+        const visibleItems = hideInvoiced
+          ? sorted.filter((x) => !isInvoiced(x))
+          : sorted.slice();
 
-      const accountName = acc?.name || acc?.nickname || acc?.label || (accountId != null ? String(accountId) : "Cartão");
-      const tint = acc?.tint || acc?.color || "rgba(0,0,0,0.06)";
+        const byMonth = new Map();
+        for (const t of visibleItems) {
+          const ym = ymFromAny(t?.invoiceMonth || t?.invoice_month);
+          const v = safeNumber(t?.amount);
+          if (!ym || !v) continue;
+          byMonth.set(ym, (byMonth.get(ym) || 0) + v);
+        }
 
-      const byMonth = new Map();
-      for (const t of sorted) {
-        if (hideInvoiced && isInvoiced(t)) continue;
-        const ym = ymFromAny(t?.invoiceMonth || t?.invoice_month);
-        const v = safeNumber(t?.amount);
-        if (!ym || !v) continue;
-        byMonth.set(ym, (byMonth.get(ym) || 0) + v);
-      }
+        const totalVisible = visibleItems.reduce((acc2, x) => acc2 + safeNumber(x?.amount), 0);
 
-      const total = sorted.reduce((acc2, x) => acc2 + safeNumber(x?.amount), 0);
+        // se não sobrou valor nenhum, não renderiza a linha
+        if (!byMonth.size || !totalVisible) return null;
 
-      const totalParts =
-        first?.installment?.total ??
-        first?.installmentTotal ??
-        first?.installment_total ??
-        sorted.length;
+        const firstAll = sorted[0];
+        const accountId = resolveAccountId(firstAll);
+        const acc = accountId != null ? accountsById.get(String(accountId)) : null;
 
-      const invoicedCount = arr.reduce((n, x) => n + (isInvoiced(x) ? 1 : 0), 0);
-      const remainingParts = Math.max(0, safeNumber(totalParts) - safeNumber(invoicedCount));
+        const accountName =
+          acc?.name ||
+          acc?.nickname ||
+          acc?.label ||
+          (accountId != null ? String(accountId) : "Cartão");
 
-      return {
-        groupId,
-        accountId,
-        remainingOpen,
-        openCount: remainingOpen,
-        closedCount: sorted.length - remainingOpen,
-        accountName,
-        tint,
-        merchant: first?.merchant || first?.description || "Parcelamento",
-        total,
-        totalParts,
-        installmentsCount: sorted.length,
-        remainingParts,
-        byMonth,
-        firstMonth: ymFromAny(sorted[0]?.invoiceMonth),
-        lastMonth: ymFromAny(sorted[sorted.length - 1]?.invoiceMonth),
-        items: sorted,
-      };
-    });
+        const tint = acc?.tint || acc?.color || "rgba(0,0,0,0.06)";
+
+        const totalParts =
+          firstAll?.installment?.total ??
+          firstAll?.installmentTotal ??
+          firstAll?.installment_total ??
+          sorted.length;
+
+        const invoicedCount = sorted.reduce((n, x) => n + (isInvoiced(x) ? 1 : 0), 0);
+        const remainingOpen = visibleItems.length;
+        const remainingParts = Math.max(0, safeNumber(totalParts) - safeNumber(invoicedCount));
+
+        return {
+          groupId,
+          accountId,
+          remainingOpen,
+          openCount: remainingOpen,
+          closedCount: sorted.length - remainingOpen,
+          accountName,
+          tint,
+          merchant: firstAll?.merchant || firstAll?.description || "Parcelamento",
+          total: totalVisible,
+          totalParts,
+          installmentsCount: sorted.length,
+          remainingParts,
+          byMonth,
+          firstMonth: ymFromAny(visibleItems[0]?.invoiceMonth || visibleItems[0]?.invoice_month),
+          lastMonth: ymFromAny(
+            visibleItems[visibleItems.length - 1]?.invoiceMonth ||
+            visibleItems[visibleItems.length - 1]?.invoice_month
+          ),
+          items: visibleItems,
+          allItems: sorted,
+        };
+      })
+      .filter(Boolean);
 
     const byAccount = new Map();
     for (const g of groups) {
@@ -257,44 +278,50 @@ export default function InstallmentsMatrix() {
       byAccount.get(k).push(g);
     }
 
-    const cardsOut = Array.from(byAccount.entries()).map(([accountId, arr]) => {
-      const groupsSorted = arr
-        .slice()
-        .sort((a, b) =>
-          safeNumber(a.remainingOpen) - safeNumber(b.remainingOpen) ||
-          safeNumber(b.total) - safeNumber(a.total) ||
-          ymCompare(a.firstMonth, b.firstMonth)
-        );
+    const cardsOut = Array.from(byAccount.entries())
+      .map(([accountId, arr]) => {
+        const groupsSorted = arr
+          .filter((g) => g && g.byMonth && g.byMonth.size > 0 && safeNumber(g.total) !== 0)
+          .slice()
+          .sort(
+            (a, b) =>
+              safeNumber(a.remainingOpen) - safeNumber(b.remainingOpen) ||
+              safeNumber(b.total) - safeNumber(a.total) ||
+              ymCompare(a.firstMonth, b.firstMonth)
+          );
 
-      const total = groupsSorted.reduce((acc2, x) => acc2 + safeNumber(x.total), 0);
+        if (!groupsSorted.length) return null;
 
-      const accountName = groupsSorted[0]?.accountName || (accountId != null ? String(accountId) : "Cartão");
-      const tint = groupsSorted[0]?.tint || "rgba(0,0,0,0.06)";
-      const groupsCount = groupsSorted.length;
+        const total = groupsSorted.reduce((acc2, x) => acc2 + safeNumber(x.total), 0);
 
-      const totalsByMonth = new Map();
-      for (const g of groupsSorted) {
-        for (const [ym, v] of g.byMonth.entries()) {
-          totalsByMonth.set(ym, (totalsByMonth.get(ym) || 0) + safeNumber(v));
+        const accountName =
+          groupsSorted[0]?.accountName || (accountId != null ? String(accountId) : "Cartão");
+
+        const tint = groupsSorted[0]?.tint || "rgba(0,0,0,0.06)";
+        const groupsCount = groupsSorted.length;
+
+        const totalsByMonth = new Map();
+        for (const g of groupsSorted) {
+          for (const [ym, v] of g.byMonth.entries()) {
+            totalsByMonth.set(ym, (totalsByMonth.get(ym) || 0) + safeNumber(v));
+          }
         }
-      }
 
-      const minMonth = groupsSorted.reduce(
-        (min, g) => (!min || (g.firstMonth && ymCompare(g.firstMonth, min) < 0) ? g.firstMonth : min),
-        ""
-      );
+        const visibleMonths = Array.from(totalsByMonth.keys()).sort(ymCompare);
+        const minMonth = visibleMonths[0] || "";
 
-      return {
-        accountId,
-        accountName,
-        tint,
-        groups: groupsSorted,
-        total,
-        minMonth,
-        groupsCount,
-        totalsByMonth,
-      };
-    });
+        return {
+          accountId,
+          accountName,
+          tint,
+          groups: groupsSorted,
+          total,
+          minMonth,
+          groupsCount,
+          totalsByMonth,
+        };
+      })
+      .filter(Boolean);
 
     cardsOut.sort((a, b) => safeNumber(b.total) - safeNumber(a.total));
 
@@ -413,6 +440,24 @@ export default function InstallmentsMatrix() {
     }
     const monthsSorted = Array.from(byMonth.keys()).sort(ymCompare);
     return { byMonth, monthsSorted };
+  }, [activeGroup]);
+
+  const drawerDescription = useMemo(() => {
+    const g = activeGroup;
+    if (!g) return "";
+    const candidates = (g.items || [])
+    .map((t) => String(t?.description || t?.merchant || "").trim())
+    .filter(Boolean);
+
+    if (!candidates.length) return "";
+
+    const unique = Array.from(new Set(candidates));
+
+    // se todas as parcelas têm a mesma descrição, mostra uma só
+    if (unique.length === 1) return unique[0];
+
+    // se tiver mais de uma, junta de forma legível
+    return unique.join(" • ");
   }, [activeGroup]);
 
   /* =========================
@@ -764,86 +809,88 @@ export default function InstallmentsMatrix() {
                           </TableRow>
 
                           {isOpen &&
-                            c.groups.map((g) => (
-                              <TableRow
-                                key={g.groupId}
-                                hover
-                                onClick={() => openGroupDrawer(g)}
-                                sx={{
-                                  cursor: "pointer",
-                                  "&:hover td": { background: alpha(theme.palette.primary.main, 0.03) },
-                                }}
-                              >
-                                <TableCell
+                            c.groups
+                              .filter((g) => g?.byMonth?.size > 0 && safeNumber(g?.total) !== 0)
+                              .map((g) => (
+                                <TableRow
+                                  key={g.groupId}
+                                  hover
+                                  onClick={() => openGroupDrawer(g)}
                                   sx={{
-                                    ...stickyFirstColSx({
-                                      width: FIRST_COL_W,
-                                      minWidth: FIRST_COL_W,
-                                      maxWidth: FIRST_COL_W,
-                                    }),
+                                    cursor: "pointer",
+                                    "&:hover td": { background: alpha(theme.palette.primary.main, 0.03) },
                                   }}
                                 >
-                                  <Stack spacing={0.2} sx={{ minWidth: 0 }}>
-                                    <Typography
-                                      sx={{
-                                        fontWeight: 950,
-                                        lineHeight: 1.15,
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {g.merchant}{" "}
-                                      <span style={{ opacity: 0.65, fontWeight: 900 }}>• {g.totalParts}x</span>
-                                    </Typography>
-                                  </Stack>
-                                </TableCell>
+                                  <TableCell
+                                    sx={{
+                                      ...stickyFirstColSx({
+                                        width: FIRST_COL_W,
+                                        minWidth: FIRST_COL_W,
+                                        maxWidth: FIRST_COL_W,
+                                      }),
+                                    }}
+                                  >
+                                    <Stack spacing={0.2} sx={{ minWidth: 0 }}>
+                                      <Typography
+                                        sx={{
+                                          fontWeight: 950,
+                                          lineHeight: 1.15,
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {g.merchant}{" "}
+                                        <span style={{ opacity: 0.65, fontWeight: 900 }}>• {g.totalParts}x</span>
+                                      </Typography>
+                                    </Stack>
+                                  </TableCell>
 
-                                {months.map((ym, idx) => {
-                                  const v = safeNumber(g.byMonth.get(ym) || 0);
+                                  {months.map((ym, idx) => {
+                                    const v = safeNumber(g.byMonth.get(ym) || 0);
 
-                                  if (!v) {
+                                    if (!v) {
+                                      return (
+                                        <TableCell
+                                          key={ym}
+                                          align="right"
+                                          sx={{
+                                            opacity: 0.25,
+                                            borderRight: dashedRight(idx === months.length - 1),
+                                          }}
+                                        />
+                                      );
+                                    }
+
                                     return (
                                       <TableCell
                                         key={ym}
                                         align="right"
                                         sx={{
-                                          opacity: 0.25,
+                                          fontWeight: 950,
+                                          whiteSpace: "nowrap",
+                                          background: alpha(c.tint, 0.1),
+                                          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.65)}`,
                                           borderRight: dashedRight(idx === months.length - 1),
                                         }}
-                                      />
+                                      >
+                                        {formatBRL(v)}
+                                      </TableCell>
                                     );
-                                  }
+                                  })}
 
-                                  return (
-                                    <TableCell
-                                      key={ym}
-                                      align="right"
-                                      sx={{
-                                        fontWeight: 950,
-                                        whiteSpace: "nowrap",
-                                        background: alpha(c.tint, 0.1),
-                                        borderBottom: `1px solid ${alpha(theme.palette.divider, 0.65)}`,
-                                        borderRight: dashedRight(idx === months.length - 1),
-                                      }}
-                                    >
-                                      {formatBRL(v)}
-                                    </TableCell>
-                                  );
-                                })}
-
-                                <TableCell
-                                  align="right"
-                                  sx={{
-                                    fontWeight: 980,
-                                    whiteSpace: "nowrap",
-                                    borderLeft: `1px dotted ${dividerDot}`,
-                                  }}
-                                >
-                                  {formatBRL(g.total)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                                  <TableCell
+                                    align="right"
+                                    sx={{
+                                      fontWeight: 980,
+                                      whiteSpace: "nowrap",
+                                      borderLeft: `1px dotted ${dividerDot}`,
+                                    }}
+                                  >
+                                    {formatBRL(g.total)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
 
                           <TableRow>
                             <TableCell colSpan={months.length + 2} sx={{ p: 0 }}>
@@ -876,13 +923,27 @@ export default function InstallmentsMatrix() {
         <Box sx={{ p: 2 }}>
           <Stack spacing={1.2}>
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-              <Stack spacing={0.2}>
+              <Stack spacing={0.35}>
                 <Typography sx={{ fontWeight: 980, letterSpacing: -0.2 }}>
                   {activeGroup?.merchant || "Parcelamento"}{" "}
                   {activeGroup?.totalParts ? (
                     <span style={{ opacity: 0.65, fontWeight: 900 }}>• {activeGroup.totalParts}x</span>
                   ) : null}
                 </Typography>
+
+                {!!drawerDescription && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: "text.primary",
+                      fontWeight: 700,
+                      lineHeight: 1.25,
+                    }}
+                  >
+                    {drawerDescription}
+                  </Typography>
+                )}
+
                 <Typography variant="caption" sx={{ color: "text.secondary" }}>
                   {activeGroup?.accountName || "Cartão"} • {ymLabelBR(activeGroup?.firstMonth)} →{" "}
                   {ymLabelBR(activeGroup?.lastMonth)}
