@@ -87,7 +87,7 @@ const safeNumber = (v) => {
 ========================= */
 const isInvoiced = (t) => {
   const st = String(t?.status || "").toLowerCase();
-  if (["faturado", "invoiced", "invoice", "closed"].includes(st)) return true;
+  if (["faturado", "invoiced", "invoice", "closed", 'paid', 'pago'].includes(st)) return true;
   if (t?.invoiced === true || t?.isInvoiced === true) return true;
   if (t?.invoiceId || t?.invoice_id) return true;
   return false;
@@ -372,14 +372,10 @@ export default function InstallmentsMatrix() {
   }, [openCards]);
 
   const months = useMemo(() => {
-    const start = model.globalMinMonth || ymFromAny(new Date().toISOString());
-    const out = [];
-    for (let i = 0; i < monthsAhead; i++) {
-      const ym = ymAddMonths(start, i);
-      if (ym) out.push(ym);
-    }
-    return out;
-  }, [model.globalMinMonth, monthsAhead]);
+    const allMonths = Array.from(model.globalTotalsByMonth.keys()).sort(ymCompare);
+
+    return allMonths;
+  }, [model.globalTotalsByMonth]);
 
   const openGroupDrawer = (g) => {
     setActiveGroup(g || null);
