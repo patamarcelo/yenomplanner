@@ -1,43 +1,68 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/png" href="/assets/image/logo-1.png" />
+
+  <!-- FAVICON -->
+  <link rel="icon" type="image/x-icon" href="/icons/icon-512.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-512.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-512.png" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+  <!-- VIEWPORT -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+  <!-- SEO -->
+  <title>Yenom Planner | Controle Financeiro Pessoal e Cartões</title>
+
+  <meta name="description"
+    content="Controle seus gastos, cartões de crédito e planejamento financeiro em um só lugar. Simples, rápido e inteligente." />
+
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://www.yenomplanner.com/" />
+
+  <!-- OPEN GRAPH -->
+  <meta property="og:title" content="Yenom Planner | Controle Financeiro Inteligente" />
+  <meta property="og:description"
+    content="Gerencie seus gastos, cartões e planejamento financeiro de forma simples e eficiente." />
+  <meta property="og:image" content="https://www.yenomplanner.com/og-image.png" />
+  <meta property="og:url" content="https://www.yenomplanner.com/" />
+  <meta property="og:type" content="website" />
+
+  <!-- THEME -->
+  <meta name="theme-color" content="#0f172a" />
+
+  <!-- iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- FONTS -->
   <link rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,200..700,0..1,-50..200" />
   <link rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,600,0,0" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
   <link rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0 viewport-fit=cover" />
-  <title>Yenom Planner</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
 
+  <!-- MANIFEST -->
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#0f172a" />
 
-  <!-- iOS (muito importante) -->
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-
-  <!-- Google tag (gtag.js) -->
+  <!-- GOOGLE ANALYTICS -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-4SBVV3LQF3"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
-
-    function gtag() {
-      dataLayer.push(arguments);
-    }
+    function gtag() { dataLayer.push(arguments); }
     gtag('js', new Date());
-
     gtag('config', 'G-4SBVV3LQF3');
   </script>
+
 </head>
 
 <body>
   <div id="root"></div>
+
   <script type="module" src="/src/main.jsx"></script>
 </body>
 
