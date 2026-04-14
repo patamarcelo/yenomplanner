@@ -110,6 +110,12 @@ function safeNum(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function avg(arr) {
+  const list = Array.isArray(arr) ? arr.map((v) => safeNum(v)) : [];
+  if (!list.length) return 0;
+  return list.reduce((acc, n) => acc + n, 0) / list.length;
+}
+
 function defaultCardBg(theme, tone = "primary") {
   const map = {
     primary: theme.palette.primary.main,
@@ -417,13 +423,34 @@ export default function DashboardMonthlyPace({
   const resolvedCardBg = cardBg || defaultCardBg;
   const excludeResolver = isExcluded || (() => false);
 
+  const compareOptions = useMemo(
+    () => [1, 2, 3, 6].filter((n) => n <= Math.max(1, Number(monthsBack || 1) - 1)),
+    [monthsBack]
+  );
+
+  const defaultCompareBack = compareOptions.includes(2)
+    ? 2
+    : compareOptions[0] || 1;
+
   const [mode, setMode] = useState("purchase");
+  const [compareBack, setCompareBack] = useState(defaultCompareBack);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
-  const [categorySortBy, setCategorySortBy] = useState("previous");
+  const [categorySortBy, setCategorySortBy] = useState("baseline");
+
+  useEffect(() => {
+    if (!compareOptions.includes(compareBack)) {
+      setCompareBack(defaultCompareBack);
+    }
+  }, [compareBack, compareOptions, defaultCompareBack]);
 
   const handleModeChange = (_, value) => {
     if (!value) return;
     setMode(value);
+  };
+
+  const handleCompareBackChange = (_, value) => {
+    if (!value) return;
+    setCompareBack(value);
   };
 
   const handleCategorySortChange = (_, value) => {
@@ -431,19 +458,15 @@ export default function DashboardMonthlyPace({
     setCategorySortBy(value);
   };
 
-  const chartColors = useMemo(
-    () => ({
-      // gráfico comparativo (barras)
-      compareFull: alpha(theme.palette.grey[500], 0.32),
-      comparePartial: theme.palette.warning.main,
-
-      // gráfico evolução (linhas)
-      currentLine: theme.palette.error.main,
-      previousLine: theme.palette.success.main,
-
-      // gráfico categoria selecionada
-      categoryPreviousLine: alpha(theme.palette.info.main, 0.95),
-    }),
+  const comparisonLinePalette = useMemo(
+    () => [
+      theme.palette.success.main,
+      theme.palette.info.main,
+      theme.palette.secondary.main,
+      theme.palette.warning.main,
+      alpha(theme.palette.success.main, 0.72),
+      alpha(theme.palette.info.main, 0.72),
+    ],
     [theme]
   );
 
@@ -452,13 +475,15 @@ export default function DashboardMonthlyPace({
       return {
         cutoffDay: 1,
         currentMonthLabel: "",
-        previousMonthLabel: "",
+        comparisonLabel: "mês anterior",
+        comparisonShortLabel: "mês anterior",
         currentSpent: 0,
-        previousSpent: 0,
+        baselineSpent: 0,
         projectedLinear: 0,
-        deltaVsPrev: 0,
+        deltaVsBaseline: 0,
         currentOneOff: 0,
         currentInstallments: 0,
+        comparisonRows: [],
         barData: [],
         lineData: [],
         categoryImpactRows: [],
@@ -472,28 +497,38 @@ export default function DashboardMonthlyPace({
     const cutoffDay = clamp(realTodayDay, 1, selectedMonthDays);
 
     const { monthList, map: monthsMap } = buildMonthBuckets(month, monthsBack);
-    const previousMonthYM = addMonthsYM(month, -1);
+    const comparisonMonths = Array.from({ length: compareBack }, (_, i) =>
+      addMonthsYM(month, -(i + 1))
+    );
+
+    const trackedMonths = [month, ...comparisonMonths];
+    const comparisonSet = new Set(comparisonMonths);
 
     const categoryAcc = new Map();
 
+    function emptyDays() {
+      return Array.from({ length: selectedMonthDays }, (_, idx) => ({
+        day: idx + 1,
+        value: 0,
+        cumulative: 0,
+      }));
+    }
+
     function ensureCategoryRow(catInfo) {
       if (!categoryAcc.has(catInfo.key)) {
+        const byMonth = {};
+        trackedMonths.forEach((ym) => {
+          byMonth[ym] = {
+            total: 0,
+            days: emptyDays(),
+          };
+        });
+
         categoryAcc.set(catInfo.key, {
           key: catInfo.key,
           name: catInfo.name,
           color: catInfo.color || catInfo.fallbackColor,
-          currentTotal: 0,
-          previousTotal: 0,
-          currentDays: Array.from({ length: selectedMonthDays }, (_, idx) => ({
-            day: idx + 1,
-            value: 0,
-            cumulative: 0,
-          })),
-          previousDays: Array.from({ length: selectedMonthDays }, (_, idx) => ({
-            day: idx + 1,
-            value: 0,
-            cumulative: 0,
-          })),
+          byMonth,
         });
       }
       return categoryAcc.get(catInfo.key);
@@ -501,18 +536,12 @@ export default function DashboardMonthlyPace({
 
     function addToCategory(catInfo, refYM, day, amount) {
       if (!catInfo?.key || !day || !amount) return;
-      if (refYM !== month && refYM !== previousMonthYM) return;
+      if (!trackedMonths.includes(refYM)) return;
       if (day < 1 || day > selectedMonthDays) return;
 
       const row = ensureCategoryRow(catInfo);
-
-      if (refYM === month) {
-        row.currentTotal += amount;
-        row.currentDays[day - 1].value += amount;
-      } else if (refYM === previousMonthYM) {
-        row.previousTotal += amount;
-        row.previousDays[day - 1].value += amount;
-      }
+      row.byMonth[refYM].total += amount;
+      row.byMonth[refYM].days[day - 1].value += amount;
     }
 
     if (mode === "purchase") {
@@ -622,17 +651,8 @@ export default function DashboardMonthlyPace({
       bucket.installmentPartial = Number(bucket.installmentPartial.toFixed(2));
     }
 
-    const current = monthsMap.get(month) || {
-      ym: month,
-      full: 0,
-      partial: 0,
-      oneOffPartial: 0,
-      installmentPartial: 0,
-      days: [],
-    };
-
-    const previous = monthsMap.get(previousMonthYM) || {
-      ym: previousMonthYM,
+    const emptyBucket = (ym) => ({
+      ym,
       full: 0,
       partial: 0,
       oneOffPartial: 0,
@@ -642,11 +662,28 @@ export default function DashboardMonthlyPace({
         value: 0,
         cumulative: 0,
       })),
-    };
+    });
+
+    const current = monthsMap.get(month) || emptyBucket(month);
+
+    const comparisonRows = comparisonMonths.map((ym, idx) => {
+      const row = monthsMap.get(ym) || emptyBucket(ym);
+      return {
+        ym,
+        index: idx,
+        key: `comp_${idx + 1}`,
+        label: formatMonthBR(ym),
+        spent: Number(safeNum(row.partial).toFixed(2)),
+        full: Number(safeNum(row.full).toFixed(2)),
+        oneOffPartial: Number(safeNum(row.oneOffPartial).toFixed(2)),
+        installmentPartial: Number(safeNum(row.installmentPartial).toFixed(2)),
+        days: row.days,
+      };
+    });
 
     const currentSpent = Number(safeNum(current.partial).toFixed(2));
-    const previousSpent = Number(safeNum(previous.partial).toFixed(2));
-    const deltaVsPrev = Number((currentSpent - previousSpent).toFixed(2));
+    const baselineSpent = Number(avg(comparisonRows.map((r) => r.spent)).toFixed(2));
+    const deltaVsBaseline = Number((currentSpent - baselineSpent).toFixed(2));
 
     const monthProgressLinear = cutoffDay / selectedMonthDays;
     const projectedLinear =
@@ -654,64 +691,89 @@ export default function DashboardMonthlyPace({
         ? Number((currentSpent / monthProgressLinear).toFixed(2))
         : currentSpent;
 
-    const barData = monthList.map((ym) => {
-      const row = monthsMap.get(ym);
-      return {
-        ym,
-        label: formatMonthBR(ym),
-        ateHoje: Number(safeNum(row?.partial).toFixed(2)),
-        mesFechado: Number(safeNum(row?.full).toFixed(2)),
-        isCurrent: ym === month,
-        isPrevious: ym === previousMonthYM,
-      };
-    });
+
+    const barData = [
+      {
+        key: "current",
+        label: formatMonthBR(month),
+        ateHoje: currentSpent,
+        fechado: Number(safeNum(current.full).toFixed(2)),
+        tipo: "current",
+      },
+      ...comparisonRows.map((row) => ({
+        key: row.key,
+        label: row.label,
+        ateHoje: row.spent,
+        fechado: row.full,
+        tipo: "comparison",
+      })),
+      {
+        key: "baseline",
+        label: compareBack === 1 ? "Referência" : `Média ${compareBack}m`,
+        ateHoje: baselineSpent,
+        fechado: Number(avg(comparisonRows.map((r) => r.full)).toFixed(2)),
+        tipo: "baseline",
+      },
+    ];
 
     const lineDays = Array.from({ length: selectedMonthDays }, (_, i) => i + 1);
 
-    const lineData = lineDays.map((day) => ({
-      day,
-      atual: Number(safeNum(current.days?.[day - 1]?.cumulative).toFixed(2)),
-      anterior: Number(safeNum(previous.days?.[day - 1]?.cumulative).toFixed(2)),
-    }));
+    const lineData = lineDays.map((day) => {
+      const item = {
+        day,
+        atual: Number(safeNum(current.days?.[day - 1]?.cumulative).toFixed(2)),
+      };
+
+      comparisonRows.forEach((row) => {
+        item[row.key] = Number(safeNum(row.days?.[day - 1]?.cumulative).toFixed(2));
+      });
+
+      return item;
+    });
 
     const categoryImpactRows = Array.from(categoryAcc.values())
       .map((row) => {
-        let accCurr = 0;
-        let accPrev = 0;
+        const finalizedByMonth = {};
 
-        const currentDays = row.currentDays.map((d) => {
-          accCurr += safeNum(d.value);
-          return {
-            ...d,
-            value: Number(safeNum(d.value).toFixed(2)),
-            cumulative: Number(accCurr.toFixed(2)),
+        trackedMonths.forEach((ym) => {
+          const base = row.byMonth?.[ym] || {
+            total: 0,
+            days: emptyDays(),
+          };
+
+          let acc = 0;
+          const days = (base.days || emptyDays()).map((d) => {
+            acc += safeNum(d.value);
+            return {
+              ...d,
+              value: Number(safeNum(d.value).toFixed(2)),
+              cumulative: Number(acc.toFixed(2)),
+            };
+          });
+
+          finalizedByMonth[ym] = {
+            total: Number(safeNum(base.total).toFixed(2)),
+            days,
           };
         });
 
-        const previousDays = row.previousDays.map((d) => {
-          accPrev += safeNum(d.value);
-          return {
-            ...d,
-            value: Number(safeNum(d.value).toFixed(2)),
-            cumulative: Number(accPrev.toFixed(2)),
-          };
-        });
+        const currentTotal = Number(safeNum(finalizedByMonth[month]?.total).toFixed(2));
+        const baselineTotal = Number(
+          avg(comparisonMonths.map((ym) => finalizedByMonth[ym]?.total || 0)).toFixed(2)
+        );
+        const delta = Number((currentTotal - baselineTotal).toFixed(2));
 
-        const currentTotal = Number(safeNum(row.currentTotal).toFixed(2));
-        const previousTotal = Number(safeNum(row.previousTotal).toFixed(2));
-        const delta = Number((currentTotal - previousTotal).toFixed(2));
-
-        let pctVsPrevious = 0;
+        let pctVsBaseline = 0;
         let isExtrapolated = false;
-        let hasPreviousBase = previousTotal > 0;
+        let hasBaselineBase = baselineTotal > 0;
 
-        if (previousTotal > 0) {
-          pctVsPrevious = Number(((currentTotal / previousTotal) * 100).toFixed(1));
-          isExtrapolated = pctVsPrevious > 100;
+        if (baselineTotal > 0) {
+          pctVsBaseline = Number(((currentTotal / baselineTotal) * 100).toFixed(1));
+          isExtrapolated = pctVsBaseline > 100;
         } else if (currentTotal > 0) {
-          pctVsPrevious = 999.9;
+          pctVsBaseline = 999.9;
           isExtrapolated = true;
-          hasPreviousBase = false;
+          hasBaselineBase = false;
         }
 
         return {
@@ -719,55 +781,72 @@ export default function DashboardMonthlyPace({
           name: row.name,
           color: row.color || pickFallbackColor(theme, row.key),
           currentTotal,
-          previousTotal,
+          baselineTotal,
           delta,
-          currentDays,
-          previousDays,
-          pctVsPrevious,
+          pctVsBaseline,
           isExtrapolated,
-          hasPreviousBase,
+          hasBaselineBase,
+          byMonth: finalizedByMonth,
         };
       })
-      .filter((row) => row.currentTotal > 0 || row.previousTotal > 0);
+      .filter((row) => row.currentTotal > 0 || row.baselineTotal > 0);
 
     const categoryLineDataByKey = {};
     categoryImpactRows.forEach((row) => {
-      categoryLineDataByKey[row.key] = lineDays.map((day) => ({
-        day,
-        atual: Number(safeNum(row.currentDays?.[day - 1]?.cumulative).toFixed(2)),
-        anterior: Number(safeNum(row.previousDays?.[day - 1]?.cumulative).toFixed(2)),
-      }));
+      categoryLineDataByKey[row.key] = lineDays.map((day) => {
+        const item = {
+          day,
+          atual: Number(safeNum(row.byMonth?.[month]?.days?.[day - 1]?.cumulative).toFixed(2)),
+        };
+
+        comparisonRows.forEach((comparison) => {
+          item[comparison.key] = Number(
+            safeNum(row.byMonth?.[comparison.ym]?.days?.[day - 1]?.cumulative).toFixed(2)
+          );
+        });
+
+        return item;
+      });
     });
+
+    const comparisonLabel =
+      compareBack === 1 ? "mês anterior" : `média dos últimos ${compareBack} meses`;
+
+    const comparisonShortLabel =
+      compareBack === 1 ? comparisonRows[0]?.label || "mês anterior" : `média ${compareBack}m`;
 
     return {
       cutoffDay,
       currentMonthLabel: formatMonthBR(month),
-      previousMonthLabel: formatMonthBR(previousMonthYM),
+      comparisonLabel,
+      comparisonShortLabel,
       currentSpent,
-      previousSpent,
+      baselineSpent,
       projectedLinear,
-      deltaVsPrev,
+      deltaVsBaseline,
       currentOneOff: Number(safeNum(current.oneOffPartial).toFixed(2)),
       currentInstallments: Number(safeNum(current.installmentPartial).toFixed(2)),
+      comparisonRows,
       barData,
       lineData,
       categoryImpactRows,
       categoryLineDataByKey,
     };
-  }, [month, monthsBack, transactions, excludeResolver, mode, categoriesById, theme]);
+  }, [month, monthsBack, compareBack, transactions, excludeResolver, mode, categoriesById, theme]);
 
   const sortedCategoryRows = useMemo(() => {
     const rows = [...(analysis.categoryImpactRows || [])];
+
     if (categorySortBy === "current") {
       rows.sort((a, b) => {
         if (b.currentTotal !== a.currentTotal) return b.currentTotal - a.currentTotal;
-        return b.previousTotal - a.previousTotal;
+        return b.baselineTotal - a.baselineTotal;
       });
       return rows;
     }
 
     rows.sort((a, b) => {
-      if (b.previousTotal !== a.previousTotal) return b.previousTotal - a.previousTotal;
+      if (b.baselineTotal !== a.baselineTotal) return b.baselineTotal - a.baselineTotal;
       return b.currentTotal - a.currentTotal;
     });
     return rows;
@@ -799,14 +878,13 @@ export default function DashboardMonthlyPace({
     : [];
 
   const deltaTonePrev =
-    analysis.deltaVsPrev > 0 ? "error" : analysis.deltaVsPrev < 0 ? "success" : "info";
+    analysis.deltaVsBaseline > 0
+      ? "error"
+      : analysis.deltaVsBaseline < 0
+        ? "success"
+        : "info";
 
   const modeLabel = mode === "purchase" ? "compra consolidada" : "fatura/competência";
-
-  const installmentsPct =
-    analysis.currentSpent > 0
-      ? clamp((analysis.currentInstallments / analysis.currentSpent) * 100, 0, 100)
-      : 0;
 
   return (
     <Card sx={(t) => resolvedCardBg(t, "warning")}>
@@ -823,7 +901,8 @@ export default function DashboardMonthlyPace({
                 {title}
               </Typography>
               <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                Comparativo até o dia {analysis.cutoffDay} • {analysis.currentMonthLabel} • {modeLabel}
+                Comparativo até o dia {analysis.cutoffDay} • {analysis.currentMonthLabel} •{" "}
+                {modeLabel}
               </Typography>
             </Stack>
 
@@ -834,7 +913,7 @@ export default function DashboardMonthlyPace({
                 value={mode}
                 onChange={handleModeChange}
                 sx={{
-                  gap: 0.9, // 👈 espaço ENTRE os botões
+                  gap: 0.9,
                   "& .MuiToggleButton-root": {
                     px: 1.15,
                     py: 0.5,
@@ -846,6 +925,29 @@ export default function DashboardMonthlyPace({
               >
                 <ToggleButton value="purchase">Compra</ToggleButton>
                 <ToggleButton value="invoice">Fatura</ToggleButton>
+              </ToggleButtonGroup>
+
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={compareBack}
+                onChange={handleCompareBackChange}
+                sx={{
+                  gap: 0.9,
+                  "& .MuiToggleButton-root": {
+                    px: 1.05,
+                    py: 0.5,
+                    fontWeight: 900,
+                    textTransform: "none",
+                    borderRadius: 1,
+                  },
+                }}
+              >
+                {compareOptions.map((n) => (
+                  <ToggleButton key={n} value={n}>
+                    {n === 1 ? "1 mês" : `${n} meses`}
+                  </ToggleButton>
+                ))}
               </ToggleButtonGroup>
             </Stack>
           </Stack>
@@ -871,22 +973,24 @@ export default function DashboardMonthlyPace({
 
             <MiniKpi
               icon={QueryStatsRoundedIcon}
-              label={`Mês anterior até dia ${analysis.cutoffDay}`}
-              value={money(analysis.previousSpent)}
-              helper={analysis.previousMonthLabel}
+              label={`${analysis.comparisonLabel} até dia ${analysis.cutoffDay}`}
+              value={money(analysis.baselineSpent)}
+              helper={analysis.comparisonShortLabel}
               tone="info"
             />
 
             <MiniKpi
-              icon={analysis.deltaVsPrev > 0 ? TrendingUpRoundedIcon : TrendingDownRoundedIcon}
-              label="Diferença vs mês anterior"
-              value={`${analysis.deltaVsPrev >= 0 ? "+" : ""}${money(analysis.deltaVsPrev)}`}
+              icon={
+                analysis.deltaVsBaseline > 0 ? TrendingUpRoundedIcon : TrendingDownRoundedIcon
+              }
+              label={`Diferença vs ${analysis.comparisonLabel}`}
+              value={`${analysis.deltaVsBaseline >= 0 ? "+" : ""}${money(analysis.deltaVsBaseline)}`}
               helper={
-                analysis.deltaVsPrev > 0
-                  ? "acima do mês anterior"
-                  : analysis.deltaVsPrev < 0
-                    ? "abaixo do mês anterior"
-                    : "igual ao mês anterior"
+                analysis.deltaVsBaseline > 0
+                  ? `acima da ${analysis.comparisonLabel}`
+                  : analysis.deltaVsBaseline < 0
+                    ? `abaixo da ${analysis.comparisonLabel}`
+                    : `igual à ${analysis.comparisonLabel}`
               }
               tone={deltaTonePrev}
             />
@@ -924,11 +1028,11 @@ export default function DashboardMonthlyPace({
             >
               <Stack spacing={0.9}>
                 <Stack spacing={0.1}>
-                  <Typography sx={{ fontWeight: 900, fontSize: 14 }}>
-                    Comparativo até o dia {analysis.cutoffDay}
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    comparação direta do acumulado até hoje
                   </Typography>
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    cinza = mês fechado • laranja = até hoje
+                    atual, meses comparados e base média até o dia {analysis.cutoffDay}
                   </Typography>
                 </Stack>
 
@@ -946,16 +1050,16 @@ export default function DashboardMonthlyPace({
                       <Tooltip content={<ChartTooltip money={money} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <Bar
-                        dataKey="mesFechado"
+                        dataKey="fechado"
                         name="Mês fechado"
                         radius={[6, 6, 0, 0]}
-                        fill={chartColors.compareFull}
+                        fill={alpha(theme.palette.grey[500], 0.24)}
                       />
                       <Bar
                         dataKey="ateHoje"
                         name={`Até dia ${analysis.cutoffDay}`}
                         radius={[6, 6, 0, 0]}
-                        fill={chartColors.comparePartial}
+                        fill={theme.palette.warning.main}
                       />
                     </BarChart>
                   </ResponsiveContainer>
@@ -978,7 +1082,7 @@ export default function DashboardMonthlyPace({
                     Evolução acumulada por dia
                   </Typography>
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                    mês atual vs mês anterior
+                    mês atual vs {analysis.comparisonLabel}
                   </Typography>
                 </Stack>
 
@@ -1004,20 +1108,24 @@ export default function DashboardMonthlyPace({
                         type="monotone"
                         dataKey="atual"
                         name="Mês atual"
-                        stroke={chartColors.currentLine}
+                        stroke={theme.palette.error.main}
                         strokeWidth={3}
                         dot={false}
                         activeDot={{ r: 5 }}
                       />
-                      <Line
-                        type="monotone"
-                        dataKey="anterior"
-                        name="Mês anterior"
-                        stroke={chartColors.previousLine}
-                        strokeWidth={2.4}
-                        strokeDasharray="7 4"
-                        dot={false}
-                      />
+
+                      {analysis.comparisonRows.map((row, idx) => (
+                        <Line
+                          key={row.key}
+                          type="monotone"
+                          dataKey={row.key}
+                          name={row.label}
+                          stroke={comparisonLinePalette[idx % comparisonLinePalette.length]}
+                          strokeWidth={2.4}
+                          strokeDasharray="7 4"
+                          dot={false}
+                        />
+                      ))}
                     </LineChart>
                   </ResponsiveContainer>
                 </Box>
@@ -1059,7 +1167,7 @@ export default function DashboardMonthlyPace({
                       Top 10 categorias
                     </Typography>
                     <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                      barra = % do mês atual sobre o mês anterior
+                      barra = % do mês atual sobre {analysis.comparisonLabel}
                     </Typography>
                   </Stack>
 
@@ -1078,37 +1186,37 @@ export default function DashboardMonthlyPace({
                       },
                     }}
                   >
-                    <ToggleButton value="previous">Ordenar: mês anterior</ToggleButton>
-                    <ToggleButton value="current">Ordenar: mês atual</ToggleButton>
+                    <ToggleButton value="baseline">Ordenar: base</ToggleButton>
+                    <ToggleButton value="current">Ordenar: atual</ToggleButton>
                   </ToggleButtonGroup>
                 </Stack>
 
                 <Box
-  sx={(theme) => ({
-    flex: 1,
-    maxHeight: 430,
-    minHeight: 0,
-    overflowY: "auto",
-    overflowX: "hidden",
-    pr: 0.35,
-    scrollbarWidth: "thin",
-    scrollbarColor: `${alpha(theme.palette.text.primary, 0.18)} transparent`,
-    "&::-webkit-scrollbar": {
-      width: 6,
-      height: 6,
-    },
-    "&::-webkit-scrollbar-track": {
-      background: "transparent",
-    },
-    "&::-webkit-scrollbar-thumb": {
-      backgroundColor: alpha(theme.palette.text.primary, 0.16),
-      borderRadius: 999,
-    },
-    "&::-webkit-scrollbar-thumb:hover": {
-      backgroundColor: alpha(theme.palette.text.primary, 0.24),
-    },
-  })}
->
+                  sx={(theme) => ({
+                    flex: 1,
+                    maxHeight: 430,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    overflowX: "hidden",
+                    pr: 0.35,
+                    scrollbarWidth: "thin",
+                    scrollbarColor: `${alpha(theme.palette.text.primary, 0.18)} transparent`,
+                    "&::-webkit-scrollbar": {
+                      width: 6,
+                      height: 6,
+                    },
+                    "&::-webkit-scrollbar-track": {
+                      background: "transparent",
+                    },
+                    "&::-webkit-scrollbar-thumb": {
+                      backgroundColor: alpha(theme.palette.text.primary, 0.16),
+                      borderRadius: 999,
+                    },
+                    "&::-webkit-scrollbar-thumb:hover": {
+                      backgroundColor: alpha(theme.palette.text.primary, 0.24),
+                    },
+                  })}
+                >
                   {topCategoryRows.length === 0 ? (
                     <Typography variant="body2" sx={{ color: "text.secondary" }}>
                       Sem categorias para comparar.
@@ -1123,8 +1231,8 @@ export default function DashboardMonthlyPace({
                           ? theme.palette.error.main
                           : barColorBase;
 
-                        const progressValue = row.hasPreviousBase
-                          ? Math.min(Math.max(row.pctVsPrevious || 0, 0), 100)
+                        const progressValue = row.hasBaselineBase
+                          ? Math.min(Math.max(row.pctVsBaseline || 0, 0), 100)
                           : 100;
 
                         return (
@@ -1193,7 +1301,7 @@ export default function DashboardMonthlyPace({
                                       variant="caption"
                                       sx={{ color: "text.secondary", fontWeight: 700 }}
                                     >
-                                      {money(row.currentTotal)} vs {money(row.previousTotal)}
+                                      {money(row.currentTotal)} vs {money(row.baselineTotal)}
                                     </Typography>
                                   </Stack>
                                 </Stack>
@@ -1228,9 +1336,9 @@ export default function DashboardMonthlyPace({
                                       fontWeight: 800,
                                     }}
                                   >
-                                    {row.hasPreviousBase
-                                      ? `${formatPercentBR(row.pctVsPrevious)} do mês anterior`
-                                      : "sem base no mês anterior"}
+                                    {row.hasBaselineBase
+                                      ? `${formatPercentBR(row.pctVsBaseline)} da base comparada`
+                                      : "sem base comparativa"}
                                   </Typography>
 
                                   {row.isExtrapolated ? (
@@ -1241,7 +1349,7 @@ export default function DashboardMonthlyPace({
                                         fontWeight: 900,
                                       }}
                                     >
-                                      acima de 100% do mês anterior
+                                      acima de 100% da base
                                     </Typography>
                                   ) : null}
                                 </Stack>
@@ -1281,7 +1389,7 @@ export default function DashboardMonthlyPace({
                       {selectedCategory ? `Categoria: ${selectedCategory.name}` : "Categoria"}
                     </Typography>
                     <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                      acumulado atual vs mês anterior
+                      acumulado atual vs base comparativa
                     </Typography>
                   </Stack>
 
@@ -1302,8 +1410,11 @@ export default function DashboardMonthlyPace({
                         {selectedCategory.delta >= 0 ? "+" : ""}
                         {money(selectedCategory.delta)}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 700 }}>
-                        {money(selectedCategory.currentTotal)} vs {money(selectedCategory.previousTotal)}
+                      <Typography
+                        variant="caption"
+                        sx={{ color: "text.secondary", fontWeight: 700 }}
+                      >
+                        {money(selectedCategory.currentTotal)} vs {money(selectedCategory.baselineTotal)}
                       </Typography>
                     </Stack>
                   ) : null}
@@ -1331,20 +1442,24 @@ export default function DashboardMonthlyPace({
                         type="monotone"
                         dataKey="atual"
                         name="Mês atual"
-                        stroke={selectedCategory?.color || chartColors.currentLine}
+                        stroke={selectedCategory?.color || theme.palette.error.main}
                         strokeWidth={3}
                         dot={false}
                         activeDot={{ r: 5 }}
                       />
-                      <Line
-                        type="monotone"
-                        dataKey="anterior"
-                        name="Mês anterior"
-                        stroke={chartColors.categoryPreviousLine}
-                        strokeWidth={2.4}
-                        strokeDasharray="7 4"
-                        dot={false}
-                      />
+
+                      {analysis.comparisonRows.map((row, idx) => (
+                        <Line
+                          key={row.key}
+                          type="monotone"
+                          dataKey={row.key}
+                          name={row.label}
+                          stroke={comparisonLinePalette[idx % comparisonLinePalette.length]}
+                          strokeWidth={2.4}
+                          strokeDasharray="7 4"
+                          dot={false}
+                        />
+                      ))}
                     </LineChart>
                   </ResponsiveContainer>
                 </Box>
@@ -1353,12 +1468,12 @@ export default function DashboardMonthlyPace({
           </Box>
 
           <Box sx={{ display: "none" }}>
-            {typeof window !== "undefined" ? (
-              (() => {
+            {typeof window !== "undefined"
+              ? (() => {
                 window.debugComparativoCategorias = sortedCategoryRows || [];
                 return null;
               })()
-            ) : null}
+              : null}
           </Box>
         </Stack>
       </CardContent>
