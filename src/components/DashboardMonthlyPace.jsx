@@ -405,8 +405,49 @@ function resolveCategoryInfo(t, categoriesById, theme) {
   };
 }
 
+
 function formatPercentBR(v) {
   return `${Number(v || 0).toFixed(1)}%`;
+}
+
+function formatAxisMoneyShort(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return "R$ 0";
+
+  if (Math.abs(n) >= 1000000) {
+    return `R$ ${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)} mi`;
+  }
+
+  if (Math.abs(n) >= 1000) {
+    return `R$ ${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)} mil`;
+  }
+
+  return `R$ ${Math.round(n)}`;
+}
+
+function calcNiceTickStep(maxValue, targetTicks = 6) {
+  const max = Math.max(1, Number(maxValue || 0));
+  const rough = max / targetTicks;
+  const pow10 = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / pow10;
+
+  let nice;
+  if (norm <= 1) nice = 1;
+  else if (norm <= 2) nice = 2;
+  else if (norm <= 5) nice = 5;
+  else nice = 10;
+
+  return nice * pow10;
+}
+
+function buildNiceTicks(maxValue, targetTicks = 6) {
+  const max = Math.max(1, Number(maxValue || 0));
+  const step = calcNiceTickStep(max, targetTicks);
+  const top = Math.ceil(max / step) * step;
+
+  const ticks = [];
+  for (let v = 0; v <= top; v += step) ticks.push(v);
+  return { ticks, domainMax: top };
 }
 
 export default function DashboardMonthlyPace({
@@ -884,6 +925,33 @@ export default function DashboardMonthlyPace({
         ? "success"
         : "info";
 
+  const barChartScale = useMemo(() => {
+    const values = (analysis.barData || []).flatMap((item) => [
+      Number(item?.ateHoje || 0),
+      Number(item?.fechado || 0),
+    ]);
+    return buildNiceTicks(Math.max(0, ...values), 5);
+  }, [analysis.barData]);
+
+  const lineChartScale = useMemo(() => {
+    const values = (analysis.lineData || []).flatMap((item) =>
+      Object.entries(item || {})
+        .filter(([key]) => key !== "day")
+        .map(([, value]) => Number(value || 0))
+    );
+    return buildNiceTicks(Math.max(0, ...values), 6);
+  }, [analysis.lineData]);
+
+  const selectedCategoryLineScale = useMemo(() => {
+    const values = (selectedCategoryLineData || []).flatMap((item) =>
+      Object.entries(item || {})
+        .filter(([key]) => key !== "day")
+        .map(([, value]) => Number(value || 0))
+    );
+    return buildNiceTicks(Math.max(0, ...values), 6);
+  }, [selectedCategoryLineData]);
+
+
   const modeLabel = mode === "purchase" ? "compra consolidada" : "fatura/competência";
 
   return (
@@ -1039,14 +1107,26 @@ export default function DashboardMonthlyPace({
                 <Box sx={{ width: "100%", height: 290 }}>
                   <ResponsiveContainer>
                     <BarChart data={analysis.barData} barGap={6}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.2} />
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        vertical={false}
+                        stroke={alpha(theme.palette.text.secondary, 0.22)}
+                      />
                       <XAxis
                         dataKey="label"
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
                         axisLine={false}
                         tickLine={false}
                       />
-                      <YAxis hide />
+                      <YAxis
+                        domain={[0, barChartScale.domainMax]}
+                        ticks={barChartScale.ticks}
+                        axisLine={false}
+                        tickLine={false}
+                        width={72}
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 800 }}
+                        tickFormatter={(v) => formatAxisMoneyShort(v)}
+                      />
                       <Tooltip content={<ChartTooltip money={money} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <Bar
@@ -1089,14 +1169,26 @@ export default function DashboardMonthlyPace({
                 <Box sx={{ width: "100%", height: 290 }}>
                   <ResponsiveContainer>
                     <LineChart data={analysis.lineData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.18} />
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        vertical={false}
+                        stroke={alpha(theme.palette.text.secondary, 0.22)}
+                      />
                       <XAxis
                         dataKey="day"
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
                         axisLine={false}
                         tickLine={false}
                       />
-                      <YAxis hide />
+                      <YAxis
+                        domain={[0, lineChartScale.domainMax]}
+                        ticks={lineChartScale.ticks}
+                        axisLine={false}
+                        tickLine={false}
+                        width={72}
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 800 }}
+                        tickFormatter={(v) => formatAxisMoneyShort(v)}
+                      />
                       <Tooltip content={<ChartTooltip money={money} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <ReferenceLine
@@ -1423,14 +1515,26 @@ export default function DashboardMonthlyPace({
                 <Box sx={{ width: "100%", height: 320 }}>
                   <ResponsiveContainer>
                     <LineChart data={selectedCategoryLineData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.18} />
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        vertical={false}
+                        stroke={alpha(theme.palette.text.secondary, 0.22)}
+                      />
                       <XAxis
                         dataKey="day"
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
                         axisLine={false}
                         tickLine={false}
                       />
-                      <YAxis hide />
+                      <YAxis
+                        domain={[0, selectedCategoryLineScale.domainMax]}
+                        ticks={selectedCategoryLineScale.ticks}
+                        axisLine={false}
+                        tickLine={false}
+                        width={72}
+                        tick={{ fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 800 }}
+                        tickFormatter={(v) => formatAxisMoneyShort(v)}
+                      />
                       <Tooltip content={<ChartTooltip money={money} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <ReferenceLine
