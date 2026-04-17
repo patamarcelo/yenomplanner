@@ -784,14 +784,27 @@ function AccountActions({ account, onEdit, onCopyBankData, dispatch }) {
   const theme = useTheme();
   const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
 
+  const SxCheckin =
+  {
+    display: "grid",
+    gridTemplateColumns: isSmDown ? "1fr 1fr" : "repeat(auto-fit, minmax(96px, auto))",
+    gap: 1,
+    width: isSmDown ? "100%" : "auto",
+  }
+
+  const SxCard =
+  {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 120px)",
+    justifyContent: 'flex-end',
+    gap: 1,
+    width: "100%",
+  }
+
+
   return (
     <Box
-      sx={{
-        display: "grid",
-        gridTemplateColumns: isSmDown ? "1fr 1fr" : "repeat(auto-fit, minmax(96px, auto))",
-        gap: 1,
-        width: isSmDown ? "100%" : "auto",
-      }}
+      sx={account.type !== "checking" ? SxCheckin : SxCard}
     >
       {account.type === "checking" ? (
         <Button

@@ -894,7 +894,7 @@ export default function DashboardMonthlyPace({
   }, [analysis.categoryImpactRows, categorySortBy]);
 
   const topCategoryRows = useMemo(() => {
-    return sortedCategoryRows.slice(0, 10);
+    return sortedCategoryRows
   }, [sortedCategoryRows]);
 
   useEffect(() => {
@@ -1256,7 +1256,7 @@ export default function DashboardMonthlyPace({
                 >
                   <Stack spacing={0.1}>
                     <Typography sx={{ fontWeight: 900, fontSize: 14 }}>
-                      Top 10 categorias
+                      Categorias
                     </Typography>
                     <Typography variant="caption" sx={{ color: "text.secondary" }}>
                       barra = % do mês atual sobre {analysis.comparisonLabel}
@@ -1286,7 +1286,7 @@ export default function DashboardMonthlyPace({
                 <Box
                   sx={(theme) => ({
                     flex: 1,
-                    maxHeight: 430,
+                    maxHeight: 385,
                     minHeight: 0,
                     overflowY: "auto",
                     overflowX: "hidden",
@@ -1512,7 +1512,7 @@ export default function DashboardMonthlyPace({
                   ) : null}
                 </Stack>
 
-                <Box sx={{ width: "100%", height: 320 }}>
+                <Box sx={{ width: "100%", height: 385 }}>
                   <ResponsiveContainer>
                     <LineChart data={selectedCategoryLineData}>
                       <CartesianGrid
