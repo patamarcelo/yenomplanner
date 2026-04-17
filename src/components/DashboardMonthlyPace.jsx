@@ -31,6 +31,7 @@ import {
   Line,
   Legend,
   ReferenceLine,
+  LabelList,
 } from "recharts";
 
 function normalizeISODate(d) {
@@ -425,6 +426,20 @@ function formatAxisMoneyShort(v) {
   return `R$ ${Math.round(n)}`;
 }
 
+function formatBarValueLabel(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+
+  const valueToShow = Math.abs(n) >= 10000 ? Math.round(n) : n;
+
+  return valueToShow.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}
+
 function calcNiceTickStep(maxValue, targetTicks = 6) {
   const max = Math.max(1, Number(maxValue || 0));
   const rough = max / targetTicks;
@@ -734,6 +749,13 @@ export default function DashboardMonthlyPace({
 
 
     const barData = [
+      ...[...comparisonRows].reverse().map((row) => ({
+        key: row.key,
+        label: row.label,
+        ateHoje: row.spent,
+        fechado: row.full,
+        tipo: "comparison",
+      })),
       {
         key: "current",
         label: formatMonthBR(month),
@@ -741,13 +763,6 @@ export default function DashboardMonthlyPace({
         fechado: Number(safeNum(current.full).toFixed(2)),
         tipo: "current",
       },
-      ...comparisonRows.map((row) => ({
-        key: row.key,
-        label: row.label,
-        ateHoje: row.spent,
-        fechado: row.full,
-        tipo: "comparison",
-      })),
       {
         key: "baseline",
         label: compareBack === 1 ? "Referência" : `Média ${compareBack}m`,
@@ -1104,7 +1119,7 @@ export default function DashboardMonthlyPace({
                   </Typography>
                 </Stack>
 
-                <Box sx={{ width: "100%", height: 290 }}>
+                <Box sx={{ width: "100%", height: 310 }}>
                   <ResponsiveContainer>
                     <BarChart data={analysis.barData} barGap={6}>
                       <CartesianGrid
@@ -1134,13 +1149,38 @@ export default function DashboardMonthlyPace({
                         name="Mês fechado"
                         radius={[6, 6, 0, 0]}
                         fill={alpha(theme.palette.grey[500], 0.24)}
-                      />
+                      >
+                        <LabelList
+                          dataKey="fechado"
+                          position="top"
+                          offset={6}
+                          formatter={formatBarValueLabel}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 800,
+                            fill: theme.palette.text.secondary,
+                          }}
+                        />
+                      </Bar>
+
                       <Bar
                         dataKey="ateHoje"
                         name={`Até dia ${analysis.cutoffDay}`}
                         radius={[6, 6, 0, 0]}
                         fill={theme.palette.warning.main}
-                      />
+                      >
+                        <LabelList
+                          dataKey="ateHoje"
+                          position="top"
+                          offset={6}
+                          formatter={formatBarValueLabel}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 900,
+                            fill: theme.palette.text.primary,
+                          }}
+                        />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </Box>
@@ -1166,7 +1206,7 @@ export default function DashboardMonthlyPace({
                   </Typography>
                 </Stack>
 
-                <Box sx={{ width: "100%", height: 290 }}>
+                <Box sx={{ width: "100%", height: 310 }}>
                   <ResponsiveContainer>
                     <LineChart data={analysis.lineData}>
                       <CartesianGrid
