@@ -681,6 +681,36 @@ export default function Dashboard() {
 
   const targetInvoiceYM = useMemo(() => addMonthsYM(month, 1), [month]);
 
+  const isCreditCardTxn = useMemo(() => {
+    return (t) => {
+      const accId = resolveAccountIdFromTxn(t);
+      if (!accId) return false;
+
+      const acc = accountsById?.[String(accId)];
+      return String(acc?.type || "").toLowerCase() === "credit_card";
+    };
+  }, [resolveAccountIdFromTxn, accountsById]);
+
+  const cardInvoiceTx = useMemo(() => {
+    if (!month) return [];
+
+    return (txns || []).filter((t) => {
+      if (!t) return false;
+      if (normalizeDirectionFromTxn(t) !== "expense") return false;
+      if (isTransferCategory(t)) return false;
+
+      const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
+      if (!invYM) return false;
+
+      // O dashboard do mês atual olha a fatura do mês seguinte
+      if (invYM !== targetInvoiceYM) return false;
+
+      // Aqui é o ponto importante:
+      // transação com billId entra se for cartão.
+      return isCreditCardTxn(t);
+    });
+  }, [txns, month, targetInvoiceYM, isTransferCategory, isCreditCardTxn]);
+
   const monthTx = useMemo(() => {
     if (!month) return [];
 
@@ -716,11 +746,11 @@ export default function Dashboard() {
 
   const totalCartoesMes = useMemo(() => {
     return sum(
-      monthTx
-        .filter((t) => normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? ""))
-        .map((t) => Math.abs(Math.min(0, signedAmountNormalized(t))))
+      cardInvoiceTx.map((t) =>
+        Math.abs(Math.min(0, signedAmountNormalized(t)))
+      )
     );
-  }, [monthTx]);
+  }, [cardInvoiceTx]);
 
   const totalDespesasMensais = useMemo(() => {
     if (!month) return 0;
@@ -1113,7 +1143,7 @@ export default function Dashboard() {
       };
     };
 
-    for (const t of monthTx || []) {
+    for (const t of cardInvoiceTx || []) {
       const invYM = normalizeYM(t?.invoiceMonth ?? t?.invoice_month ?? "");
       if (!invYM) continue;
       if (normalizeDirectionFromTxn(t) !== "expense") continue;
@@ -1154,7 +1184,6 @@ export default function Dashboard() {
 
         const invoice =
           invoicesByAccountMonth.get(`${String(accId)}::${invYM}`) || null;
-        console.log('infcoisceeee', invoice)
         const statusUi = getStatusUi(invoice);
 
         return {
@@ -1179,7 +1208,7 @@ export default function Dashboard() {
         };
       })
       .sort((a, b) => (b.total || 0) - (a.total || 0));
-  }, [monthTx, accountsById, invoicesByAccountMonth, targetInvoiceYM]);
+  }, [cardInvoiceTx, accountsById, invoicesByAccountMonth, targetInvoiceYM]);
 
   const totalInvoicesMonth = useMemo(() => {
     return Number(

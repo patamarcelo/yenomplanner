@@ -315,6 +315,30 @@ function billLabelForRow(b) {
     return cleaned || raw;
 }
 
+function getLinkedBillIdFromTxn(t) {
+    return String(
+        t?.billId ??
+        t?.bill_id ??
+        t?.bill?.id ??
+        t?.bill ??
+        ""
+    ).trim();
+}
+
+function isCardTxnBackedByBill(t) {
+    if (getLinkedBillIdFromTxn(t)) return true;
+
+    const origin = String(
+        t?.origin ??
+        t?.source ??
+        t?.created_from ??
+        t?.createdFrom ??
+        ""
+    ).toLowerCase();
+
+    return origin.includes("bill");
+}
+
 // -----------------------------
 // localStorage keys (UI prefs)
 // -----------------------------
@@ -535,9 +559,19 @@ export default function AccountsMatrix() {
         }
 
         const bucketsByCardYM = new Map();
+        const bucketsConsolidatedByCardYM = new Map();
+
         const addBucket = (cardId, ym, cents) => {
             const k = `${String(cardId)}|${String(ym)}`;
             bucketsByCardYM.set(k, (bucketsByCardYM.get(k) || 0) + (Number(cents) || 0));
+        };
+
+        const addConsolidatedBucket = (cardId, ym, cents) => {
+            const k = `${String(cardId)}|${String(ym)}`;
+            bucketsConsolidatedByCardYM.set(
+                k,
+                (bucketsConsolidatedByCardYM.get(k) || 0) + (Number(cents) || 0)
+            );
         };
 
         const yms = new Set();
@@ -556,8 +590,17 @@ export default function AccountsMatrix() {
             const colYM = invYM;
             if (!/^\d{4}-\d{2}$/.test(colYM)) continue;
 
+            const cents = centsFromTxn(t);
+
             yms.add(colYM);
-            addBucket(String(rid), colYM, centsFromTxn(t));
+
+            // Total real da fatura: sempre entra.
+            addBucket(String(rid), colYM, cents);
+
+            // Total consolidado da matriz: só entra se não for uma bill já existente.
+            if (!isCardTxnBackedByBill(t)) {
+                addConsolidatedBucket(String(rid), colYM, cents);
+            }
         }
 
         for (let mi = 0; mi < 12; mi++) yms.add(ymKey(focusYear, mi));
@@ -593,14 +636,32 @@ export default function AccountsMatrix() {
         });
 
         const cardsTotalValues = {};
+        const cardsConsolidatedTotalValues = {};
+
         for (const m of months) {
             const ym = ymKey(m.year, m.monthIndex0);
-            let sum = 0;
-            for (const r of cardRows) sum += safeNum(r.values[ym]);
-            cardsTotalValues[ym] = Number(sum.toFixed(2));
+
+            let invoiceSum = 0;
+            let consolidatedSum = 0;
+
+            for (const r of cardRows) {
+                invoiceSum += safeNum(r.values[ym]);
+
+                const cents = bucketsConsolidatedByCardYM.get(`${r.id}|${ym}`) || 0;
+                consolidatedSum += Number(cents) / 100;
+            }
+
+            cardsTotalValues[ym] = Number(invoiceSum.toFixed(2));
+            cardsConsolidatedTotalValues[ym] = Number(consolidatedSum.toFixed(2));
         }
 
-        return { months, years, cardRows, cardsTotalValues };
+        return {
+            months,
+            years,
+            cardRows,
+            cardsTotalValues,
+            cardsConsolidatedTotalValues,
+        };
     }, [accounts, txns, theme, focusYear, accountResolver]);
 
     const everIncomeByAccId = useMemo(() => {
@@ -1065,7 +1126,7 @@ export default function AccountsMatrix() {
         const out = {};
 
         const incomeValues = data.sections.find((s) => s.id === "income")?.headerRow?.values || {};
-        const cardsValues = data.sections.find((s) => s.id === "cards")?.headerRow?.values || {};
+        const cardsValues = cardsData.cardsConsolidatedTotalValues || {};
         const billsValues = data.sections.find((s) => s.id === "bills")?.headerRow?.values || {};
         const avulsoCcValues = data.sections.find((s) => s.id === "avulso_cc")?.headerRow?.values || {};
 
@@ -1080,12 +1141,12 @@ export default function AccountsMatrix() {
             out[key] = entradas - saidas;
         }
         return out;
-    }, [data.sections, months]);
+    }, [data.sections, months, cardsData.cardsConsolidatedTotalValues]);
 
     const totalExpensesByMonth = useMemo(() => {
         const out = {};
 
-        const cardsValues = data.sections.find((s) => s.id === "cards")?.headerRow?.values || {};
+        const cardsValues = cardsData.cardsConsolidatedTotalValues || {};
         const billsValues = data.sections.find((s) => s.id === "bills")?.headerRow?.values || {};
         const avulsoCcValues = data.sections.find((s) => s.id === "avulso_cc")?.headerRow?.values || {};
 
@@ -1098,7 +1159,7 @@ export default function AccountsMatrix() {
         }
 
         return out;
-    }, [data.sections, months]);
+    }, [data.sections, months, cardsData.cardsConsolidatedTotalValues]);
 
     const cellBase = {
         height: ROW_H,
