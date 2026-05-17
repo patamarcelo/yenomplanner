@@ -537,7 +537,7 @@ export default function Invoices() {
         const st = resolveStatus(t);
         const cents = Math.abs(centsForStatement(t));
 
-        if (st === "confirmed") {
+        if (st === "confirmed" || st === "planned") {
           const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
           if (hasInvoiceLink) continue;
           bucket.confirmedCents += cents;
@@ -897,7 +897,7 @@ export default function Invoices() {
 
         const st = resolveStatus(t);
         if (mode === "open") {
-          if (st !== "confirmed") continue;
+          if (st !== "confirmed" && st !== "planned") continue;
           const hasInvoiceLink = !!(t?.invoice || t?.invoiceId || t?.invoice_id);
           if (hasInvoiceLink) continue;
         } else {
