@@ -683,7 +683,7 @@ export default function Invoices() {
         if (resolveDirection(t) !== "expense") continue;
 
         const st = resolveStatus(t);
-        if (st !== "confirmed") continue; // ✅ só confirmed (nem paid nem invoiced)
+        if (st !== "confirmed" && st !== "planned") continue; // ✅ só confirmed (nem paid nem invoiced)
 
         if (isInvoicePaymentTxn(t)) continue;
 
