@@ -79,6 +79,9 @@ import toast from "react-hot-toast";
 
 import BillsTimelineTable from '../components/bills/BillsTimelineTable'
 
+import FileDownloadRoundedIcon from "@mui/icons-material/FileDownloadRounded";
+import * as XLSX from "xlsx";
+
 const pageSx = { maxWidth: 1180, mx: "auto", px: { xs: 2, md: 3 }, py: 2 };
 
 /* =========================
@@ -1267,6 +1270,116 @@ export default function BillsPage() {
         );
     }, [filterMonth, filterYear, currentYear, filterKind, filterCategory, q, filterStatuses]);
 
+    function csvEscape(value) {
+        const s = String(value ?? "");
+        return `"${s.replace(/"/g, '""')}"`;
+    }
+
+    function handleExportBillsXlsx() {
+        if (!filteredBills?.length) {
+            toast.error("Nenhuma despesa para exportar com os filtros atuais.");
+            return;
+        }
+
+        const statusLabel = {
+            planned: "Previsto",
+            due_today: "Vence hoje",
+            overdue: "Atrasado",
+            paid: "Pago",
+        };
+
+        const kindLabel = {
+            recurring: "Recorrente",
+            installment: "Parcelado",
+            one_off: "Pontual",
+        };
+
+        const rows = (filteredBills || []).map((b) => {
+            const dueYM =
+                b.startMonth ||
+                (filterMonth !== "all"
+                    ? `${filterYear}-${String(filterMonth).padStart(2, "0")}`
+                    : `${filterYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`);
+
+            const dueISO = isoFromYMDay(dueYM, b.dayOfMonth);
+
+            const base = billStatusForMonth.get(b.id) || "planned";
+            const uiStatus = computeUiStatus({
+                baseStatus: base,
+                dueISO,
+                todayISO: today,
+            });
+
+            const cat = resolveCategoryFromBill(b);
+
+            return {
+                ID: b.id || "",
+                Referência: dueISO ? dueISO.slice(0, 7) : "",
+                "Mês/Ano": dueISO ? monthYearLabelFromYM(dueISO.slice(0, 7)) : "",
+                Vencimento: dueISO ? formatBRDate(dueISO) : "",
+                Status: statusLabel[uiStatus] || uiStatus,
+                Tipo: kindLabel[b.kind] || b.kind || "",
+                Descrição: b.name || "",
+                Favorecido: b.payee || "",
+                Categoria: cat?.name || "",
+                Valor: Number(b.defaultAmount || 0),
+                "Parcela Atual": b.installmentCurrent || "",
+                "Total Parcelas": b.installmentTotal || "",
+                "Grupo Parcelamento": b.installmentGroupId || "",
+                "Dia do Mês": b.dayOfMonth || "",
+                Início: b.startMonth || "",
+                Fim: b.endMonth || "",
+                Ativa: b.active === false ? "Não" : "Sim",
+                "Pago Transaction ID": b.lastPaidTransactionId || "",
+                Observações: b.notes || "",
+            };
+        });
+
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+
+        const headers = Object.keys(rows[0]);
+
+        const valorColIndex = headers.indexOf("Valor");
+
+        if (valorColIndex >= 0) {
+            const range = XLSX.utils.decode_range(worksheet["!ref"]);
+
+            for (let row = range.s.r + 1; row <= range.e.r; row++) {
+                const cellAddress = XLSX.utils.encode_cell({
+                    r: row,
+                    c: valorColIndex,
+                });
+
+                if (worksheet[cellAddress]) {
+                    worksheet[cellAddress].t = "n";
+                    worksheet[cellAddress].z = '"R$" #,##0.00';
+                }
+            }
+        }
+
+        worksheet["!cols"] = headers.map((h) => {
+            if (h === "Descrição") return { wch: 32 };
+            if (h === "Favorecido") return { wch: 24 };
+            if (h === "Categoria") return { wch: 20 };
+            if (h === "Valor") return { wch: 16 };
+            if (h === "Observações") return { wch: 36 };
+            return { wch: 16 };
+        });
+
+        const workbook = XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Despesas");
+
+        const periodLabel =
+            filterMonth === "all"
+                ? filterYear
+                : `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
+
+        XLSX.writeFile(workbook, `despesas_${periodLabel}.xlsx`);
+
+        toast.success(`Exportado ${rows.length} despesa(s).`);
+    }
+
     function BoardBillCard({
         b,
         dueISO,
@@ -1573,9 +1686,35 @@ export default function BillsPage() {
             <Stack spacing={1.2}>
                 <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1}>
                     <Box>
-                        <Typography variant="h5" sx={{ fontWeight: 950 }}>
-                            Despesas
-                        </Typography>
+                        <Stack direction="row" alignItems="center" gap={0.7}>
+                            <Typography variant="h5" sx={{ fontWeight: 950 }}>
+                                Despesas
+                            </Typography>
+
+                            <Tooltip title="Exportar despesas filtradas para Excel">
+                                <span>
+                                    <IconButton
+                                        size="small"
+                                        onClick={handleExportBillsXlsx}
+                                        disabled={!filteredBills?.length}
+                                        sx={{
+                                            border: "1px solid",
+                                            borderColor: "divider",
+                                            bgcolor: alpha(theme.palette.success.main, 0.08),
+                                            color: theme.palette.success.dark,
+                                            "&:hover": {
+                                                bgcolor: alpha(theme.palette.success.main, 0.16),
+                                            },
+                                            "&.Mui-disabled": {
+                                                opacity: 0.45,
+                                            },
+                                        }}
+                                    >
+                                        <FileDownloadRoundedIcon fontSize="small" />
+                                    </IconButton>
+                                </span>
+                            </Tooltip>
+                        </Stack>
                         <Typography variant="body2" sx={{ color: "text.secondary" }}>
                             Total: <b>{bills.length}</b> • Ativas: <b>{activeCount}</b>
                         </Typography>
@@ -1587,20 +1726,67 @@ export default function BillsPage() {
                             exclusive
                             onChange={(_, v) => v && setViewMode(v)}
                             sx={{
-                                "& .MuiToggleButton-root": {
+                                display: "flex",
+                                gap: 1,
+
+                                "& .MuiToggleButtonGroup-grouped": {
                                     borderRadius: 2,
+                                    border: "1px solid",
+                                    borderColor: "divider",
+                                    mx: 0,
+                                },
+
+                                "& .MuiToggleButtonGroup-grouped:not(:first-of-type)": {
+                                    marginLeft: 0,
+                                    borderLeft: "1px solid",
+                                    borderColor: "divider",
+                                },
+
+                                "& .MuiToggleButton-root": {
                                     textTransform: "none",
                                     fontWeight: 950,
                                     px: 1.2,
                                     py: 0.75,
+                                    color: "text.secondary",
+                                    bgcolor: alpha(theme.palette.text.primary, 0.035),
+                                    transition: "all 140ms ease",
+                                },
+
+                                "& .MuiToggleButton-root:hover": {
+                                    bgcolor: alpha(theme.palette.primary.main, 0.08),
                                 },
                             }}
                         >
-                            <ToggleButton value="board">
+                            <ToggleButton
+                                value="board"
+                                sx={{
+                                    "&.Mui-selected": {
+                                        bgcolor: alpha(theme.palette.primary.main, 0.16),
+                                        color: theme.palette.primary.dark,
+                                        borderColor: alpha(theme.palette.primary.main, 0.45),
+                                    },
+                                    "&.Mui-selected:hover": {
+                                        bgcolor: alpha(theme.palette.primary.main, 0.22),
+                                    },
+                                }}
+                            >
                                 <ViewKanbanRoundedIcon sx={{ fontSize: 18, mr: 0.7 }} />
                                 Board
                             </ToggleButton>
-                            <ToggleButton value="timeline">
+
+                            <ToggleButton
+                                value="timeline"
+                                sx={{
+                                    "&.Mui-selected": {
+                                        bgcolor: alpha(theme.palette.warning.main, 0.18),
+                                        color: theme.palette.warning.dark,
+                                        borderColor: alpha(theme.palette.warning.main, 0.55),
+                                    },
+                                    "&.Mui-selected:hover": {
+                                        bgcolor: alpha(theme.palette.warning.main, 0.25),
+                                    },
+                                }}
+                            >
                                 <ViewTimelineRoundedIcon sx={{ fontSize: 18, mr: 0.7 }} />
                                 Timeline
                             </ToggleButton>
