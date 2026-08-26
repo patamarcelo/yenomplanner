@@ -404,7 +404,19 @@ export default function Layout({ children }) {
   }, [isPublicRoute, currentUser, runBootstrap]);
 
   if (isPublicRoute) {
-    return <Box sx={{ minHeight: "100vh" }}>{children}</Box>;
+    return (
+      <Box
+        sx={{
+          minHeight: "100dvh",
+          pt: "env(safe-area-inset-top, 0px)",
+          pr: "env(safe-area-inset-right, 0px)",
+          pb: "env(safe-area-inset-bottom, 0px)",
+          pl: "env(safe-area-inset-left, 0px)",
+        }}
+      >
+        {children}
+      </Box>
+    );
   }
 
   const drawerW = collapsed ? DRAWER_COLLAPSED : DRAWER_EXPANDED;
@@ -421,6 +433,10 @@ export default function Layout({ children }) {
     transition: theme.transitions.create(["width"], {
       duration: theme.transitions.duration.shortest,
     }),
+
+    // PWA iOS: evita que o drawer fique sob a Status Bar / Dynamic Island.
+    pt: "env(safe-area-inset-top, 0px)",
+    pb: "env(safe-area-inset-bottom, 0px)",
   };
 
   function handleLogout() {
@@ -716,7 +732,15 @@ export default function Layout({ children }) {
   }
 
   return (
-    <Box sx={{ display: "flex", height: "100vh" }}>
+    <Box
+      sx={{
+        display: "flex",
+        height: "100dvh",
+        minHeight: "100dvh",
+        overflow: "hidden",
+        bgcolor: "background.default",
+      }}
+    >
       {isMdUp ? (
         <Drawer
           variant="permanent"
@@ -741,6 +765,8 @@ export default function Layout({ children }) {
               borderRight: `1px solid ${theme.palette.divider}`,
               borderTopLeftRadius: 0,
               borderBottomLeftRadius: 0,
+              pt: "env(safe-area-inset-top, 0px)",
+              pb: "env(safe-area-inset-bottom, 0px)",
             },
           }}
         >
@@ -757,6 +783,9 @@ export default function Layout({ children }) {
             borderBottom: `1px solid ${theme.palette.divider}`,
             background: theme.palette.background.paper,
             borderRadius: "0px",
+
+            // PWA iOS: o AppBar começa abaixo da Status Bar / Dynamic Island.
+            pt: "env(safe-area-inset-top, 0px)",
           }}
         >
           <Toolbar
@@ -1045,9 +1074,19 @@ export default function Layout({ children }) {
             overflow: "auto",
             width: "100%",
             minWidth: 0,
-            px: { xs: 1, md: 2 },
-            py: { xs: 1.0, md: 1.5 },
-            pb: { xs: "calc(env(safe-area-inset-bottom, 0px) + 88px)", md: 2 },
+            pl: {
+              xs: "calc(env(safe-area-inset-left, 0px) + 8px)",
+              md: 2,
+            },
+            pr: {
+              xs: "calc(env(safe-area-inset-right, 0px) + 8px)",
+              md: 2,
+            },
+            pt: { xs: 1.0, md: 1.5 },
+            pb: {
+              xs: "calc(env(safe-area-inset-bottom, 0px) + 88px)",
+              md: 2,
+            },
           }}
         >
           {children}
