@@ -1,5 +1,6 @@
 import { calcAccountBalance } from "../utils/accountBalance.js";
-import React, { useMemo, useState, useEffect } from "react";
+import { buildAccountBalanceDebug } from "../utils/accountBalanceDebug.js";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import {
   Box,
   Stack,
@@ -41,6 +42,8 @@ import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import {
   fetchAllTransactionsThunk,
   selectTransactionsUi,
+  selectTransactionsApi,
+  selectTransactionsStatus,
 } from "../store/transactionsSlice";
 
 import {
@@ -819,6 +822,23 @@ export default function AccountsPage() {
 
   const accounts = useSelector(selectAccounts);
   const txns = useSelector(selectTransactionsUi);
+  const apiTxns = useSelector(selectTransactionsApi);
+  const transactionsStatus = useSelector(selectTransactionsStatus);
+  const lastBalanceDebug = useRef("");
+
+  useEffect(() => {
+    let enabled = false;
+    try {
+      enabled = localStorage.getItem("yenomplanner:debug-balances") === "1";
+    } catch {
+      return;
+    }
+    if (!enabled || transactionsStatus !== "succeeded" || !accounts.length) return;
+    const report = JSON.stringify(buildAccountBalanceDebug(accounts, txns, apiTxns), null, 2);
+    if (report === lastBalanceDebug.current) return;
+    lastBalanceDebug.current = report;
+    console.log("[YenomPlanner saldo debug]\n" + report);
+  }, [accounts, txns, apiTxns, transactionsStatus]);
   const hideValues = useSelector(selectHideValues);
 
   const [toast, setToast] = useState({

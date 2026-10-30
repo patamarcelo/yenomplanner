@@ -1,4 +1,4 @@
-function resolveTxnAccountId(tx, accounts) {
+export function resolveTxnAccountId(tx, accounts) {
   if (tx?.accountId) return tx.accountId;
 
   const legacy = tx?.cardId;
@@ -12,7 +12,7 @@ function resolveTxnAccountId(tx, accounts) {
   return found?.id || "";
 }
 
-function signedAmount(tx) {
+export function signedAmount(tx) {
   const v = Math.abs(Number(tx?.amount || 0));
   if (!Number.isFinite(v)) return 0;
   return String(tx?.direction).toLowerCase() === "income" ? v : -v;
