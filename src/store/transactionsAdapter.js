@@ -33,7 +33,8 @@ export function txnApiToUi(t) {
     if (!t) return t;
 
     const cents = Number(t.amount_cents || 0);
-    const abs = cents / 100;
+    // The API may contain signed cents; direction determines the UI sign.
+    const abs = Math.abs(cents) / 100;
 
     const dir = String(t.direction || "expense").toLowerCase();
     const signed = dir === "income" ? abs : -abs;

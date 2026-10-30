@@ -1,3 +1,4 @@
+import { calcAccountBalance } from "../utils/accountBalance.js";
 import React, { useMemo, useState, useEffect } from "react";
 import {
   Box,
@@ -161,30 +162,6 @@ function getAccountClosedInvoicesCents(a) {
   return Number(a?.closedInvoicesCents ?? a?.closed_invoices_cents ?? 0);
 }
 
-function signedAmount(tx) {
-  const v = Math.abs(Number(tx?.amount || 0));
-  if (!Number.isFinite(v)) return 0;
-  return String(tx?.direction).toLowerCase() === "income" ? v : -v;
-}
-
-function calcAccountBalance(account, txns, accounts) {
-  const opening = Number(account?.openingBalance || 0);
-  const accId = String(account?.id || "");
-  const sum = (txns || [])
-    .filter((t) => {
-      const tid = String(resolveTxnAccountId(t, accounts) || "");
-      if (!tid || tid !== accId) return false;
-
-      if (String(account?.type) !== "checking") return true;
-
-      const st = String(t?.status || "").toLowerCase();
-      return st === "pago";
-    })
-    .reduce((acc, t) => acc + signedAmount(t), 0);
-
-  return opening + sum;
-}
-
 function softBorder(color, alphaValue = 0.35) {
   if (!color) return "rgba(0,0,0,0.08)";
   const m = String(color).match(
@@ -235,20 +212,6 @@ function slugify(s) {
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_]/g, "")
     .slice(0, 50);
-}
-
-function resolveTxnAccountId(tx, accounts) {
-  if (tx?.accountId) return tx.accountId;
-
-  const legacy = tx?.cardId;
-  if (!legacy) return "";
-
-  const found = (accounts || []).find(
-    (a) =>
-      a?.type === "credit_card" &&
-      String(a?.externalId || a?.external_id || "").endsWith(`_${legacy}`)
-  );
-  return found?.id || "";
 }
 
 function emptyCheckingBankDetails() {
