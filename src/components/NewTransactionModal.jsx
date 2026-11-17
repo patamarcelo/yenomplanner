@@ -1,6 +1,5 @@
 // src/components/NewTransactionModal.jsx
 import React, { useMemo, useState, useEffect, useRef, useDeferredValue } from "react";
-import useAppViewport from "../hooks/useAppViewport.js";
 import {
   Dialog,
   DialogTitle,
@@ -156,7 +155,6 @@ export default function NewTransactionModal({ open, onClose }) {
   const dispatch = useDispatch();
   const theme = useTheme();
   const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
-  useAppViewport(open && isSmDown);
 
   // ✅ min chars menor no mobile, pra reduzir digitação
   const MIN_MERCHANT_CHARS = isSmDown ? 1 : 2;
@@ -777,7 +775,7 @@ export default function NewTransactionModal({ open, onClose }) {
       borderTop: `1px solid ${dividerColor}`,
       px: 2,
       pt: 1.5,
-      pb: "calc(16px + var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)))",
+      pb: "calc(16px + env(safe-area-inset-bottom, 0px))",
       flexShrink: 0,
       zIndex: 10,
     }
@@ -817,11 +815,6 @@ export default function NewTransactionModal({ open, onClose }) {
       maxWidth="sm"
       fullScreen={isSmDown}
       scroll="paper"
-      sx={isSmDown ? {
-        top: "var(--app-viewport-top, 0px)",
-        height: "var(--app-viewport-height, var(--app-modal-height, 100dvh))",
-        bottom: "auto",
-      } : undefined}
       disableScrollLock={false}
       slotProps={{
         backdrop: {
@@ -839,7 +832,7 @@ export default function NewTransactionModal({ open, onClose }) {
             : isDark
               ? `1px solid ${alpha("#fff", 0.08)}`
               : `1px solid ${isExpense ? "#E78B8B" : "#9FD7AF"}`,
-          height: isSmDown ? "100%" : "auto",
+          height: isSmDown ? "100dvh" : "auto",
           boxSizing: "border-box",
           pt: isSmDown ? "env(safe-area-inset-top, 0px)" : 0,
           pl: isSmDown ? "env(safe-area-inset-left, 0px)" : 0,
@@ -851,7 +844,7 @@ export default function NewTransactionModal({ open, onClose }) {
               ? "0 16px 44px rgba(0,0,0,0.45)"
               : "0 10px 28px rgba(33,43,54,0.18)",
           overflow: "hidden",
-          maxHeight: isSmDown ? "100%" : "90dvh",
+          maxHeight: isSmDown ? "100dvh" : "90dvh",
           display: "flex",
           flexDirection: "column",
         },

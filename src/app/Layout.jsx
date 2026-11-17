@@ -406,12 +406,11 @@ export default function Layout({ children }) {
   if (isPublicRoute) {
     return (
       <Box
-        className="app-public-shell"
         sx={{
           minHeight: "100dvh",
           pt: "env(safe-area-inset-top, 0px)",
           pr: "env(safe-area-inset-right, 0px)",
-          pb: "var(--app-safe-bottom, env(safe-area-inset-bottom, 0px))",
+          pb: "env(safe-area-inset-bottom, 0px)",
           pl: "env(safe-area-inset-left, 0px)",
         }}
       >
@@ -437,7 +436,7 @@ export default function Layout({ children }) {
 
     // PWA iOS: evita que o drawer fique sob a Status Bar / Dynamic Island.
     pt: "env(safe-area-inset-top, 0px)",
-    pb: "var(--app-safe-bottom, env(safe-area-inset-bottom, 0px))",
+    pb: "env(safe-area-inset-bottom, 0px)",
   };
 
   function handleLogout() {
@@ -734,7 +733,6 @@ export default function Layout({ children }) {
 
   return (
     <Box
-      className="app-shell"
       sx={{
         display: "flex",
         height: "100dvh",
@@ -768,7 +766,7 @@ export default function Layout({ children }) {
               borderTopLeftRadius: 0,
               borderBottomLeftRadius: 0,
               pt: "env(safe-area-inset-top, 0px)",
-              pb: "var(--app-safe-bottom, env(safe-area-inset-bottom, 0px))",
+              pb: "env(safe-area-inset-bottom, 0px)",
             },
           }}
         >
@@ -1071,10 +1069,8 @@ export default function Layout({ children }) {
         </AppBar>
 
         <Box
-          className="app-content-scroll"
           sx={{
             flex: 1,
-            minHeight: 0,
             overflow: "auto",
             width: "100%",
             minWidth: 0,
@@ -1088,7 +1084,7 @@ export default function Layout({ children }) {
             },
             pt: { xs: 1.0, md: 1.5 },
             pb: {
-              xs: "calc(var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)) + 88px)",
+              xs: "calc(env(safe-area-inset-bottom, 0px) + 88px)",
               md: 2,
             },
           }}
@@ -1104,7 +1100,7 @@ export default function Layout({ children }) {
             sx={(t) => ({
               position: "fixed",
               right: 16,
-              bottom: "calc(var(--app-safe-bottom, env(safe-area-inset-bottom, 0px)) + 16px)",
+              bottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
               zIndex: t.zIndex.speedDial,
               width: 58,
               height: 58,
