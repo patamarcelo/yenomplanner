@@ -23,6 +23,7 @@ export function installViewportDiagnostics() {
   document.body.appendChild(probe);
   report = {
     diagnostic: 'viewport-v1',
+    statusBarStyle: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.content ?? null,
     standalone: navigator.standalone === true || matchMedia('(display-mode: standalone)').matches,
     screen: [screen.width, screen.height],
     frames: {},
