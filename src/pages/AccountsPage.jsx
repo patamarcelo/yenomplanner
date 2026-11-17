@@ -139,6 +139,24 @@ function moneyBRL(v) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function AccountMoney({ value, hidden }) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: "inline-block",
+        minWidth: "16ch",
+        whiteSpace: "nowrap",
+        fontWeight: 800,
+        fontVariantNumeric: "tabular-nums",
+        color: Number(value) < 0 ? "error.main" : "primary.main",
+      }}
+    >
+      {hidden ? "••••" : moneyBRL(value)}
+    </Box>
+  );
+}
+
 function centsToUnit(v) {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return 0;
@@ -747,30 +765,19 @@ function AccountFormDialog({ open, onClose, initial }) {
 }
 
 function AccountActions({ account, onEdit, onCopyBankData, dispatch }) {
-  const theme = useTheme();
-  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
-
-  const SxCheckin =
-  {
-    display: "grid",
-    gridTemplateColumns: isSmDown ? "1fr 1fr" : "repeat(auto-fit, minmax(96px, auto))",
-    gap: 1,
-    width: isSmDown ? "100%" : "auto",
-  }
-
-  const SxCard =
-  {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 120px)",
-    justifyContent: 'flex-end',
-    gap: 1,
-    width: "100%",
-  }
-
-
   return (
     <Box
-      sx={account.type !== "checking" ? SxCheckin : SxCard}
+      sx={{
+        display: "grid",
+        gridTemplateColumns: {
+          xs: "repeat(2, minmax(0, 1fr))",
+          sm: `repeat(${account.type === "checking" ? 4 : 3}, minmax(96px, 1fr))`,
+        },
+        gap: 1,
+        width: { xs: "100%", lg: "auto" },
+        maxWidth: "100%",
+        flexShrink: 0,
+      }}
     >
       {account.type === "checking" ? (
         <Button
@@ -846,8 +853,6 @@ export default function AccountsPage() {
     severity: "success",
     message: "",
   });
-
-  const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
 
   function showToast(message, severity = "success") {
     setToast({
@@ -973,13 +978,13 @@ export default function AccountsPage() {
               sx={{ flexWrap: "wrap" }}
             >
               <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Limite total: <b>{maskMoney(moneyBRL(totalCardLimit))}</b>
+                Limite total: <AccountMoney value={totalCardLimit} hidden={hideValues} />
               </Typography>
               <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Em aberto: <b>{maskMoney(moneyBRL(totalCardOpen))}</b>
+                Em aberto: <AccountMoney value={totalCardOpen} hidden={hideValues} />
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 950 }}>
-                Disponível: {maskMoney(moneyBRL(totalCardAvailable))}
+                Disponível: <AccountMoney value={totalCardAvailable} hidden={hideValues} />
               </Typography>
             </Stack>
           </Stack>
@@ -1023,12 +1028,12 @@ export default function AccountsPage() {
                   <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
                     <Stack spacing={1.5}>
                       <Stack
-                        direction={{ xs: "column", md: "row" }}
+                        direction={{ xs: "column", lg: "row" }}
                         justifyContent="space-between"
-                        alignItems={{ xs: "stretch", md: "center" }}
+                        alignItems={{ xs: "stretch", lg: "center" }}
                         spacing={1.5}
                       >
-                        <Stack direction="row" spacing={{ xs: 1.2, sm: 2.5 }} alignItems="flex-start" sx={{ minWidth: 0 }}>
+                        <Stack direction="row" spacing={{ xs: 1.2, sm: 2.5 }} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
                           <Typography sx={{ fontSize: 28, lineHeight: "28px", pt: 0.2 }}>💳</Typography>
 
                           <Stack spacing={0.6} sx={{ minWidth: 0 }}>
@@ -1039,14 +1044,14 @@ export default function AccountsPage() {
                             </Stack>
 
                             <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                              Limite: <b>{maskMoney(moneyBRL(limitValue))}</b>
-                              {" • "}Em aberto: <b>{maskMoney(moneyBRL(openUsed))}</b>
-                              {" • "}Disponível: <b>{maskMoney(moneyBRL(available))}</b>
+                              <Box component="span" sx={{ display: "inline-block", whiteSpace: "nowrap", mr: 1 }}>Limite: <AccountMoney value={limitValue} hidden={hideValues} /></Box>
+                              <Box component="span" sx={{ display: "inline-block", whiteSpace: "nowrap", mr: 1 }}>Em aberto: <AccountMoney value={openUsed} hidden={hideValues} /></Box>
+                              <Box component="span" sx={{ display: "inline-block", whiteSpace: "nowrap" }}>Disponível: <AccountMoney value={available} hidden={hideValues} /></Box>
                             </Typography>
 
                             <Typography variant="caption" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                              Em aberto sem faturar: <b>{maskMoney(moneyBRL(openTxOnly))}</b>
-                              {" • "}Faturas fechadas em aberto: <b>{maskMoney(moneyBRL(closedInvoicesOnly))}</b>
+                              Em aberto sem faturar: <AccountMoney value={openTxOnly} hidden={hideValues} />
+                              {" • "}Faturas fechadas em aberto: <AccountMoney value={closedInvoicesOnly} hidden={hideValues} />
                             </Typography>
 
                             <Typography variant="body2" sx={{ color: "text.secondary" }}>
@@ -1090,7 +1095,7 @@ export default function AccountsPage() {
 
           <Stack direction="row" spacing={2} alignItems="baseline" sx={{ flexWrap: "wrap" }}>
             <Typography variant="body2" sx={{ color: "text.secondary" }}>
-              Saldo total: <b>{maskMoney(moneyBRL(totalCheckingBalance))}</b>
+              Saldo total: <AccountMoney value={totalCheckingBalance} hidden={hideValues} />
             </Typography>
           </Stack>
         </Stack>
@@ -1130,12 +1135,12 @@ export default function AccountsPage() {
                   <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
                     <Stack spacing={1.5}>
                       <Stack
-                        direction={{ xs: "column", md: "row" }}
+                        direction={{ xs: "column", lg: "row" }}
                         justifyContent="space-between"
-                        alignItems={{ xs: "stretch", md: "center" }}
+                        alignItems={{ xs: "stretch", lg: "center" }}
                         spacing={1.5}
                       >
-                        <Stack direction="row" spacing={{ xs: 1.2, sm: 2.5 }} alignItems="flex-start" sx={{ minWidth: 0 }}>
+                        <Stack direction="row" spacing={{ xs: 1.2, sm: 2.5 }} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
                           <Typography sx={{ fontSize: 28, lineHeight: "28px", pt: 0.2 }}>🏦</Typography>
 
                           <Stack spacing={0.6} sx={{ minWidth: 0 }}>
@@ -1150,7 +1155,7 @@ export default function AccountsPage() {
                             </Typography>
 
                             <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                              Saldo atual: <b>{maskMoney(moneyBRL(balance))}</b>
+                              Saldo atual: <AccountMoney value={balance} hidden={hideValues} />
                             </Typography>
                           </Stack>
                         </Stack>

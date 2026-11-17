@@ -775,7 +775,8 @@ export default function NewTransactionModal({ open, onClose }) {
       borderTop: `1px solid ${dividerColor}`,
       px: 2,
       pt: 1.5,
-      pb: "calc(16px + env(safe-area-inset-bottom))",
+      pb: "calc(16px + env(safe-area-inset-bottom, 0px))",
+      flexShrink: 0,
       zIndex: 10,
     }
     : {
@@ -832,6 +833,10 @@ export default function NewTransactionModal({ open, onClose }) {
               ? `1px solid ${alpha("#fff", 0.08)}`
               : `1px solid ${isExpense ? "#E78B8B" : "#9FD7AF"}`,
           height: isSmDown ? "100dvh" : "auto",
+          boxSizing: "border-box",
+          pt: isSmDown ? "env(safe-area-inset-top, 0px)" : 0,
+          pl: isSmDown ? "env(safe-area-inset-left, 0px)" : 0,
+          pr: isSmDown ? "env(safe-area-inset-right, 0px)" : 0,
           background: modalBg,
           boxShadow: isSmDown
             ? "none"
@@ -848,11 +853,12 @@ export default function NewTransactionModal({ open, onClose }) {
       <DialogTitle
         sx={{
           fontWeight: 950,
+          flexShrink: 0,
           py: isSmDown ? 1.2 : 1.5,
           color: isDark ? "#fff" : "#FFFFFF",
         }}
       >
-        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.2}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.2} flexWrap="wrap" useFlexGap>
           <Typography sx={{ fontWeight: 950, color: isDark ? "#fff" : "#FFFFFF" }}>
             Novo lançamento
           </Typography>

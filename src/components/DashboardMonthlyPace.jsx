@@ -471,7 +471,7 @@ export default function DashboardMonthlyPace({
   money = (v) => String(v || 0),
   cardBg,
   title = "Ritmo de gastos",
-  monthsBack = 6,
+  monthsBack = 13,
   isExcluded,
   categoriesById,
 }) {
@@ -480,7 +480,7 @@ export default function DashboardMonthlyPace({
   const excludeResolver = isExcluded || (() => false);
 
   const compareOptions = useMemo(
-    () => [1, 2, 3, 6].filter((n) => n <= Math.max(1, Number(monthsBack || 1) - 1)),
+    () => [1, 2, 3, 6, 12].filter((n) => n <= Math.max(1, Number(monthsBack || 1) - 1)),
     [monthsBack]
   );
 
@@ -489,7 +489,14 @@ export default function DashboardMonthlyPace({
     : compareOptions[0] || 1;
 
   const [mode, setMode] = useState("purchase");
-  const [compareBack, setCompareBack] = useState(defaultCompareBack);
+  const [compareBack, setCompareBack] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem("yenomplanner:pace-compare-months"));
+      return compareOptions.includes(saved) ? saved : defaultCompareBack;
+    } catch {
+      return defaultCompareBack;
+    }
+  });
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
   const [categorySortBy, setCategorySortBy] = useState("baseline");
 
@@ -498,6 +505,15 @@ export default function DashboardMonthlyPace({
       setCompareBack(defaultCompareBack);
     }
   }, [compareBack, compareOptions, defaultCompareBack]);
+
+  useEffect(() => {
+    if (!compareOptions.includes(compareBack)) return;
+    try {
+      localStorage.setItem("yenomplanner:pace-compare-months", String(compareBack));
+    } catch {
+      // Storage can be unavailable in private or restricted browsing.
+    }
+  }, [compareBack, compareOptions]);
 
   const handleModeChange = (_, value) => {
     if (!value) return;
@@ -1017,6 +1033,8 @@ export default function DashboardMonthlyPace({
                 onChange={handleCompareBackChange}
                 sx={{
                   gap: 0.9,
+                  flexWrap: "wrap",
+                  maxWidth: "100%",
                   "& .MuiToggleButton-root": {
                     px: 1.05,
                     py: 0.5,
