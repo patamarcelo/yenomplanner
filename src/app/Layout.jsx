@@ -733,6 +733,7 @@ export default function Layout({ children }) {
 
   return (
     <Box
+      data-viewport-shell
       sx={{
         display: "flex",
         height: "100dvh",
@@ -1069,6 +1070,7 @@ export default function Layout({ children }) {
         </AppBar>
 
         <Box
+          data-viewport-content
           sx={{
             flex: 1,
             overflow: "auto",

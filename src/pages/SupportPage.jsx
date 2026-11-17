@@ -16,6 +16,7 @@ import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 
 import { trackEvent } from "../utils/analytics";
+import ViewportDiagnosticsPanel from "../components/ViewportDiagnosticsPanel.jsx";
 
 const WHATSAPP_URL =
     "https://wa.me/555197090862?text=Olá! Preciso de ajuda com o YenomPlanner";
@@ -90,6 +91,7 @@ export default function SupportPage() {
                         </Stack>
                     </CardContent>
                 </Card>
+                <ViewportDiagnosticsPanel />
             </Stack>
         </Container>
     );
