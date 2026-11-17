@@ -1134,7 +1134,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 fullWidth
                 disabled={saving}
               />
-              {amountSuggestions.length > 0 && (
+              {isSmDown && amountSuggestions.length > 0 && (
                 <Stack spacing={0.7}>
                   <Typography variant="caption" sx={{ color: textSecondary }}>Valores rápidos</Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
