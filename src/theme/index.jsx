@@ -39,6 +39,12 @@ function buildTheme(spec) {
       // mantém qualquer components vindo do spec (se existir)
       ...(spec.components || {}),
 
+      MuiCssBaseline: {
+        styleOverrides: {
+          html: { backgroundColor: spec.palette.background.default },
+        },
+      },
+
       // ✅ Paper/Card: mantém seu visual, mas com densidade melhor via spacing/typography
       MuiPaper: {
         styleOverrides: {

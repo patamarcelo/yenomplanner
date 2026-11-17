@@ -1,5 +1,7 @@
 /* Apple-like feel */
-html, body, #root { height: 100%; }
+html { height: 100%; }
+body, #root { height: var(--app-viewport-height, 100dvh); }
+body { margin: 0; }
 * { box-sizing: border-box; }
 
 :root {
