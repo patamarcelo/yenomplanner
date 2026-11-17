@@ -819,7 +819,7 @@ export default function NewTransactionModal({ open, onClose }) {
       scroll="paper"
       sx={isSmDown ? {
         top: "var(--app-viewport-top, 0px)",
-        height: "var(--app-viewport-height, 100dvh)",
+        height: "var(--app-viewport-height, var(--app-modal-height, 100dvh))",
         bottom: "auto",
       } : undefined}
       disableScrollLock={false}

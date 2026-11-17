@@ -406,6 +406,7 @@ export default function Layout({ children }) {
   if (isPublicRoute) {
     return (
       <Box
+        className="app-public-shell"
         sx={{
           minHeight: "100dvh",
           pt: "env(safe-area-inset-top, 0px)",
@@ -733,6 +734,7 @@ export default function Layout({ children }) {
 
   return (
     <Box
+      className="app-shell"
       sx={{
         display: "flex",
         height: "100dvh",
@@ -1069,6 +1071,7 @@ export default function Layout({ children }) {
         </AppBar>
 
         <Box
+          className="app-content-scroll"
           sx={{
             flex: 1,
             minHeight: 0,
