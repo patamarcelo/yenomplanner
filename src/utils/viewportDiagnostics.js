@@ -26,6 +26,7 @@ export function installViewportDiagnostics() {
     statusBarStyle: document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.content ?? null,
     standalone: navigator.standalone === true || matchMedia('(display-mode: standalone)').matches,
     screen: [screen.width, screen.height],
+    heightStrategy: document.documentElement.style.getPropertyValue('--ios-standalone-height') || 'browser',
     frames: {},
   };
   const height = (element) => element ? Math.round(element.getBoundingClientRect().height) : null;

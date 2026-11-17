@@ -832,7 +832,7 @@ export default function NewTransactionModal({ open, onClose }) {
             : isDark
               ? `1px solid ${alpha("#fff", 0.08)}`
               : `1px solid ${isExpense ? "#E78B8B" : "#9FD7AF"}`,
-          height: isSmDown ? "100dvh" : "auto",
+          height: isSmDown ? "var(--ios-standalone-height, 100dvh)" : "auto",
           boxSizing: "border-box",
           pt: isSmDown ? "env(safe-area-inset-top, 0px)" : 0,
           pl: isSmDown ? "env(safe-area-inset-left, 0px)" : 0,
@@ -844,7 +844,7 @@ export default function NewTransactionModal({ open, onClose }) {
               ? "0 16px 44px rgba(0,0,0,0.45)"
               : "0 10px 28px rgba(33,43,54,0.18)",
           overflow: "hidden",
-          maxHeight: isSmDown ? "100dvh" : "90dvh",
+          maxHeight: isSmDown ? "var(--ios-standalone-height, 100dvh)" : "90dvh",
           display: "flex",
           flexDirection: "column",
         },

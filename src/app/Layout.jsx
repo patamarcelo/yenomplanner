@@ -406,8 +406,9 @@ export default function Layout({ children }) {
   if (isPublicRoute) {
     return (
       <Box
+        data-viewport-public
         sx={{
-          minHeight: "100dvh",
+          minHeight: "var(--ios-standalone-height, 100dvh)",
           pt: "env(safe-area-inset-top, 0px)",
           pr: "env(safe-area-inset-right, 0px)",
           pb: "env(safe-area-inset-bottom, 0px)",
@@ -736,8 +737,8 @@ export default function Layout({ children }) {
       data-viewport-shell
       sx={{
         display: "flex",
-        height: "100dvh",
-        minHeight: "100dvh",
+        height: "var(--ios-standalone-height, 100dvh)",
+        minHeight: "var(--ios-standalone-height, 100dvh)",
         overflow: "hidden",
         bgcolor: "background.default",
       }}
