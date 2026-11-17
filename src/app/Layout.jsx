@@ -407,7 +407,7 @@ export default function Layout({ children }) {
     return (
       <Box
         sx={{
-          minHeight: "var(--app-viewport-height, 100dvh)",
+          minHeight: "100dvh",
           pt: "env(safe-area-inset-top, 0px)",
           pr: "env(safe-area-inset-right, 0px)",
           pb: "var(--app-safe-bottom, env(safe-area-inset-bottom, 0px))",
@@ -735,8 +735,8 @@ export default function Layout({ children }) {
     <Box
       sx={{
         display: "flex",
-        height: "var(--app-viewport-height, 100dvh)",
-        minHeight: "var(--app-viewport-height, 100dvh)",
+        height: "100dvh",
+        minHeight: "100dvh",
         overflow: "hidden",
         bgcolor: "background.default",
       }}

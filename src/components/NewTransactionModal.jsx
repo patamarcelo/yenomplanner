@@ -1,5 +1,6 @@
 // src/components/NewTransactionModal.jsx
 import React, { useMemo, useState, useEffect, useRef, useDeferredValue } from "react";
+import useAppViewport from "../hooks/useAppViewport.js";
 import {
   Dialog,
   DialogTitle,
@@ -155,6 +156,7 @@ export default function NewTransactionModal({ open, onClose }) {
   const dispatch = useDispatch();
   const theme = useTheme();
   const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
+  useAppViewport(open && isSmDown);
 
   // ✅ min chars menor no mobile, pra reduzir digitação
   const MIN_MERCHANT_CHARS = isSmDown ? 1 : 2;

@@ -3,15 +3,19 @@ import { useLayoutEffect } from 'react';
 export function getAppViewport(viewport, innerHeight, activeElement, unobscuredHeight = innerHeight) {
   // Pinch zoom must not resize the application or be mistaken for a keyboard.
   const followsViewport = viewport && Math.abs(viewport.scale - 1) < 0.01;
-  const height = followsViewport ? viewport.height : innerHeight;
-  const top = followsViewport ? viewport.offsetTop : 0;
   const editing = activeElement?.matches?.('input, textarea, [contenteditable="true"]');
-  const keyboardOpen = Boolean(editing && followsViewport && unobscuredHeight - height > 120);
-  return { height, top, keyboardOpen };
+  const keyboardOpen = Boolean(editing && followsViewport && unobscuredHeight - viewport.height > 120);
+  // Leave browser chrome resizing to CSS. Only the keyboard needs a pixel override.
+  return {
+    height: keyboardOpen ? viewport.height : null,
+    top: keyboardOpen ? viewport.offsetTop : 0,
+    keyboardOpen,
+  };
 }
 
-export default function useAppViewport() {
+export default function useAppViewport(enabled) {
   useLayoutEffect(() => {
+    if (!enabled) return;
     const root = document.documentElement;
     const viewport = window.visualViewport;
     let frame = 0;
@@ -28,7 +32,8 @@ export default function useAppViewport() {
       const { height, top, keyboardOpen } = getAppViewport(
         viewport, window.innerHeight, document.activeElement, unobscuredHeight,
       );
-      root.style.setProperty('--app-viewport-height', `${height}px`);
+      if (height === null) root.style.removeProperty('--app-viewport-height');
+      else root.style.setProperty('--app-viewport-height', `${height}px`);
       root.style.setProperty('--app-viewport-top', `${top}px`);
       root.style.setProperty('--app-safe-bottom', keyboardOpen ? '0px' : 'env(safe-area-inset-bottom, 0px)');
     };
@@ -53,5 +58,5 @@ export default function useAppViewport() {
       document.removeEventListener('focusout', schedule);
       ['--app-viewport-height', '--app-viewport-top', '--app-safe-bottom'].forEach((key) => root.style.removeProperty(key));
     };
-  }, []);
+  }, [enabled]);
 }
