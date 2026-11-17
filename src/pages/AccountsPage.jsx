@@ -128,11 +128,6 @@ const pageSx = {
   py: { xs: 1.25, sm: 2 },
 };
 
-function AccountTypePill({ type }) {
-  const label = type === "credit_card" ? "Cartão de crédito" : "Conta corrente";
-  return <Chip size="small" label={label} variant="outlined" sx={{ fontWeight: 700 }} />;
-}
-
 function moneyBRL(v) {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return "—";
@@ -145,7 +140,7 @@ function AccountMoney({ value, hidden }) {
       component="span"
       sx={{
         display: "inline-block",
-        minWidth: "16ch",
+        maxWidth: "100%",
         whiteSpace: "nowrap",
         fontWeight: 800,
         fontVariantNumeric: "tabular-nums",
@@ -154,6 +149,43 @@ function AccountMoney({ value, hidden }) {
     >
       {hidden ? "••••" : moneyBRL(value)}
     </Box>
+  );
+}
+
+function AccountStat({ label, value, hidden, emphasis = false }) {
+  return (
+    <Box sx={{
+      display: "flex",
+      flexDirection: { xs: "row", sm: "column" },
+      alignItems: { xs: "center", sm: "flex-start" },
+      justifyContent: "space-between",
+      gap: 0.5,
+      minWidth: 0,
+      px: 1.5,
+      py: 1.1,
+      borderRadius: 1.5,
+      bgcolor: emphasis ? (t) => alpha(t.palette.primary.main, 0.06) : "action.hover",
+    }}>
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Box sx={{ fontSize: { xs: 15, sm: 17 }, lineHeight: 1.5 }}>
+        <AccountMoney value={value} hidden={hidden} />
+      </Box>
+    </Box>
+  );
+}
+
+function AccountHeading({ account, icon, children }) {
+  return (
+    <Stack direction="row" spacing={1.3} alignItems="flex-start">
+      <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: "action.hover", display: "flex", color: "primary.main" }}>{icon}</Box>
+      <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+        <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+          <Typography sx={{ fontWeight: 900, overflowWrap: "anywhere" }}>{account.name}</Typography>
+          {!safeActive(account) && <Chip size="small" label="Inativo" variant="outlined" />}
+        </Stack>
+        {children}
+      </Stack>
+    </Stack>
   );
 }
 
@@ -770,11 +802,12 @@ function AccountActions({ account, onEdit, onCopyBankData, dispatch }) {
       sx={{
         display: "grid",
         gridTemplateColumns: {
-          xs: "repeat(2, minmax(0, 1fr))",
-          sm: `repeat(${account.type === "checking" ? 4 : 3}, minmax(96px, 1fr))`,
+          xs: `repeat(${account.type === "checking" ? 2 : 3}, minmax(0, 1fr))`,
+          sm: `repeat(${account.type === "checking" ? 4 : 3}, minmax(0, 1fr))`,
         },
         gap: 1,
-        width: { xs: "100%", lg: "auto" },
+        width: "100%",
+        "& .MuiButton-root": { minWidth: 0, px: 1, fontSize: { xs: 12, sm: 13 } },
         maxWidth: "100%",
         flexShrink: 0,
       }}
@@ -824,8 +857,6 @@ function AccountActions({ account, onEdit, onCopyBankData, dispatch }) {
 
 export default function AccountsPage() {
   const dispatch = useDispatch();
-  const theme = useTheme();
-  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
 
   const accounts = useSelector(selectAccounts);
   const txns = useSelector(selectTransactionsUi);
@@ -960,37 +991,17 @@ export default function AccountsPage() {
         <Divider />
 
         {cardsOnly.length > 0 && (
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            justifyContent="space-between"
-            alignItems={{ xs: "flex-start", sm: "baseline" }}
-            spacing={0.8}
-            sx={{ mt: 0.5 }}
-          >
-            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-              Cartões de crédito
-            </Typography>
-
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={{ xs: 0.35, sm: 2 }}
-              alignItems={{ xs: "flex-start", sm: "baseline" }}
-              sx={{ flexWrap: "wrap" }}
-            >
-              <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Limite total: <AccountMoney value={totalCardLimit} hidden={hideValues} />
-              </Typography>
-              <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                Em aberto: <AccountMoney value={totalCardOpen} hidden={hideValues} />
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 950 }}>
-                Disponível: <AccountMoney value={totalCardAvailable} hidden={hideValues} />
-              </Typography>
-            </Stack>
+          <Stack spacing={1.2}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Cartões de crédito</Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, minmax(0, 1fr))" }, gap: 1 }}>
+              <AccountStat label="Limite total" value={totalCardLimit} hidden={hideValues} />
+              <AccountStat label="Em aberto" value={totalCardOpen} hidden={hideValues} />
+              <AccountStat label="Disponível" value={totalCardAvailable} hidden={hideValues} emphasis />
+            </Box>
           </Stack>
         )}
 
-        <Stack spacing={1.2}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 1.5, alignItems: "start" }}>
           {cardsOnly.length === 0 ? (
             <EmptyStateCard
               icon={<CreditCardRoundedIcon sx={{ fontSize: 30, opacity: 0.9 }} />}
@@ -1025,60 +1036,44 @@ export default function AccountsPage() {
                     },
                   }}
                 >
-                  <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+                  <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
                     <Stack spacing={1.5}>
-                      <Stack
-                        direction={{ xs: "column", lg: "row" }}
-                        justifyContent="space-between"
-                        alignItems={{ xs: "stretch", lg: "center" }}
-                        spacing={1.5}
-                      >
-                        <Stack direction="row" spacing={{ xs: 1.2, sm: 2.5 }} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography sx={{ fontSize: 28, lineHeight: "28px", pt: 0.2 }}>💳</Typography>
-
-                          <Stack spacing={0.6} sx={{ minWidth: 0 }}>
-                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                              <Typography sx={{ fontWeight: 950, wordBreak: "break-word" }}>{a.name}</Typography>
-                              <AccountTypePill type={a.type} />
-                              {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
+                      <AccountHeading account={a} icon={<CreditCardRoundedIcon fontSize="small" />}>
+                        <Typography variant="caption" color="text.secondary">
+                          Fecha dia {a?.statement?.cutoffDay ?? "—"} • Vence dia {a?.statement?.dueDay ?? "—"}
+                        </Typography>
+                      </AccountHeading>
+                      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, minmax(0, 1fr))" }, gap: 1 }}>
+                        <AccountStat label="Limite" value={limitValue} hidden={hideValues} />
+                        <AccountStat label="Em aberto" value={openUsed} hidden={hideValues} />
+                        <AccountStat label="Disponível" value={available} hidden={hideValues} emphasis />
+                      </Box>
+                      <Accordion disableGutters elevation={0} sx={{ bgcolor: "transparent", "&:before": { display: "none" }, boxShadow: "none" }}>
+                        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} sx={{ minHeight: 36, px: 0, "& .MuiAccordionSummary-content": { my: 0.5 } }}>
+                          <Typography variant="caption" color="text.secondary">Detalhamento do limite</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ px: 0, pb: 1 }}>
+                          <Stack spacing={1}>
+                            <Stack direction="row" justifyContent="space-between" spacing={1}>
+                              <Typography variant="caption" color="text.secondary">Sem faturar</Typography>
+                              <AccountMoney value={openTxOnly} hidden={hideValues} />
                             </Stack>
-
-                            <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                              <Box component="span" sx={{ display: "inline-block", whiteSpace: "nowrap", mr: 1 }}>Limite: <AccountMoney value={limitValue} hidden={hideValues} /></Box>
-                              <Box component="span" sx={{ display: "inline-block", whiteSpace: "nowrap", mr: 1 }}>Em aberto: <AccountMoney value={openUsed} hidden={hideValues} /></Box>
-                              <Box component="span" sx={{ display: "inline-block", whiteSpace: "nowrap" }}>Disponível: <AccountMoney value={available} hidden={hideValues} /></Box>
-                            </Typography>
-
-                            <Typography variant="caption" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                              Em aberto sem faturar: <AccountMoney value={openTxOnly} hidden={hideValues} />
-                              {" • "}Faturas fechadas em aberto: <AccountMoney value={closedInvoicesOnly} hidden={hideValues} />
-                            </Typography>
-
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                              Corte: dia <b>{a?.statement?.cutoffDay ?? "—"}</b> • Vencimento: dia{" "}
-                              <b>{a?.statement?.dueDay ?? "—"}</b>
-                            </Typography>
-
-                            <Typography variant="caption" sx={{ color: "text.secondary", wordBreak: "break-all" }}>
-                              external_id: <b>{a.externalId || a.external_id || "—"}</b>
-                            </Typography>
+                            <Stack direction="row" justifyContent="space-between" spacing={1}>
+                              <Typography variant="caption" color="text.secondary">Faturas fechadas em aberto</Typography>
+                              <AccountMoney value={closedInvoicesOnly} hidden={hideValues} />
+                            </Stack>
                           </Stack>
-                        </Stack>
-
-                        <AccountActions
-                          account={a}
-                          onEdit={setEditAcc}
-                          onCopyBankData={handleCopyBankData}
-                          dispatch={dispatch}
-                        />
-                      </Stack>
+                        </AccordionDetails>
+                      </Accordion>
+                      <Divider />
+                      <AccountActions account={a} onEdit={setEditAcc} onCopyBankData={handleCopyBankData} dispatch={dispatch} />
                     </Stack>
                   </CardContent>
                 </Card>
               );
             })
           )}
-        </Stack>
+        </Box>
 
         <Divider sx={{ my: 1.5 }} />
 
@@ -1100,7 +1095,7 @@ export default function AccountsPage() {
           </Stack>
         </Stack>
 
-        <Stack spacing={1.2}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "repeat(2, minmax(0, 1fr))" }, gap: 1.5, alignItems: "start" }}>
           {checkingOnly.length === 0 ? (
             <EmptyStateCard
               icon={<AccountBalanceRoundedIcon sx={{ fontSize: 30, opacity: 0.9 }} />}
@@ -1132,41 +1127,12 @@ export default function AccountsPage() {
                     },
                   }}
                 >
-                  <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+                  <CardContent sx={{ p: { xs: 2, sm: 2.5 } }}>
                     <Stack spacing={1.5}>
-                      <Stack
-                        direction={{ xs: "column", lg: "row" }}
-                        justifyContent="space-between"
-                        alignItems={{ xs: "stretch", lg: "center" }}
-                        spacing={1.5}
-                      >
-                        <Stack direction="row" spacing={{ xs: 1.2, sm: 2.5 }} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography sx={{ fontSize: 28, lineHeight: "28px", pt: 0.2 }}>🏦</Typography>
-
-                          <Stack spacing={0.6} sx={{ minWidth: 0 }}>
-                            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                              <Typography sx={{ fontWeight: 950, wordBreak: "break-word" }}>{a.name}</Typography>
-                              <AccountTypePill type={a.type} />
-                              {!safeActive(a) ? <Chip size="small" label="Inativo" variant="outlined" /> : null}
-                            </Stack>
-
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                              Sem fatura (usa data de cobrança).
-                            </Typography>
-
-                            <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                              Saldo atual: <AccountMoney value={balance} hidden={hideValues} />
-                            </Typography>
-                          </Stack>
-                        </Stack>
-
-                        <AccountActions
-                          account={a}
-                          onEdit={setEditAcc}
-                          onCopyBankData={handleCopyBankData}
-                          dispatch={dispatch}
-                        />
-                      </Stack>
+                      <AccountHeading account={a} icon={<AccountBalanceRoundedIcon fontSize="small" />}>
+                        <Typography variant="caption" color="text.secondary">Conta corrente</Typography>
+                      </AccountHeading>
+                      <AccountStat label="Saldo atual" value={balance} hidden={hideValues} emphasis />
 
                       <Accordion
                         disableGutters
@@ -1195,42 +1161,8 @@ export default function AccountsPage() {
                             },
                           }}
                         >
-                          <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                            <b>{bank.bankCode || "—"} - {bank.bankName || "—"}</b>
-                          </Typography>
-
-                          <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                            Agência <b>{bank.branch || "—"}</b>
-                            {" • "}Conta{" "}
-                            <b>
-                              {bank.accountNumber || "—"}
-                              {bank.accountDigit ? `-${bank.accountDigit}` : ""}
-                            </b>
-                          </Typography>
-
-                          <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                            Tipo:{" "}
-                            <b>
-                              {bank.accountKind === "payment"
-                                ? "Conta pagamento"
-                                : bank.accountKind === "savings"
-                                  ? "Conta poupança"
-                                  : "Conta corrente"}
-                            </b>
-                          </Typography>
-
-                          <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                            Documento:{" "}
-                            <b>
-                              {bank.documentType === "cnpj"
-                                ? formatCNPJ(bank.documentNumber)
-                                : formatCPF(bank.documentNumber)}
-                            </b>
-                          </Typography>
-
-                          <Typography variant="body2" sx={{ color: "text.secondary", lineHeight: 1.45 }}>
-                            Nome: <b>{bank.holderName || "—"}</b>
-                          </Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>Dados bancários</Typography>
+                          <Typography variant="caption" color="text.secondary">{bank.bankName || "Ver dados para transferência"}</Typography>
                         </AccordionSummary>
 
                         <AccordionDetails sx={{ pt: 0, pb: 1.5, px: { xs: 1.25, sm: 2 } }}>
@@ -1253,13 +1185,15 @@ export default function AccountsPage() {
                           </Stack>
                         </AccordionDetails>
                       </Accordion>
+                      <Divider />
+                      <AccountActions account={a} onEdit={setEditAcc} onCopyBankData={handleCopyBankData} dispatch={dispatch} />
                     </Stack>
                   </CardContent>
                 </Card>
               );
             })
           )}
-        </Stack>
+        </Box>
       </Stack>
 
       <AccountFormDialog

@@ -34,6 +34,7 @@ import { selectCategories } from "../store/categoriesSlice";
 
 import buildTxnHistoryIndex from "./transactions/buildTxnHistoryIndex";
 import CategoryOption from "./categories/CategoryOption.jsx";
+import { getCategoryAmountSuggestions } from "../utils/categoryAmountSuggestions.js";
 
 import toast from "react-hot-toast";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
@@ -312,6 +313,8 @@ export default function NewTransactionModal({ open, onClose }) {
   const selectedCategory = useMemo(() => {
     return categoriesBySlug.get(String(categoryId || "")) || null;
   }, [categoriesBySlug, categoryId]);
+
+  const amountSuggestions = getCategoryAmountSuggestions(selectedCategory || { slug: categoryId });
 
   const merchantOptions = useMemo(() => {
     if (!historyIndex) return [];
@@ -1113,23 +1116,43 @@ export default function NewTransactionModal({ open, onClose }) {
               )}
             />
 
-            <TextField
-              sx={inputSx}
-              label="Valor (R$)"
-              value={amount}
-              onChange={(e) => setAmount(sanitizeBrlInput(e.target.value))}
-              onBlur={() => {
-                const v = parseBrlToNumber(amount);
-                if (Number.isFinite(v)) setAmount(formatNumberToBrlInput(Math.abs(v)));
-              }}
-              type="text"
-              inputProps={{
-                inputMode: "decimal",
-                pattern: "[0-9]*[.,]?[0-9]*",
-              }}
-              fullWidth
-              disabled={saving}
-            />
+            <Stack spacing={1} sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+              <TextField
+                sx={inputSx}
+                label="Valor (R$)"
+                value={amount}
+                onChange={(e) => setAmount(sanitizeBrlInput(e.target.value))}
+                onBlur={() => {
+                  const v = parseBrlToNumber(amount);
+                  if (Number.isFinite(v)) setAmount(formatNumberToBrlInput(Math.abs(v)));
+                }}
+                type="text"
+                inputProps={{
+                  inputMode: "decimal",
+                  pattern: "[0-9]*[.,]?[0-9]*",
+                }}
+                fullWidth
+                disabled={saving}
+              />
+              {amountSuggestions.length > 0 && (
+                <Stack spacing={0.7}>
+                  <Typography variant="caption" sx={{ color: textSecondary }}>Valores rápidos</Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    {amountSuggestions.map((value) => (
+                      <Chip
+                        key={value}
+                        label={formatBRL(value)}
+                        clickable
+                        disabled={saving}
+                        color={parseBrlToNumber(amount) === value ? "primary" : "default"}
+                        variant={parseBrlToNumber(amount) === value ? "filled" : "outlined"}
+                        onClick={() => setAmount(formatNumberToBrlInput(value))}
+                      />
+                    ))}
+                  </Stack>
+                </Stack>
+              )}
+            </Stack>
           </Stack>
 
           <Divider sx={{ mt: 2, borderColor: dividerColor }} />
