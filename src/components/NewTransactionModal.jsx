@@ -1064,7 +1064,11 @@ export default function NewTransactionModal({ open, onClose }) {
             )}
           />
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={5.1}>
+          <Box sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" },
+            gap: { xs: 5.1, sm: 2 },
+          }}>
             <Autocomplete
               disablePortal
               fullWidth
@@ -1116,7 +1120,7 @@ export default function NewTransactionModal({ open, onClose }) {
               )}
             />
 
-            <Stack spacing={1} sx={{ flex: 1, minWidth: 0, width: "100%" }}>
+            <Stack spacing={1} sx={{ minWidth: 0 }}>
               <TextField
                 sx={inputSx}
                 label="Valor (R$)"
@@ -1153,7 +1157,7 @@ export default function NewTransactionModal({ open, onClose }) {
                 </Stack>
               )}
             </Stack>
-          </Stack>
+          </Box>
 
           <Divider sx={{ mt: 2, borderColor: dividerColor }} />
 
