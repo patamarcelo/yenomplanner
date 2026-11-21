@@ -29,6 +29,7 @@ import ExpandLessRoundedIcon from "@mui/icons-material/ExpandLessRounded";
 import DashboardChart from "../components/DashboardChart";
 import DashboardChartNivo from "../components/DashboardChartNivo";
 import DashboardMonthlyPace from "../components/DashboardMonthlyPace";
+import { buildCategoryLookup } from "../utils/categoryLookup.js";
 
 import Chip from "@mui/material/Chip";
 
@@ -568,14 +569,7 @@ export default function Dashboard() {
   const maskMoney = (formatted) => (hideValues ? "••••" : formatted);
   const money = (n) => maskMoney(formatBRL(Number(n || 0)));
 
-  const categoriesById = useMemo(() => {
-    const m = new Map();
-    (categories || []).forEach((c) => {
-      if (!c?.id) return;
-      m.set(String(c.id), c);
-    });
-    return m;
-  }, [categories]);
+  const categoriesById = useMemo(() => buildCategoryLookup(categories), [categories]);
 
   const isTransferCategory = useMemo(() => {
     return (t) => {
