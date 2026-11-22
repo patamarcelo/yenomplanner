@@ -12,3 +12,8 @@ export function buildMonthlyTooltipComparison(payload = []) {
     ? historical.reduce((sum, row) => sum + row.value, 0) / historical.length : null;
   return { rows, average, maximum: Math.max(1, ...rows.map((row) => row.value)) };
 }
+
+export function isTooltipToday(month, day, today = new Date()) {
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  return month === currentMonth && Number(day) === today.getDate();
+}

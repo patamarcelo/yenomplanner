@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildMonthlyTooltipComparison } from '../src/utils/monthlyTooltipComparison.js';
+import { buildMonthlyTooltipComparison, isTooltipToday } from '../src/utils/monthlyTooltipComparison.js';
 
 test('orders months chronologically and computes historical mean without the current month', () => {
   const result = buildMonthlyTooltipComparison([
@@ -32,4 +32,12 @@ test('twelve months use numeric month offsets rather than label or value orderin
     { dataKey: 'comp_12', value: 500 }, { dataKey: 'comp_1', value: 20 },
   ]);
   assert.deepEqual(result.rows.map((r) => r.key), ['comp_12', 'comp_2', 'comp_1', 'atual']);
+});
+
+test('HOJE matches both month and day and does not mark historical months', () => {
+  const today = new Date(2026, 10, 22, 12);
+  assert.equal(isTooltipToday('2026-11', 22, today), true);
+  assert.equal(isTooltipToday('2026-11', '22', today), true);
+  assert.equal(isTooltipToday('2026-10', 22, today), false);
+  assert.equal(isTooltipToday('2026-11', 21, today), false);
 });
