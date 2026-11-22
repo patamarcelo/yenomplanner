@@ -11,12 +11,14 @@ test('orders months chronologically and computes historical mean without the cur
   ]);
   assert.deepEqual(result.rows.map((r) => r.value), [200, 100, 300, 900]);
   assert.equal(result.average, 200);
+  assert.equal(result.total, 1500); // All displayed months; do not add the average again.
 });
 
 test('does not show a mean for only one historical month and retains zero spending', () => {
   const result = buildMonthlyTooltipComparison([{ dataKey: 'atual', value: 10 }, { dataKey: 'comp_1', value: 0 }]);
   assert.equal(result.average, null);
   assert.equal(result.rows.length, 2);
+  assert.equal(result.total, 10);
 });
 
 test('zero months and invalid entries do not produce invalid bar widths', () => {

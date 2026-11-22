@@ -10,7 +10,8 @@ export function buildMonthlyTooltipComparison(payload = []) {
   const historical = rows.filter((row) => row.key !== 'atual');
   const average = historical.length > 1
     ? historical.reduce((sum, row) => sum + row.value, 0) / historical.length : null;
-  return { rows, average, maximum: Math.max(1, ...rows.map((row) => row.value)) };
+  const total = Number(rows.reduce((sum, row) => sum + row.value, 0).toFixed(2));
+  return { rows, average, total, maximum: Math.max(1, ...rows.map((row) => row.value)) };
 }
 
 export function isTooltipToday(month, day, today = new Date()) {

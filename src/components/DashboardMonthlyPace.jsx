@@ -1594,7 +1594,7 @@ export default function DashboardMonthlyPace({
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 800 }}
                         tickFormatter={(v) => formatAxisMoneyShort(v)}
                       />
-                      <Tooltip content={<MonthlyComparisonTooltip money={money} month={month} />} />
+                      <Tooltip content={<MonthlyComparisonTooltip money={money} month={month} showTotal />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <ReferenceLine
                         x={analysis.cutoffDay}

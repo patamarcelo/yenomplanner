@@ -3,9 +3,9 @@ import { Box, Divider, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { buildMonthlyTooltipComparison, isTooltipToday } from '../utils/monthlyTooltipComparison.js';
 
-export default function MonthlyComparisonTooltip({ active, payload, label, money, month }) {
+export default function MonthlyComparisonTooltip({ active, payload, label, money, month, showTotal = false }) {
   if (!active) return null;
-  const { rows, average, maximum } = buildMonthlyTooltipComparison(payload);
+  const { rows, average, total, maximum } = buildMonthlyTooltipComparison(payload);
   if (!rows.length) return null;
   const rotateValues = rows.length > 4;
   const today = isTooltipToday(month, label);
@@ -63,11 +63,19 @@ export default function MonthlyComparisonTooltip({ active, payload, label, money
           ))}
         </Box>
       </Box>
-      {average !== null && <>
+      {(average !== null || showTotal) && <>
         <Divider sx={{ my: 0.8 }} />
-        <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>
-          Tracejado: média dos meses anteriores — <Box component="span" sx={{ fontWeight: 900 }}>{money(average)}</Box>
-        </Typography>
+        <Stack direction="row" justifyContent="space-between" alignItems="flex-end" spacing={1}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {average !== null && <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>
+              Tracejado: média dos meses anteriores — <Box component="span" sx={{ fontWeight: 900 }}>{money(average)}</Box>
+            </Typography>}
+          </Box>
+          {showTotal && <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+            <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>Total da visão</Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>{money(total)}</Typography>
+          </Box>}
+        </Stack>
       </>}
     </Box>
   );
