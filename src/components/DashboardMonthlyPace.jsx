@@ -1,3 +1,4 @@
+import MonthlyComparisonTooltip from "./MonthlyComparisonTooltip.jsx";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
@@ -1247,7 +1248,7 @@ export default function DashboardMonthlyPace({
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 800 }}
                         tickFormatter={(v) => formatAxisMoneyShort(v)}
                       />
-                      <Tooltip content={<ChartTooltip money={money} />} />
+                      <Tooltip content={<MonthlyComparisonTooltip money={money} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <ReferenceLine
                         x={analysis.cutoffDay}
@@ -1593,7 +1594,7 @@ export default function DashboardMonthlyPace({
                         tick={{ fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 800 }}
                         tickFormatter={(v) => formatAxisMoneyShort(v)}
                       />
-                      <Tooltip content={<ChartTooltip money={money} />} />
+                      <Tooltip content={<MonthlyComparisonTooltip money={money} />} />
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                       <ReferenceLine
                         x={analysis.cutoffDay}
