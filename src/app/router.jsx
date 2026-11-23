@@ -11,6 +11,7 @@ const Transactions = lazy(() => import("../pages/Transactions"));
 const Invoices = lazy(() => import("../pages/Invoices"));
 const Installments = lazy(() => import("../pages/Installments"));
 const AccountsPage = lazy(() => import("../pages/AccountsPage"));
+const BillingPage = lazy(() => import("../pages/BillingPage"));
 const BillsPage = lazy(() => import("../pages/BillsPage"));
 
 const CadastrosPage = lazy(() => import("../pages/CadastrosPage"));
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
       { path: "faturas", element: wrap(<Invoices />) },
       { path: "parcelamentos", element: wrap(<Installments />) },
       { path: "contas", element: wrap(<AccountsPage />) },
+      { path: "faturamento", element: wrap(<BillingPage />) },
       { path: "despesas", element: wrap(<BillsPage />) },
 
       { path: "cadastros", element: wrap(<CadastrosPage />) },

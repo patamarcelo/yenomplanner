@@ -47,6 +47,7 @@ import { meThunk, logout, selectAuthUser } from "../store/authSlice";
 import { bootstrapThunk } from "../store/bootstrapThunk";
 
 import ExitToAppRoundedIcon from "@mui/icons-material/ExitToAppRounded";
+import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded";
 import PaymentsRoundedIcon from "@mui/icons-material/PaymentsRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 
@@ -61,6 +62,7 @@ const TOP_H = 64;
 const BOOTSTRAP_REFRESH_MS = 45 * 1000;
 
 const navItems = [
+  { to: "/faturamento", label: "Faturamento", icon: <MonetizationOnRoundedIcon />, color: "#14b8a6" },
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon />, color: "#3b82f6" },
   { to: "/contas", label: "Contas", icon: <AccountBalanceRoundedIcon />, color: "#22c55e" },
   { to: "/despesas", label: "Despesas", icon: <PaymentsRoundedIcon />, color: "#f59e0b" },
