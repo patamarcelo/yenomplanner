@@ -9,3 +9,7 @@ Certificado e senha são enviados ao backend somente no cadastro; não são salv
 Notas autorizadas geram recebíveis previstos. Nesta beta, o recebimento é simulado e não altera contas reais. Produção permanece desabilitada no backend.
 
 Verificações: `npm run build`; `node --test --test-isolation=none tests/*.test.js`; ESLint dos arquivos novos; renderização das quatro abas em 1440px e 402px com respostas API simuladas.
+
+Modelos mensais: importar um XML em Configurações cadastra o cliente por CNPJ com endereço, descrição, valor e parâmetros fiscais. O dropdown de CNPJ aplica os dados do modelo e mantém as datas atuais. Importações de outros clientes mantêm os anteriores; reimportar o mesmo CNPJ atualiza seu modelo. Configurações antigas precisam de uma reimportação do XML, pois o cliente era removido ao salvar. Não é preciso reenviar certificado ou senha.
+
+O menu Faturamento fica na penúltima posição, acima de Cadastros. O drawer anima largura, textos, logos e seta ao expandir/recolher, mantendo os elementos montados.

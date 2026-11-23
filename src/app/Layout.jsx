@@ -22,7 +22,6 @@ import {
 
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
-import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import CreditCardRoundedIcon from "@mui/icons-material/CreditCardRounded";
@@ -62,15 +61,17 @@ const TOP_H = 64;
 const BOOTSTRAP_REFRESH_MS = 45 * 1000;
 
 const navItems = [
-  { to: "/faturamento", label: "Faturamento", icon: <MonetizationOnRoundedIcon />, color: "#14b8a6" },
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon />, color: "#3b82f6" },
   { to: "/contas", label: "Contas", icon: <AccountBalanceRoundedIcon />, color: "#22c55e" },
   { to: "/despesas", label: "Despesas", icon: <PaymentsRoundedIcon />, color: "#f59e0b" },
   { to: "/lancamentos", label: "Lançamentos", icon: <CreditCardRoundedIcon />, color: "#a855f7" },
   { to: "/faturas", label: "Faturas", icon: <ReceiptLongRoundedIcon />, color: "#ef4444" },
   { to: "/parcelamentos", label: "Parcelamentos", icon: <ViewWeekRoundedIcon />, color: "#06b6d4" },
+  { to: "/faturamento", label: "Faturamento", icon: <MonetizationOnRoundedIcon />, color: "#14b8a6" },
   { to: "/cadastros", label: "Cadastros", icon: <SettingsRoundedIcon />, color: "#64748b" },
 ];
+
+const drawerTransition = "260ms cubic-bezier(0.4, 0, 0.2, 1)";
 
 function NavItem({ to, label, icon, collapsed, color, onClick, isMobile }) {
   const theme = useTheme();
@@ -81,6 +82,7 @@ function NavItem({ to, label, icon, collapsed, color, onClick, isMobile }) {
       to={to}
       end={isRoot}
       onClick={onClick}
+      aria-label={label}
       style={({ isActive }) => ({
         display: "flex",
         alignItems: "center",
@@ -98,7 +100,8 @@ function NavItem({ to, label, icon, collapsed, color, onClick, isMobile }) {
             ? "rgba(10,132,255,0.18)"
             : "rgba(0,122,255,0.10)"
           : "transparent",
-        transition: "all .18s ease",
+        overflow: "hidden",
+        transition: `padding ${drawerTransition}, gap ${drawerTransition}, background-color ${drawerTransition}`,
       })}
     >
       {({ isActive }) => (
@@ -125,11 +128,17 @@ function NavItem({ to, label, icon, collapsed, color, onClick, isMobile }) {
             {icon}
           </Box>
 
-          {!collapsed && (
-            <Typography
+          <Typography
+              aria-hidden={collapsed}
               sx={{
                 fontWeight: isActive ? 800 : 650,
-                transition: "all .18s ease",
+                maxWidth: collapsed ? 0 : 180,
+                opacity: collapsed ? 0 : 1,
+                overflow: "hidden",
+                flexShrink: 0,
+                transform: collapsed ? "translateX(-8px)" : "translateX(0)",
+                transition: `max-width ${drawerTransition}, opacity ${drawerTransition}, transform ${drawerTransition}`,
+                "@media (prefers-reduced-motion: reduce)": { transition: "none" },
                 fontSize: isMobile ? 14 : 15,
                 lineHeight: 1.15,
                 whiteSpace: "nowrap",
@@ -137,7 +146,6 @@ function NavItem({ to, label, icon, collapsed, color, onClick, isMobile }) {
             >
               {label}
             </Typography>
-          )}
         </>
       )}
     </NavLink>
@@ -434,8 +442,11 @@ export default function Layout({ children }) {
     borderTopRightRadius: 0,
     borderBottomRightRadius: 0,
     transition: theme.transitions.create(["width"], {
-      duration: theme.transitions.duration.shortest,
+      duration: 260,
+      easing: theme.transitions.easing.easeInOut,
     }),
+
+    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
 
     // PWA iOS: evita que o drawer fique sob a Status Bar / Dynamic Island.
     pt: "env(safe-area-inset-top, 0px)",
@@ -521,6 +532,7 @@ export default function Layout({ children }) {
         sx={{
           height: TOP_H,
           px: effectiveCollapsed ? 1 : isMobile ? 1.4 : 2,
+          transition: `padding ${drawerTransition}`,
           display: "flex",
           alignItems: "center",
           justifyContent: effectiveCollapsed ? "center" : "space-between",
@@ -537,33 +549,22 @@ export default function Layout({ children }) {
             minWidth: 0,
           }}
         >
-          {!effectiveCollapsed ? (
-            <Box
-              component="img"
-              src="/assets/image/banner-1.png"
-              alt="Yenom Planner"
-              sx={{
-                height: isMobile ? 58 : 64,
-                width: "100%",
-                maxWidth: isMobile ? 172 : 190,
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          ) : (
-            <Box
-              component="img"
-              src="/assets/image/LOGO-0.png"
-              alt="YP"
-              sx={{
-                marginRight: "20px",
-                height: 54,
-                width: 54,
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          )}
+          <Box sx={{ position: "relative", width: "100%", height: isMobile ? 58 : 64 }}>
+            <Box component="img" src="/assets/image/banner-1.png" alt="Yenom Planner"
+              aria-hidden={effectiveCollapsed}
+              sx={{ position: "absolute", left: 0, top: 0, height: "100%", width: isMobile ? 172 : 190,
+                maxWidth: "none", objectFit: "contain", opacity: effectiveCollapsed ? 0 : 1,
+                transform: effectiveCollapsed ? "translateX(-8px) scale(.96)" : "translateX(0) scale(1)",
+                transition: `opacity ${drawerTransition}, transform ${drawerTransition}`,
+                "@media (prefers-reduced-motion: reduce)": { transition: "none" } }} />
+            <Box component="img" src="/assets/image/LOGO-0.png" alt="YP"
+              aria-hidden={!effectiveCollapsed}
+              sx={{ position: "absolute", left: 0, top: "50%", height: 54, width: 54, objectFit: "contain",
+                opacity: effectiveCollapsed ? 1 : 0,
+                transform: `translateY(-50%) scale(${effectiveCollapsed ? 1 : .85})`,
+                transition: `opacity ${drawerTransition}, transform ${drawerTransition}`,
+                "@media (prefers-reduced-motion: reduce)": { transition: "none" } }} />
+          </Box>
         </Box>
 
         {isMdUp ? (
@@ -589,17 +590,11 @@ export default function Layout({ children }) {
                 "&:hover": { backgroundColor: "background.default" },
               })}
             >
-              {theme.direction === "rtl" ? (
-                collapsed ? (
-                  <ChevronLeftRoundedIcon fontSize="small" />
-                ) : (
-                  <ChevronRightRoundedIcon fontSize="small" />
-                )
-              ) : collapsed ? (
-                <ChevronRightRoundedIcon fontSize="small" />
-              ) : (
-                <ChevronLeftRoundedIcon fontSize="small" />
-              )}
+              <ChevronLeftRoundedIcon fontSize="small" sx={{
+                transform: `rotate(${collapsed !== (theme.direction === "rtl") ? 180 : 0}deg)`,
+                transition: `transform ${drawerTransition}`,
+                "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+              }} />
             </IconButton>
           </Tooltip>
         ) : null}
@@ -610,6 +605,7 @@ export default function Layout({ children }) {
       <Box
         sx={{
           p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.4,
+          transition: `padding ${drawerTransition}`,
           display: "flex",
           flexDirection: "column",
           gap: isMobile ? 0.55 : 0.8,
@@ -633,78 +629,39 @@ export default function Layout({ children }) {
 
       <Box sx={{ flex: 1 }} />
 
-      <Box sx={{ p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.6, display: "flex", flexDirection: "column", gap: 1 }}>
-        {!effectiveCollapsed ? (
-          <Button
-            fullWidth
-            variant="contained"
-            onClick={() => setNewOpen(true)}
-            sx={{
-              borderRadius: 999,
-              height: isMobile ? 38 : 40,
-              fontWeight: 800,
-              fontSize: isMobile ? 13 : 14,
-            }}
-          >
-            + Novo lançamento
+      <Box sx={{ p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.6,
+        transition: `padding ${drawerTransition}`, display: "flex", flexDirection: "column", gap: 1 }}>
+        <Tooltip title={effectiveCollapsed ? "Novo lançamento" : ""} placement="right">
+          <Button fullWidth variant={effectiveCollapsed ? "outlined" : "contained"}
+            aria-label="Novo lançamento" onClick={() => setNewOpen(true)}
+            sx={{ borderRadius: effectiveCollapsed ? 14 : 999, height: 40, minWidth: 0,
+              overflow: "hidden", fontWeight: 800, whiteSpace: "nowrap",
+              transition: `background-color ${drawerTransition}, border-radius ${drawerTransition}, color ${drawerTransition}` }}>
+            <AddRoundedIcon sx={{ flexShrink: 0 }} />
+            <Box component="span" aria-hidden={effectiveCollapsed} sx={{
+              maxWidth: effectiveCollapsed ? 0 : 200, opacity: effectiveCollapsed ? 0 : 1,
+              ml: effectiveCollapsed ? 0 : 1, overflow: "hidden",
+              transition: `max-width ${drawerTransition}, opacity ${drawerTransition}, margin ${drawerTransition}`,
+              "@media (prefers-reduced-motion: reduce)": { transition: "none" } }}>Novo lançamento</Box>
           </Button>
-        ) : (
-          <Tooltip title="Novo lançamento" placement="right">
-            <IconButton
-              onClick={() => setNewOpen(true)}
-              sx={{
-                width: "100%",
-                borderRadius: 14,
-                border: `1px solid ${theme.palette.divider}`,
-              }}
-            >
-              <AddRoundedIcon />
-            </IconButton>
-          </Tooltip>
-        )}
+        </Tooltip>
       </Box>
-
       <Divider sx={{ opacity: 0.8 }} />
-
-      <Box sx={{ p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.6 }}>
-        {!effectiveCollapsed ? (
-          <Button
-            fullWidth
-            onClick={handleLogout}
-            startIcon={<ExitToAppRoundedIcon />}
-            sx={{
-              height: isMobile ? 38 : 40,
-              borderRadius: 999,
-              fontWeight: 900,
-              fontSize: isMobile ? 13 : 14,
-              justifyContent: "center",
-              px: 1.6,
-              color: "#dc2626",
-              border: "1px solid rgba(220,38,38,0.35)",
-              bgcolor: "rgba(220,38,38,0.08)",
-              "&:hover": { bgcolor: "rgba(220,38,38,0.14)" },
-            }}
-          >
-            Sair
+      <Box sx={{ p: effectiveCollapsed ? 1 : isMobile ? 1.15 : 1.6, transition: `padding ${drawerTransition}` }}>
+        <Tooltip title={effectiveCollapsed ? "Sair" : ""} placement="right">
+          <Button fullWidth aria-label="Sair" onClick={handleLogout} sx={{
+            height: 40, minWidth: 0, overflow: "hidden", borderRadius: effectiveCollapsed ? 14 : 999,
+            color: "#dc2626", border: "1px solid rgba(220,38,38,0.35)", bgcolor: "rgba(220,38,38,0.08)",
+            transition: `border-radius ${drawerTransition}, background-color ${drawerTransition}`,
+            "&:hover": { bgcolor: "rgba(220,38,38,0.14)" } }}>
+            <ExitToAppRoundedIcon sx={{ flexShrink: 0 }} />
+            <Box component="span" aria-hidden={effectiveCollapsed} sx={{
+              maxWidth: effectiveCollapsed ? 0 : 80, opacity: effectiveCollapsed ? 0 : 1,
+              ml: effectiveCollapsed ? 0 : 1, overflow: "hidden", fontWeight: 900,
+              transition: `max-width ${drawerTransition}, opacity ${drawerTransition}, margin ${drawerTransition}`,
+              "@media (prefers-reduced-motion: reduce)": { transition: "none" } }}>Sair</Box>
           </Button>
-        ) : (
-          <Tooltip title="Sair" placement="right">
-            <IconButton
-              onClick={handleLogout}
-              sx={{
-                width: "100%",
-                height: 40,
-                borderRadius: 14,
-                color: "#dc2626",
-                border: "1px solid rgba(220,38,38,0.35)",
-                bgcolor: "rgba(220,38,38,0.08)",
-                "&:hover": { bgcolor: "rgba(220,38,38,0.14)" },
-              }}
-            >
-              <ExitToAppRoundedIcon />
-            </IconButton>
-          </Tooltip>
-        )}
+        </Tooltip>
       </Box>
     </Box>
   );
@@ -750,6 +707,8 @@ export default function Layout({ children }) {
           variant="permanent"
           sx={{
             width: drawerW,
+            transition: `width ${drawerTransition}`,
+            "@media (prefers-reduced-motion: reduce)": { transition: "none" },
             flexShrink: 0,
             "& .MuiDrawer-paper": drawerPaperSx,
           }}

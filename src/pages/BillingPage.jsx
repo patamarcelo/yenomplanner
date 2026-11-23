@@ -1,15 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import http from '../api/http';
+import { applyFiscalPreset, clearFiscalPreset } from '../utils/fiscalPresets';
 
 const base = '/yenomplanner/billing/';
 const today = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
 const money = value => (Number(value) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const labels = { queued: 'Na fila', processing: 'Processando', uncertain: 'Aguardando consulta', authorized: 'Autorizada', failed: 'Falha na preparação', planned: 'Previsto', paid: 'Recebido' };
-const initial = () => ({ idempotency_key: crypto.randomUUID(), competence: today(), issueDate: today(), dueDate: today(), amount: '', description: '', cnpj: '', name: '', codigoMunicipioIbge: '', cep: '', logradouro: '', numero: '', bairro: '' });
+const initial = () => ({ idempotency_key: crypto.randomUUID(), competence: today(), issueDate: today(), dueDate: today(), amount: '', description: '', cnpj: '', name: '', codigoMunicipioIbge: '', cep: '', logradouro: '', numero: '', bairro: '', complemento: '', preset_cnpj: '' });
 const errorText = error => error.response?.data?.detail || error.message || 'Não foi possível concluir. Verifique a conexão e tente novamente.';
 
 export default function BillingPage() {
+  const initializedPreset = useRef(false);
   const [tab, setTab] = useState(0);
   const [profile, setProfile] = useState(null);
   const [documents, setDocuments] = useState([]);
@@ -26,6 +28,10 @@ export default function BillingPage() {
   const [success, setSuccess] = useState('');
   const load = useCallback(async () => {
     const [p, d, r, a] = await Promise.all(['profile/', 'documents/', 'receivables/', null].map(path => http.get(path ? base + path : '/yenomplanner/accounts/')));
+    if (!initializedPreset.current && p.data.customer_templates?.length) {
+      initializedPreset.current = true;
+      setForm(old => old.cnpj ? old : applyFiscalPreset(old, p.data.customer_templates[0]));
+    }
     setProfile(p.data); setSeries(String(p.data.series)); setDocuments(d.data); setReceivables(r.data);
     setAccounts((a.data.results || a.data).filter(account => account.type === 'checking'));
   }, []);
@@ -45,7 +51,11 @@ export default function BillingPage() {
       const data = new FormData(); data.append('series', series);
       if (certificate) { data.append('certificate', certificate); data.append('password', password); }
       if (template) data.append('template', template);
-      await http.post(base + 'profile/', data);
+      const saved = await http.post(base + 'profile/', data);
+      if (template && saved.data.customer_templates?.length) {
+        initializedPreset.current = true;
+        setForm(old => applyFiscalPreset(old, saved.data.customer_templates.at(-1)));
+      }
       setPassword(''); setCertificate(null); setTemplate(null); setSuccess('Configuração salva. Certificado e senha ficam criptografados no servidor.');
     });
   };
@@ -61,8 +71,8 @@ export default function BillingPage() {
   });
   const emit = e => {
     e.preventDefault(); run(async () => {
-      await http.post(base + 'documents/', { ...form, customer: { cnpj: form.cnpj, name: form.name, address: Object.fromEntries(['codigoMunicipioIbge', 'cep', 'logradouro', 'numero', 'bairro'].map(key => [key, form[key]])) } });
-      setForm(initial()); setSuccess('Solicitação recebida. Acompanhe o resultado na lista de notas.');
+      await http.post(base + 'documents/', { ...form, customer: { cnpj: form.cnpj, name: form.name, address: Object.fromEntries(['codigoMunicipioIbge', 'cep', 'logradouro', 'numero', 'bairro', 'complemento'].map(key => [key, form[key]])) } });
+      setForm(old => { const preset = profile?.customer_templates?.find(item => item.cnpj === old.preset_cnpj); return preset ? applyFiscalPreset(initial(), preset) : initial(); }); setSuccess('Solicitação recebida. Acompanhe o resultado na lista de notas.');
     });
   };
   const download = (doc, extension = 'xml') => run(async () => {
@@ -70,6 +80,8 @@ export default function BillingPage() {
     const url = URL.createObjectURL(response.data); const a = document.createElement('a');
     a.href = url; a.download = `nfse-homologacao-${doc.number}.${extension}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
+  const presets = profile?.customer_templates || [];
+  const selectedPreset = presets.find(item => item.cnpj === form.preset_cnpj);
   return <Box sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 1, md: 3 } }}>
     <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
       <Typography variant="h5" fontWeight={800}>Faturamento</Typography><Chip label="Beta · Homologação" color="warning" />
@@ -91,14 +103,28 @@ export default function BillingPage() {
       </Box>
       <Stack spacing={2} mt={2}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-          {field('cnpj', 'CNPJ do cliente', { inputProps: { maxLength: 18 } })}
+          <Autocomplete freeSolo fullWidth options={presets}
+            value={presets.find(item => item.cnpj === form.cnpj) || form.cnpj}
+            inputValue={form.cnpj}
+            filterOptions={(options, { inputValue }) => options.some(item => item.cnpj === inputValue) ? options : options.filter(item => `${item.cnpj} ${item.name}`.toLocaleLowerCase().includes(inputValue.toLocaleLowerCase()))}
+            getOptionLabel={option => typeof option === 'string' ? option : `${option.cnpj} · ${option.name}`}
+            isOptionEqualToValue={(option, value) => option.cnpj === value.cnpj}
+            onInputChange={(_, value, reason) => { if (reason === 'input') setForm(old => clearFiscalPreset(old, value)); }}
+            onChange={(_, value) => setForm(old => value && typeof value !== 'string' ? applyFiscalPreset(old, value) : clearFiscalPreset(old, value || ''))}
+            renderInput={params => <TextField {...params} label="CNPJ do cliente" required helperText="Selecione um modelo importado ou digite um novo CNPJ." />}
+          />
           <Button onClick={lookupCustomer} disabled={busy} sx={{ whiteSpace: 'nowrap' }}>Consultar CNPJ</Button>
         </Stack>
         {field('name', 'Razão social do cliente')}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
           {field('cep', 'CEP (somente números)')}{field('codigoMunicipioIbge', 'Código IBGE do município')}
-          {field('logradouro', 'Logradouro')}{field('numero', 'Número')}{field('bairro', 'Bairro')}
+          {field('logradouro', 'Logradouro')}{field('numero', 'Número')}{field('bairro', 'Bairro')}{field('complemento', 'Complemento', { required: false })}
         </Box>
+        {selectedPreset && <Alert severity="info">Modelo de {selectedPreset.name} aplicado. Os dados podem ser editados antes de emitir.
+          <Box component="details" mt={1}><Box component="summary" sx={{ cursor: 'pointer' }}>Parâmetros fiscais do XML</Box>
+            {Object.entries(selectedPreset.fiscal || {}).filter(([, value]) => value).map(([key, value]) => <Typography key={key} variant="body2">{key}: {value}</Typography>)}
+          </Box>
+        </Alert>}
         {field('description', 'Descrição dos serviços', { multiline: true, minRows: 4 })}
         {field('amount', 'Valor do serviço (R$)', { type: 'number', inputProps: { min: '0.01', step: '0.01' } })}
         <Button type="submit" variant="contained" disabled={busy || !profile?.certificate_ready || !profile?.template_ready}>Emitir em homologação</Button>
@@ -135,7 +161,9 @@ export default function BillingPage() {
       <Button component="label" variant="outlined">{certificate ? certificate.name : 'Selecionar certificado A1 (.pfx ou .p12)'}<input hidden type="file" accept=".pfx,.p12" onChange={e => setCertificate(e.target.files[0] || null)} /></Button>
       <TextField label="Senha do certificado" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} disabled={!certificate} />
       <Button component="label" variant="outlined">{template ? template.name : 'Selecionar XML-modelo de NFS-e'}<input hidden type="file" accept=".xml" onChange={e => setTemplate(e.target.files[0] || null)} /></Button>
-      <Typography variant="body2" color="text.secondary">Use um XML da sua empresa com os parâmetros fiscais já conferidos. Os dados do cliente do modelo serão removidos. Próxima DPS: {profile?.next_number || 1}.</Typography>
+      <Typography variant="body2" color="text.secondary">Use um XML da sua empresa com os parâmetros fiscais já conferidos. Cliente, endereço, valor, descrição e parâmetros fiscais ficam salvos como modelo reutilizável por CNPJ. Próxima DPS: {profile?.next_number || 1}.</Typography>
+      {presets.length > 0 && <Box><Typography fontWeight={700} mb={1}>Modelos por cliente</Typography>{presets.map(item => <Typography key={item.cnpj} variant="body2">{item.cnpj} · {item.name} · {money(Number(item.amount) * 100)}</Typography>)}</Box>}
+      {profile?.template_ready && !presets.length && <Alert severity="info">Importe novamente seu XML para recuperar os dados do cliente e criar o primeiro modelo. Não precisa reenviar o certificado.</Alert>}
       <TextField label="Série da API" type="number" value={series} onChange={e => setSeries(e.target.value)} inputProps={{ min: 1, max: 49999 }} />
       <Button variant="contained" type="submit" disabled={busy}>Salvar configuração</Button>
     </Stack></Paper>}
