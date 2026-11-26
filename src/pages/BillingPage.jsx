@@ -5,6 +5,7 @@ import { applyFiscalPreset, clearFiscalPreset } from '../utils/fiscalPresets';
 
 const base = '/yenomplanner/billing/';
 const today = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
+const daysAgo = days => { const date = new Date(); date.setDate(date.getDate() - days); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 const money = value => (Number(value) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const labels = { queued: 'Na fila', processing: 'Processando', uncertain: 'Aguardando consulta', authorized: 'Autorizada', failed: 'Falha na preparação', planned: 'Previsto', paid: 'Recebido' };
 const initial = () => ({ idempotency_key: crypto.randomUUID(), competence: today(), issueDate: today(), dueDate: today(), amount: '', description: '', cnpj: '', name: '', codigoMunicipioIbge: '', cep: '', logradouro: '', numero: '', bairro: '', complemento: '', preset_cnpj: '' });
@@ -15,6 +16,9 @@ export default function BillingPage() {
   const [tab, setTab] = useState(0);
   const [profile, setProfile] = useState(null);
   const [documents, setDocuments] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [filters, setFilters] = useState({ customer: '', start: daysAgo(90), end: today(), environment: 'producao' });
+  const [presetAmounts, setPresetAmounts] = useState({});
   const [receivables, setReceivables] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState(initial);
@@ -30,14 +34,18 @@ export default function BillingPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const load = useCallback(async () => {
-    const [p, d, r, a] = await Promise.all(['profile/', 'documents/', 'receivables/', null].map(path => http.get(path ? base + path : '/yenomplanner/accounts/')));
+    const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
+    const [p, d, c, r, a] = await Promise.all([
+      http.get(base + 'profile/'), http.get(base + 'documents/', { params }),
+      http.get(base + 'documents/', { params: { customers: 1 } }),
+      http.get(base + 'receivables/'), http.get('/yenomplanner/accounts/')]);
     if (!initializedPreset.current && p.data.customer_templates?.length) {
       initializedPreset.current = true;
       setForm(old => old.cnpj ? old : applyFiscalPreset(old, p.data.customer_templates[0]));
     }
-    setProfile(p.data); setSeries(String(p.data.series)); setDocuments(d.data); setReceivables(r.data);
+    setProfile(p.data); setSeries(String(p.data.series)); setDocuments(d.data); setCustomers(c.data); setReceivables(r.data);
     setAccounts((a.data.results || a.data).filter(account => account.type === 'checking'));
-  }, []);
+  }, [filters]);
   useEffect(() => { load().catch(e => setError(errorText(e))); }, [load]);
   useEffect(() => {
     if (!documents.some(doc => ['queued', 'processing'].includes(doc.status))) return;
@@ -49,20 +57,27 @@ export default function BillingPage() {
     try { await callback(); await load(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
   const field = (name, label, extra = {}) => <TextField label={label} value={form[name]} onChange={e => setForm(old => ({ ...old, [name]: e.target.value }))} required fullWidth {...extra} />;
-  const saveConfig = e => {
-    e.preventDefault(); run(async () => {
-      const data = new FormData(); data.append('series', series);
-      if (certificate) { data.append('certificate', certificate); data.append('password', password); }
-      if (template) data.append('template', template);
-      if (history) data.append('history', history);
+  const saveConfig = (kind, cnpj) => run(async () => {
+      const data = new FormData(); data.append('series', kind === 'history' ? series : String(profile?.series ?? 1));
+      if (kind === 'certificate') { data.append('certificate', certificate); data.append('password', password); }
+      if (kind === 'template') data.append('template', template);
+      if (kind === 'history') data.append('history', history);
+      if (kind === 'amount') { data.append('preset_amount_cnpj', cnpj); data.append('preset_amount', presetAmounts[cnpj] ?? ''); }
       const saved = await http.post(base + 'profile/', data);
-      if (template && saved.data.customer_templates?.length) {
+      if (kind === 'template' && saved.data.customer_templates?.length) {
         initializedPreset.current = true;
         setForm(old => applyFiscalPreset(old, saved.data.customer_templates.at(-1)));
       }
-      setPassword(''); setCertificate(null); setTemplate(null); setHistory(null); setSuccess('Configuração salva. Confira a próxima DPS de produção antes de emitir.');
+      if (kind === 'certificate') { setPassword(''); setCertificate(null); }
+      if (kind === 'template') setTemplate(null);
+      if (kind === 'history') setHistory(null);
+      if (kind === 'amount') {
+        const savedAmount = saved.data.customer_templates.find(item => item.cnpj === cnpj)?.amount;
+        setForm(old => old.preset_cnpj === cnpj ? { ...old, amount: savedAmount ?? old.amount } : old);
+        setPresetAmounts(old => { const next = { ...old }; delete next[cnpj]; return next; });
+      }
+      setSuccess('Configuração salva.');
     });
-  };
   const lookupCustomer = () => run(async () => {
     const cnpj = form.cnpj.replace(/\D/g, '');
     if (cnpj.length !== 14) throw new Error('Informe um CNPJ com 14 dígitos.');
@@ -141,8 +156,18 @@ export default function BillingPage() {
       </Stack>
     </Paper>}
     {tab === 1 && <Stack spacing={2}>
+      <Paper sx={{ p: 2 }}><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2 }}>
+        <TextField select label="Favorecido" value={filters.customer} onChange={e => setFilters(old => ({ ...old, customer: e.target.value }))} fullWidth>
+          <MenuItem value="">Todos os favorecidos</MenuItem>{customers.map(item => <MenuItem key={item.cnpj} value={item.cnpj}>{item.name} · {item.cnpj}</MenuItem>)}
+        </TextField>
+        <TextField type="date" label="Período inicial" value={filters.start} onChange={e => setFilters(old => ({ ...old, start: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
+        <TextField type="date" label="Período final" value={filters.end} onChange={e => setFilters(old => ({ ...old, end: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} fullWidth />
+        <TextField select label="Ambiente" value={filters.environment} onChange={e => setFilters(old => ({ ...old, environment: e.target.value }))} fullWidth>
+          <MenuItem value="">Todos</MenuItem><MenuItem value="producao">Produção</MenuItem><MenuItem value="restrita">Homologação</MenuItem>
+        </TextField>
+      </Box></Paper>
       <Button onClick={() => run(load)} disabled={busy} sx={{ alignSelf: 'end' }}>Atualizar</Button>
-      {!documents.length && <Typography color="text.secondary">Nenhuma nota solicitada.</Typography>}
+      {!documents.length && <Typography color="text.secondary">Nenhuma nota encontrada neste período.</Typography>}
       {documents.map(doc => <Paper key={doc.id} sx={{ p: 2 }}>
         <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap"><Typography fontWeight={700}>NFS-e #{doc.number} · {doc.request.customer.name}</Typography><Stack direction="row" spacing={1}><Chip size="small" label={doc.environment === 'producao' ? 'Produção' : 'Teste'} /><Chip size="small" label={labels[doc.status] || doc.status} color={doc.status === 'authorized' ? 'success' : 'default'} /></Stack></Stack>
         <Typography mt={1}>{money(Number(doc.request.amount) * 100)} · Competência: {doc.request.competence}</Typography>
@@ -166,21 +191,35 @@ export default function BillingPage() {
         {row.status !== 'paid' && <Button variant="outlined" disabled={busy || !payment.account_id} onClick={() => run(async () => { await http.post(base + `receivables/${row.id}/receive/`, payment); setSuccess('Recebimento registrado.'); })}>Registrar recebimento{row.environment === 'restrita' ? ' de teste' : ''}</Button>}
       </Stack></Paper>)}
     </Stack>}
-    {tab === 3 && <Paper component="form" onSubmit={saveConfig} sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
-      <Typography variant="h6">Certificado e configuração fiscal</Typography>
-      <Typography color="text.secondary">O certificado e a senha são exclusivos do seu usuário e armazenados criptografados. A senha não será exibida novamente.</Typography>
-      {profile?.certificate_ready && <Alert severity="success">Certificado cadastrado · CNPJ do modelo: {profile.cnpj} · Validade: {profile.certificate_expires_at?.slice(0, 10)}</Alert>}
-      <Button component="label" variant="outlined">{certificate ? certificate.name : 'Selecionar certificado A1 (.pfx ou .p12)'}<input hidden type="file" accept=".pfx,.p12" onChange={e => setCertificate(e.target.files[0] || null)} /></Button>
-      <TextField label="Senha do certificado" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} disabled={!certificate} />
-      <Button component="label" variant="outlined">{template ? template.name : 'Selecionar XML-modelo de NFS-e'}<input hidden type="file" accept=".xml" onChange={e => setTemplate(e.target.files[0] || null)} /></Button>
-      <Typography variant="body2" color="text.secondary">Use um XML da sua empresa com os parâmetros fiscais já conferidos. Cliente, endereço, valor, descrição e parâmetros fiscais ficam salvos como modelo reutilizável por CNPJ. Próxima DPS: {profile?.next_number || 1}.</Typography>
-      {presets.length > 0 && <Box><Typography fontWeight={700} mb={1}>Modelos por cliente</Typography>{presets.map(item => <Typography key={item.cnpj} variant="body2">{item.cnpj} · {item.name} · {money(Number(item.amount) * 100)}</Typography>)}</Box>}
-      {profile?.template_ready && !presets.length && <Alert severity="info">Importe novamente seu XML para recuperar os dados do cliente e criar o primeiro modelo. Não precisa reenviar o certificado.</Alert>}
-      <TextField label="Série da API" type="number" value={series} onChange={e => setSeries(e.target.value)} inputProps={{ min: 1, max: 49999 }} />
-      <Typography variant="body2">Para ativar a produção, importe o histórico JSON do emissor local. O sistema confere o CNPJ e a série e calcula a próxima DPS. Este arquivo não é armazenado no servidor.</Typography>
-      <Button component="label" variant="outlined">{history ? history.name : 'Selecionar histórico de emissões (.json)'}<input hidden type="file" accept=".json,application/json" onChange={e => setHistory(e.target.files[0] || null)} /></Button>
-      <Typography variant="body2">Próxima DPS de produção: {profile?.production_next_number ?? 'aguardando histórico'}.</Typography>
-      <Button variant="contained" type="submit" disabled={busy}>Salvar configuração</Button>
-    </Stack></Paper>}
+    {tab === 3 && <Stack spacing={2}>
+      <Paper sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
+        <Typography variant="h6">Certificado digital</Typography>
+        <Typography color="text.secondary">O certificado e a senha ficam criptografados no servidor. A senha não será exibida novamente.</Typography>
+        {profile?.certificate_ready && <Alert severity="success">Certificado cadastrado · CNPJ: {profile.cnpj} · Validade: {profile.certificate_expires_at?.slice(0, 10)}</Alert>}
+        <Button component="label" variant="outlined">{certificate ? certificate.name : 'Selecionar certificado A1 (.pfx ou .p12)'}<input hidden type="file" accept=".pfx,.p12" onChange={e => setCertificate(e.target.files[0] || null)} /></Button>
+        <TextField label="Senha do certificado" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} disabled={!certificate} />
+        <Button variant="contained" disabled={busy || !certificate || !password} onClick={() => saveConfig('certificate')}>Salvar certificado</Button>
+      </Stack></Paper>
+      <Paper sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
+        <Typography variant="h6">Modelo XML e valores sugeridos</Typography>
+        <Typography variant="body2" color="text.secondary">O XML mantém os dados fiscais e do cliente. O valor de cada modelo é apenas uma sugestão no formulário de emissão.</Typography>
+        <Button component="label" variant="outlined">{template ? template.name : 'Selecionar XML-modelo de NFS-e'}<input hidden type="file" accept=".xml" onChange={e => setTemplate(e.target.files[0] || null)} /></Button>
+        <Button variant="contained" disabled={busy || !template} onClick={() => saveConfig('template')}>Importar modelo XML</Button>
+        {presets.length > 0 && <Stack spacing={2}><Typography fontWeight={700}>Modelos por cliente</Typography>{presets.map(item => <Stack key={item.cnpj} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+          <Typography sx={{ flex: 1 }}>{item.name} · {item.cnpj}</Typography>
+          <TextField label="Valor sugerido (R$)" type="number" size="small" value={presetAmounts[item.cnpj] ?? item.amount ?? ''} onChange={e => setPresetAmounts(old => ({ ...old, [item.cnpj]: e.target.value }))} inputProps={{ min: '0.01', step: '0.01' }} sx={{ width: { xs: '100%', sm: 200 } }} />
+          <Button variant="outlined" disabled={busy || presetAmounts[item.cnpj] === undefined} onClick={() => saveConfig('amount', item.cnpj)}>Salvar valor</Button>
+        </Stack>)}</Stack>}
+        {profile?.template_ready && !presets.length && <Alert severity="info">Importe novamente seu XML para recuperar os dados do cliente e criar o primeiro modelo. Não precisa reenviar o certificado.</Alert>}
+      </Stack></Paper>
+      <Paper sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
+        <Typography variant="h6">Histórico e sequência de emissão</Typography>
+        <Typography variant="body2">Importe o histórico JSON do emissor local. O sistema confere CNPJ e série e calcula a próxima DPS de produção; o arquivo não é armazenado.</Typography>
+        <TextField label="Série da API" type="number" value={series} onChange={e => setSeries(e.target.value)} inputProps={{ min: 1, max: 49999 }} />
+        <Button component="label" variant="outlined">{history ? history.name : 'Selecionar histórico de emissões (.json)'}<input hidden type="file" accept=".json,application/json" onChange={e => setHistory(e.target.files[0] || null)} /></Button>
+        <Typography variant="body2">Próxima DPS de produção: {profile?.production_next_number ?? 'aguardando histórico'}. Próxima DPS de homologação: {profile?.next_number ?? 1}.</Typography>
+        <Button variant="contained" disabled={busy || !history} onClick={() => saveConfig('history')}>Importar histórico</Button>
+      </Stack></Paper>
+    </Stack>}
   </Box>;
 }
