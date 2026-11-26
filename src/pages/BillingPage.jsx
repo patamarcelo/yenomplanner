@@ -78,7 +78,7 @@ export default function BillingPage() {
   const download = (doc, extension = 'xml') => run(async () => {
     const response = await http.get(base + `documents/${doc.id}/${extension}/`, { responseType: 'blob' });
     const url = URL.createObjectURL(response.data); const a = document.createElement('a');
-    a.href = url; a.download = `nfse-homologacao-${doc.number}.${extension}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.href = url; a.download = extension === 'signed' ? `DPS-homologacao-${doc.number}-assinada.xml` : `nfse-homologacao-${doc.number}.${extension}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   const presets = profile?.customer_templates || [];
   const selectedPreset = presets.find(item => item.cnpj === form.preset_cnpj);
@@ -138,6 +138,7 @@ export default function BillingPage() {
         <Typography mt={1}>{money(Number(doc.request.amount) * 100)} · Competência: {doc.request.competence}</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{doc.dps_id}</Typography>
         {doc.message && <Alert severity="warning" sx={{ mt: 1 }}>{doc.message}</Alert>}
+        {['failed', 'uncertain'].includes(doc.status) && <Button onClick={() => download(doc, 'signed')} disabled={busy}>Baixar DPS assinada</Button>}
         {doc.status === 'authorized' && <><Button onClick={() => download(doc)} disabled={busy}>Baixar XML</Button><Button onClick={() => download(doc, 'pdf')} disabled={busy}>Baixar PDF</Button></>}
         {['uncertain', 'processing'].includes(doc.status) && <Button disabled={busy} onClick={() => run(() => http.post(base + `documents/${doc.id}/reconcile/`))}>Consultar autorização</Button>}
         {['uncertain', 'failed'].includes(doc.status) && <Button disabled={busy} color="warning" onClick={() => run(async () => { const result = await http.post(base + `documents/${doc.id}/recover/`); setSuccess(result.data.status === 'authorized' ? 'Nota recuperada e autorizada.' : 'A SEFIN recusou o reenvio da mesma DPS.'); })}>Reconsultar e reenviar esta DPS</Button>}
