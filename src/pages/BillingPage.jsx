@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Autocomplete, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import http from '../api/http';
 import { applyFiscalPreset, clearFiscalPreset } from '../utils/fiscalPresets';
 
@@ -22,6 +22,9 @@ export default function BillingPage() {
   const [template, setTemplate] = useState(null);
   const [password, setPassword] = useState('');
   const [series, setSeries] = useState('1');
+  const [history, setHistory] = useState(null);
+  const [environment, setEnvironment] = useState('restrita');
+  const [confirmProduction, setConfirmProduction] = useState(false);
   const [payment, setPayment] = useState({ account_id: '', paid_at: today() });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -51,12 +54,13 @@ export default function BillingPage() {
       const data = new FormData(); data.append('series', series);
       if (certificate) { data.append('certificate', certificate); data.append('password', password); }
       if (template) data.append('template', template);
+      if (history) data.append('history', history);
       const saved = await http.post(base + 'profile/', data);
       if (template && saved.data.customer_templates?.length) {
         initializedPreset.current = true;
         setForm(old => applyFiscalPreset(old, saved.data.customer_templates.at(-1)));
       }
-      setPassword(''); setCertificate(null); setTemplate(null); setSuccess('Configuração salva. Certificado e senha ficam criptografados no servidor.');
+      setPassword(''); setCertificate(null); setTemplate(null); setHistory(null); setSuccess('Configuração salva. Confira a próxima DPS de produção antes de emitir.');
     });
   };
   const lookupCustomer = () => run(async () => {
@@ -71,22 +75,23 @@ export default function BillingPage() {
   });
   const emit = e => {
     e.preventDefault(); run(async () => {
-      await http.post(base + 'documents/', { ...form, customer: { cnpj: form.cnpj, name: form.name, address: Object.fromEntries(['codigoMunicipioIbge', 'cep', 'logradouro', 'numero', 'bairro', 'complemento'].map(key => [key, form[key]])) } });
+      await http.post(base + 'documents/', { ...form, environment, confirm_production: environment === 'producao' && confirmProduction, customer: { cnpj: form.cnpj, name: form.name, address: Object.fromEntries(['codigoMunicipioIbge', 'cep', 'logradouro', 'numero', 'bairro', 'complemento'].map(key => [key, form[key]])) } });
+      setConfirmProduction(false);
       setForm(old => { const preset = profile?.customer_templates?.find(item => item.cnpj === old.preset_cnpj); return preset ? applyFiscalPreset(initial(), preset) : initial(); }); setSuccess('Solicitação recebida. Acompanhe o resultado na lista de notas.');
     });
   };
   const download = (doc, extension = 'xml') => run(async () => {
     const response = await http.get(base + `documents/${doc.id}/${extension}/`, { responseType: 'blob' });
     const url = URL.createObjectURL(response.data); const a = document.createElement('a');
-    a.href = url; a.download = extension === 'signed' ? `DPS-homologacao-${doc.number}-assinada.xml` : `nfse-homologacao-${doc.number}.${extension}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.href = url; a.download = extension === 'signed' ? `DPS-${doc.environment}-${doc.number}-assinada.xml` : `nfse-${doc.environment}-${doc.number}.${extension}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   const presets = profile?.customer_templates || [];
   const selectedPreset = presets.find(item => item.cnpj === form.preset_cnpj);
   return <Box sx={{ maxWidth: 1100, mx: 'auto', p: { xs: 1, md: 3 } }}>
     <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
-      <Typography variant="h5" fontWeight={800}>Faturamento</Typography><Chip label="Beta · Homologação" color="warning" />
+      <Typography variant="h5" fontWeight={800}>Faturamento</Typography><Chip label="NFS-e" color="primary" />
     </Stack>
-    <Alert severity="info" sx={{ mb: 2 }}>Ambiente de testes. As notas e os recebimentos desta versão não alteram seus saldos reais.</Alert>
+    <Alert severity="info" sx={{ mb: 2 }}>Escolha o ambiente antes de emitir. Em produção, a nota é real; o saldo só muda quando você registrar o recebimento.</Alert>
     {error && <Alert severity="error" sx={{ mb: 2 }}>{String(error)}</Alert>}
     {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
     <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable" scrollButtons="auto" sx={{ mb: 2 }}>
@@ -96,6 +101,10 @@ export default function BillingPage() {
     {tab === 0 && <Paper component="form" onSubmit={emit} sx={{ p: { xs: 2, md: 3 } }}>
       <Typography variant="h6" mb={2}>Nova nota de serviço</Typography>
       {!profile?.certificate_ready && <Alert severity="warning" sx={{ mb: 2 }}>Cadastre o certificado A1 e o XML-modelo em Configurações.</Alert>}
+      <TextField select fullWidth label="Ambiente" value={environment} onChange={e => { setEnvironment(e.target.value); setConfirmProduction(false); }} sx={{ mb: 2 }}>
+        <MenuItem value="restrita">Homologação · teste</MenuItem><MenuItem value="producao">Produção · nota real</MenuItem>
+      </TextField>
+      {environment === 'producao' && <Alert severity="warning" sx={{ mb: 2 }}>Próxima DPS de produção: {profile?.production_next_number ?? 'histórico pendente'}. Série {profile?.series}. Confira CNPJ, tomador, valor e dados fiscais antes de emitir.</Alert>}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2 }}>
         {field('competence', 'Competência', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}
         {field('issueDate', 'Data de emissão', { type: 'date', slotProps: { inputLabel: { shrink: true } } })}
@@ -127,14 +136,15 @@ export default function BillingPage() {
         </Alert>}
         {field('description', 'Descrição dos serviços', { multiline: true, minRows: 4 })}
         {field('amount', 'Valor do serviço (R$)', { type: 'number', inputProps: { min: '0.01', step: '0.01' } })}
-        <Button type="submit" variant="contained" disabled={busy || !profile?.certificate_ready || !profile?.template_ready}>Emitir em homologação</Button>
+        {environment === 'producao' && <FormControlLabel control={<Checkbox checked={confirmProduction} onChange={e => setConfirmProduction(e.target.checked)} />} label="Confirmei os dados e autorizo a emissão real desta NFS-e" />}
+        <Button type="submit" variant="contained" disabled={busy || !profile?.certificate_ready || !profile?.template_ready || (environment === 'producao' && (!profile?.production_next_number || !confirmProduction))}>Emitir em {environment === 'producao' ? 'produção' : 'homologação'}</Button>
       </Stack>
     </Paper>}
     {tab === 1 && <Stack spacing={2}>
       <Button onClick={() => run(load)} disabled={busy} sx={{ alignSelf: 'end' }}>Atualizar</Button>
       {!documents.length && <Typography color="text.secondary">Nenhuma nota solicitada.</Typography>}
       {documents.map(doc => <Paper key={doc.id} sx={{ p: 2 }}>
-        <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap"><Typography fontWeight={700}>NFS-e #{doc.number} · {doc.request.customer.name}</Typography><Chip size="small" label={labels[doc.status] || doc.status} color={doc.status === 'authorized' ? 'success' : 'default'} /></Stack>
+        <Stack direction="row" justifyContent="space-between" gap={1} flexWrap="wrap"><Typography fontWeight={700}>NFS-e #{doc.number} · {doc.request.customer.name}</Typography><Stack direction="row" spacing={1}><Chip size="small" label={doc.environment === 'producao' ? 'Produção' : 'Teste'} /><Chip size="small" label={labels[doc.status] || doc.status} color={doc.status === 'authorized' ? 'success' : 'default'} /></Stack></Stack>
         <Typography mt={1}>{money(Number(doc.request.amount) * 100)} · Competência: {doc.request.competence}</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{doc.dps_id}</Typography>
         {doc.message && <Alert severity="warning" sx={{ mt: 1 }}>{doc.message}</Alert>}
@@ -145,15 +155,15 @@ export default function BillingPage() {
       </Paper>)}
     </Stack>}
     {tab === 2 && <Stack spacing={2}>
-      <Alert severity="info">A nota autorizada cria um recebível previsto. Aqui você pode testar a baixa manual, sem gerar receita nas contas reais.</Alert>
+      <Alert severity="info">A nota autorizada cria um recebível previsto. A baixa de notas de produção gera uma receita na conta escolhida; a baixa de testes não altera o saldo.</Alert>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
         <TextField select fullWidth label="Conta de recebimento" value={payment.account_id} onChange={e => setPayment(old => ({ ...old, account_id: e.target.value }))}>{accounts.map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}</TextField>
         <TextField fullWidth type="date" label="Data do recebimento" slotProps={{ inputLabel: { shrink: true } }} value={payment.paid_at} onChange={e => setPayment(old => ({ ...old, paid_at: e.target.value }))} />
       </Stack>
       {!receivables.length && <Typography color="text.secondary">Nenhum recebível. Ele será criado após a autorização da nota.</Typography>}
       {receivables.map(row => <Paper key={row.id} sx={{ p: 2 }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={2}>
-        <Box><Typography fontWeight={700}>{row.customer}</Typography><Typography>{money(row.amount_cents)} · Vencimento: {row.due_date}</Typography><Chip size="small" label={labels[row.status]} /></Box>
-        {row.status !== 'paid' && <Button variant="outlined" disabled={busy || !payment.account_id} onClick={() => run(async () => { await http.post(base + `receivables/${row.id}/receive/`, payment); setSuccess('Recebimento de teste registrado.'); })}>Registrar recebimento de teste</Button>}
+        <Box><Typography fontWeight={700}>{row.customer}</Typography><Typography>{money(row.amount_cents)} · Vencimento: {row.due_date}</Typography><Chip size="small" label={row.environment === 'producao' ? 'Produção' : 'Teste'} sx={{ mr: 1 }} /><Chip size="small" label={labels[row.status]} /></Box>
+        {row.status !== 'paid' && <Button variant="outlined" disabled={busy || !payment.account_id} onClick={() => run(async () => { await http.post(base + `receivables/${row.id}/receive/`, payment); setSuccess('Recebimento registrado.'); })}>Registrar recebimento{row.environment === 'restrita' ? ' de teste' : ''}</Button>}
       </Stack></Paper>)}
     </Stack>}
     {tab === 3 && <Paper component="form" onSubmit={saveConfig} sx={{ p: { xs: 2, md: 3 } }}><Stack spacing={2}>
@@ -167,6 +177,9 @@ export default function BillingPage() {
       {presets.length > 0 && <Box><Typography fontWeight={700} mb={1}>Modelos por cliente</Typography>{presets.map(item => <Typography key={item.cnpj} variant="body2">{item.cnpj} · {item.name} · {money(Number(item.amount) * 100)}</Typography>)}</Box>}
       {profile?.template_ready && !presets.length && <Alert severity="info">Importe novamente seu XML para recuperar os dados do cliente e criar o primeiro modelo. Não precisa reenviar o certificado.</Alert>}
       <TextField label="Série da API" type="number" value={series} onChange={e => setSeries(e.target.value)} inputProps={{ min: 1, max: 49999 }} />
+      <Typography variant="body2">Para ativar a produção, importe o histórico JSON do emissor local. O sistema confere o CNPJ e a série e calcula a próxima DPS. Este arquivo não é armazenado no servidor.</Typography>
+      <Button component="label" variant="outlined">{history ? history.name : 'Selecionar histórico de emissões (.json)'}<input hidden type="file" accept=".json,application/json" onChange={e => setHistory(e.target.files[0] || null)} /></Button>
+      <Typography variant="body2">Próxima DPS de produção: {profile?.production_next_number ?? 'aguardando histórico'}.</Typography>
       <Button variant="contained" type="submit" disabled={busy}>Salvar configuração</Button>
     </Stack></Paper>}
   </Box>;
