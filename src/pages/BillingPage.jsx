@@ -140,6 +140,7 @@ export default function BillingPage() {
         {doc.message && <Alert severity="warning" sx={{ mt: 1 }}>{doc.message}</Alert>}
         {doc.status === 'authorized' && <><Button onClick={() => download(doc)} disabled={busy}>Baixar XML</Button><Button onClick={() => download(doc, 'pdf')} disabled={busy}>Baixar PDF</Button></>}
         {['uncertain', 'processing'].includes(doc.status) && <Button disabled={busy} onClick={() => run(() => http.post(base + `documents/${doc.id}/reconcile/`))}>Consultar autorização</Button>}
+        {doc.status === 'uncertain' && <Button disabled={busy} color="warning" onClick={() => run(async () => { const result = await http.post(base + `documents/${doc.id}/recover/`); setSuccess(result.data.status === 'authorized' ? 'Nota recuperada e autorizada.' : 'A SEFIN recusou o reenvio da mesma DPS.'); })}>Recuperar esta DPS</Button>}
       </Paper>)}
     </Stack>}
     {tab === 2 && <Stack spacing={2}>
